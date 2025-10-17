@@ -202,3 +202,10 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 [init] 从SC7项目中分离出来，尝试支持x86_64架构
 1. 现在还不能自己编译运行。当然了！PC是x86_64架构的，又不是riscv64架构
 2. 这次分离只修改了三个md文件
+
+[feat] 支持在x86_64架构运行. 可以在自己的电脑上运！行！了！
+1. 首先添加了x64架构的调用号和系统调用的汇编函数
+1. 修改__printf适配x64架构，使用很笨的方法，之后得重写
+2. 修改shell读取输入的逻辑，以符合ubuntu内核的标准
+3. 修改struct stat的布局。然后各命令基本正常了！
+4. 更新help的提示信息

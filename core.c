@@ -220,17 +220,38 @@ struct my_va_list
  */
 static unsigned long get_reg_arg_from_stack(struct my_va_list *va_list, int num)
 {
+#if RISCV_TLIBC == 1
     return *(unsigned long *)(va_list->stack_arg+8*num-8*8);
+#elif X86_64_TLIBC == 1
+    return *(unsigned long *)(va_list->stack_arg+8*num);
+#endif
 }
+#define X86_64_TLIBC 1
 /**
  * @brief 获取下一个参数
  */
 unsigned long get_va_arg(struct my_va_list *va_list)
 {
+#if RISCV_TLIBC == 1
     unsigned long ret = get_reg_arg_from_stack(va_list,va_list->count);
     va_list->count++;
     // printf("第%d个参数，返回参数值: %d\n",va_list->count,va_list->reg[va_list->count]);
     return ret;
+#elif X86_64_TLIBC == 1
+    if(va_list->count < 6) //6个参数寄存器
+    {
+        int tmp = va_list->count;
+        va_list->count++;
+        return va_list->reg[tmp];
+    }
+    else
+    {
+        unsigned long ret = get_reg_arg_from_stack(va_list,va_list->count - 6*8);
+        va_list->count++;
+        // printf("第%d个参数，返回参数值: %d\n",va_list->count,va_list->reg[va_list->count]);
+        return ret;
+    }
+#endif
 }
 
 //在这次提交的测试函数中，valist的reg中第五个参数保存的不对
@@ -245,10 +266,17 @@ void show_va_list_reg(struct my_va_list *va_list)
 //栈上保存的参数从第一个开始都对，第0个不是fmt
 void show_va_list_stack(struct my_va_list *va_list)
 {
+#if RISCV_TLIBC == 1
     for(int i=0;i<12;i++)
     {
         // printf("栈上第%d个参数: %d\n",i,*(unsigned long *)(va_list->stack_arg+8*i-8*8));
     }
+#elif X86_64_TLIBC == 1
+    for(int i=0;i<12;i++)
+    {
+        // printf("栈上第%d个参数: %d\n",i,*(unsigned long *)(va_list->stack_arg+8*i));
+    }
+#endif
 }
 
 void __printf(const char *fmt, ...)
@@ -271,6 +299,35 @@ void __printf(const char *fmt, ...)
         : "r"(&va_list.reg)
         : "memory"
     );
+#elif X86_64_TLIBC == 1
+    // x86_64 架构的初始化
+    va_list.count = 1;
+    
+    // 使用内联汇编获取寄存器参数
+    __asm__ volatile (
+        "movq %%rdi, 0(%0)\n"
+        "movq %%rsi, 8(%0)\n" 
+        "movq %%rdx, 16(%0)\n"
+        "movq %%rcx, 24(%0)\n"
+        "movq %%r8, 32(%0)\n"
+        "movq %%r9, 40(%0)\n"
+        "movq $0, 48(%0)\n"    // 第7个寄存器位置（x86_64只有6个参数寄存器）
+        "movq $0, 56(%0)\n"    // 第8个寄存器位置
+        : 
+        : "r"(&va_list.reg)
+        : "memory"
+    );
+    
+    // 计算栈参数的起始位置
+    // 在 x86_64 中，栈参数从 rsp+8 开始（跳过返回地址）
+    // 但我们需要考虑当前栈帧的情况
+    char *frame_addr = (char*)__builtin_frame_address(0);
+    // 栈参数通常从 frame_addr + 16 开始（跳过保存的rbp和返回地址）
+    va_list.stack_arg = frame_addr + 16;
+
+#else
+    // 通用实现或错误处理
+    return;
 #endif
 
     //调试时使用
@@ -326,5 +383,10 @@ void __printf(const char *fmt, ...)
 // SC7在qemu平台自定义的调用
 void tlibc_shutdown() //为了避免与user.c的命名冲突加前缀tlibc了
 {
+#if RISCV_TLIBC == 1
     syscall(SYS_shutdown);
+#else
+    //在x64主机上，退出进程即可
+    __exit(0);
+#endif
 }

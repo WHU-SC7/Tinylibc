@@ -82,5 +82,8 @@ void ls(int argc, char *argv[])
     __getdents64(open_ret,(struct linux_dirent64 *)getdent_buf, LS_BUF_SIZE);
     __close(open_ret);
     print_getdents64_buf((struct linux_dirent64 *)getdent_buf);
+#if X86_64_TLIBC == 1
+    LOG("很大off是正常的,可能是文件系统内部使用的哈希值。然后__printf只能输出int的数\n");
+#endif
     __exit(0);
 }

@@ -25,6 +25,12 @@ void tlibc_test()
     while(1);
 }
 
+//x86_64默认的入口
+void main()
+{
+    tlibc_test();
+}
+
 void read_test()
 {
     char *str = "Hello, tlibc_test!\n";

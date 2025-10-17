@@ -228,7 +228,7 @@ void print_promt()
 void shell()
 {
     LOG("欢迎使用Tlibc Shell!\n");
-    LOG("这是第一个版本, 只能输入输出, 按q退出shell\n");
+    LOG("使用help查看支持的命令, 输入q退出shell\n");
     LOG("不要输入方向键好吗，这个版本不支持\n");
 
     while(1)
@@ -252,6 +252,12 @@ void shell()
             __printf("读取错误!重新读取\n");
             continue;
         }
+//发现在x86_64的ubuntu上，读取一行输出时，读取的enter键输入会当成10(LF)写入缓冲区
+//内核读取到entera键输入会自动换行
+#if X86_64_TLIBC == 1
+        // __printf("字面值: %d.",buf[read_count-1]);
+        buf[read_count-1] = 0;
+#endif
         if(buf[0]=='q' && buf[1]==0)    //输入是单字符就退出
             break;
         if(buf[0]==0)

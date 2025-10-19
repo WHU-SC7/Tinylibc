@@ -1,0 +1,14 @@
+ENTRY(__tlibc_start)  /* 指定入口点为 __tlibc_start */
+
+/* 指定输出文件的格式和目标架构 */
+OUTPUT_FORMAT(elf64-x86-64)
+OUTPUT_ARCH(i386:x86-64)
+
+/* 指定内存布局 */
+SECTIONS
+{
+    . = 0x400000;  /* 设置入口地址为 4MB */
+    .text : { *(.text) }  /* 文本段 */
+    .data : { *(.data) }  /* 数据段 */
+    .bss : { *(.bss) }    /* 未初始化数据段 */
+}

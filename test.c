@@ -26,7 +26,13 @@ void tlibc_test()
 }
 
 //x86_64默认的入口
-void main()
+// int main()
+// {
+//     tlibc_test();
+// }
+
+// tlibc的入口函数
+void __tlibc_start()
 {
     tlibc_test();
 }

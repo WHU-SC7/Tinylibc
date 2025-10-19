@@ -209,3 +209,8 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 2. 修改shell读取输入的逻辑，以符合ubuntu内核的标准
 3. 修改struct stat的布局。然后各命令基本正常了！
 4. 更新help的提示信息
+
+# 2025.10.19
+[feat] 规范makefile。彻底去除标准库
+1. 注释了每个编译选项的作用，调整编译选项
+1. 现在链接出的程序是纯净的了，一点标准库都没有。增加链接脚本，在x64最好从0x400000开始链接

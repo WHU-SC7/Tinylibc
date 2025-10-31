@@ -214,3 +214,6 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 [feat] 规范makefile。彻底去除标准库
 1. 注释了每个编译选项的作用，调整编译选项
 1. 现在链接出的程序是纯净的了，一点标准库都没有。增加链接脚本，在x64最好从0x400000开始链接
+# 2025.10.30
+[feat] 增加获取终端长宽度的功能，准备开发命令行游戏
+1. 所有游戏以game函数作为入口，有更多游戏之后把game作为游戏管理器程序

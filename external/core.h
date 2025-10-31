@@ -25,6 +25,8 @@ pid_t __waitpid(int pid, int *wstatus, int options);
 pid_t __wait(int *wstatus);
 int __execve(const char *pathname, char *const argv[], char *const envp[]);
 
+int __ioctl(int fd, unsigned long request, void *argp);
+
 //printf
 void print_int(int num);
 void __printf(const char *fmt, ...);

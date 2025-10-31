@@ -18,5 +18,7 @@
 #define SYS_wait4       __NR_wait4
 #define SYS_execve      __NR_execve
 
+#define SYS_ioctl __NR_ioctl
+
 // SC7自定义，在qemu才有效
 #define SYS_shutdown 1000

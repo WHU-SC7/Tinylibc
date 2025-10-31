@@ -16,4 +16,7 @@ void cp(int argc, char *argv[]);
 //shell内置命令
 int __internal_chdir(int argc, char *argv[]);
 int __internal_help(int argc, char *argv[]);
+
+//game
+void game(int argc, char *argv[]);
 #endif

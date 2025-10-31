@@ -142,6 +142,13 @@ int __execve(const char *pathname, char *const argv[],
     return syscall(SYS_execve, pathname, argv, envp);
 }
 
+//获取终端长宽
+int __ioctl(int fd, unsigned long request, void *argp)
+{
+    return syscall(SYS_ioctl, fd, request, argp);
+}
+
+
 //string.h
 /**
  * @brief 应为string.h的标准库函数，为了避免同名冲突，命名加上下划线

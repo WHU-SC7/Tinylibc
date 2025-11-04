@@ -217,3 +217,8 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 # 2025.10.30
 [feat] 增加获取终端长宽度的功能，准备开发命令行游戏
 1. 所有游戏以game函数作为入口，有更多游戏之后把game作为游戏管理器程序
+
+# 2025.11.4
+[feat] 第一个命令行游戏! 吃豆人! 增加很多调用
+1. 新调用都是游戏需要的
+2. 增加make debug

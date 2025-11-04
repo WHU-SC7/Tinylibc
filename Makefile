@@ -82,6 +82,9 @@ disassemb:
 	$(OBJDUMP) -S -C $(Tlibc_exe) > $(dis_file)
 	@echo "反汇编得到文件"$(dis_file)
 
+debug: all
+	strace $(Tlibc_exe)
+
 #再向下是原来用于riscv的部分
 
 

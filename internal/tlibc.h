@@ -65,4 +65,53 @@ struct timespec {
 //参考man 2 fstat
 #include "stat.h"
 
+//信号结构体
+typedef long clock_t;
+typedef union sigval {
+    int   sival_int;    // 整数值
+    void *sival_ptr;    // 指针值
+} sigval_t;
+
+typedef struct {
+    int      si_signo;     /* 信号编号 */
+    int      si_errno;     /* 错误号（通常为0） */
+    int      si_code;      /* 信号代码 */
+    int      si_trapno;    /* 陷阱号导致硬件信号 */
+    pid_t    si_pid;       /* 发送进程的PID */
+    uid_t    si_uid;       /* 发送进程的真实用户ID */
+    int      si_status;    /* 退出值或信号 */
+    clock_t  si_utime;     /* 消耗的用户时间 */
+    clock_t  si_stime;     /* 消耗的系统时间 */
+    sigval_t si_value;     /* 信号值 */
+    int      si_int;       /* POSIX.1b信号 */
+    void    *si_ptr;       /* POSIX.1b信号 */
+    int      si_overrun;   /* 计时器溢出计数 */
+    int      si_timerid;   /* 计时器ID */
+    void    *si_addr;      /* 导致故障的内存地址 */
+    long     si_band;      /* Band event (POSIX.1b信号) */
+    int      si_fd;        /* 文件描述符 */
+    short    si_addr_lsb;  /* 地址的最低有效位 */
+    void    *si_lower;     /* 冲突访问范围的下限 */
+    void    *si_upper;     /* 冲突访问范围的上限 */
+    int      si_pkey;      /* 导致访问错误的保护键 */
+    void    *si_call_addr; /* 系统调用指令的地址 */
+    int      si_syscall;   /* 系统调用编号 */
+    unsigned int si_arch;  /* 系统调用的体系结构 */
+} siginfo_t;
+
+#define _NSIG       64    // 最大信号数量
+#define _NSIG_BPW   64    // 每个字的位数（Bits Per Word）
+
+// 计算需要的字数
+#define _NSIG_WORDS (_NSIG / _NSIG_BPW)
+typedef struct {
+	unsigned long sig[_NSIG_WORDS];
+} sigset_t;
+struct sigaction {
+               void     (*sa_handler)(int);
+               int        sa_flags;
+               void     (*sa_restorer)(void);
+               sigset_t   sa_mask;
+           };
+
 #endif

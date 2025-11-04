@@ -148,6 +148,106 @@ int __ioctl(int fd, unsigned long request, void *argp)
     return syscall(SYS_ioctl, fd, request, argp);
 }
 
+//内存分配
+long __brk(void *addr)
+{
+    return syscall(SYS_brk, addr);
+}
+
+//睡眠
+int __nanosleep(const struct timespec *req, struct timespec *rem)
+{
+    return syscall(SYS_nanosleep, req, rem);
+}
+
+//信号
+int __sigaction(int signum, const struct sigaction *act,
+                     struct sigaction *oldact)
+{
+    return syscall(SYS_rt_sigaction, signum, act, oldact, 8); //8是信号集大小，在x64是这么多
+}
+
+void rt_sig_restore(void)//默认的信号处理返回函数
+{
+    void __printf(const char *fmt, ...);
+    // __printf("进入恢复函数\n");
+    __asm__ volatile (
+        "mov $15, %%rax\n\t"    // __NR_rt_sigreturn = 15
+        "syscall\n\t"           // 64位系统调用
+        :
+        :
+        : "rax", "memory"
+    );
+}
+
+int tlibc_sigaction(int signum, void (*handler)(int))//包装系统调用，提供设置信号处理函数的接口
+{
+    struct sigaction sig;
+
+    void *__memset(void *dst, int value, unsigned int n);
+    __memset(&sig, 0, sizeof(struct sigaction));
+    #define SA_RESTORER   0x04000000
+    sig.sa_handler = handler;
+    sig.sa_restorer = rt_sig_restore; //默认信号返回函数
+    sig.sa_flags = SA_RESTORER; //声明设置了信号返回函数
+    unsigned long mask = 0;
+    sig.sa_mask.sig[0] = mask;
+    return __sigaction(signum, &sig, (void *)0);
+}
+
+int __pipe2(int pipefd[2], int flags)//创建管道
+{
+    return syscall(SYS_pipe2, pipefd, flags);
+}
+
+int __yield()//主动让出CPU
+{
+    return syscall(SYS_sched_yield);
+}
+
+#define CLONE_VM        0x00000100  /* 共享内存空间 */
+#define CLONE_FS        0x00000200  /* 共享工作目录等 */
+#define CLONE_FILES     0x00000400  /* 共享文件描述符表 */
+#define CLONE_SIGHAND   0x00000800  /* 共享信号处理函数 */
+#define CLONE_THREAD    0x00010000  /* 让它成为同进程的线程 */
+#define CLONE_FLAGS (CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD)
+long __clone(unsigned long flags, void *stack, int *parent_tid, int *child_tid, unsigned long tls)
+{
+    return syscall(SYS_clone, flags, stack, parent_tid, child_tid, tls);
+}
+
+long tlibc_clone_thread(void *stack)//创建线程,失败了
+{
+    return __clone(CLONE_FLAGS, stack, 0, 0, 0);
+}
+
+pid_t __setsid(void)//不明
+{
+    return syscall(SYS_setsid);
+}
+
+int __rt_sigprocmask(int how, const sigset_t *set,  //信号屏蔽,不明
+                         sigset_t *oldset, size_t sigsetsize)
+{
+    return syscall(SYS_rt_sigprocmask, how, set, oldset, sigsetsize);
+}
+
+int __kill(pid_t pid, int sig)//发送信号，不明
+{
+    return syscall(SYS_kill, pid, sig);
+}
+
+pid_t __getpid(void)//获取pid
+{
+    return syscall(SYS_getpid);
+}
+
+//获取随机数
+ssize_t __getrandom(void *buf, size_t buflen, unsigned int flags)
+{
+    return syscall(SYS_getrandom, buf, buflen, flags);
+}
+
 
 //string.h
 /**

@@ -1,13 +1,36 @@
 #include "core.h"
 #include "tlibc.h"
 #include "tlibc_print.h"
+#include "sig_num.h"
 
 //还没想好test.c怎么做
+void sigint_exit()
+{
+    __printf("收到sigint信号,退出\n");
+    int status;
+    __wait(&status);
+    __exit(0);
+}
+
+void block_terminal_control(void) //未验证，但strace显示rt_sigprocmaski返回值是0
+{
+    sigset_t set;
+    __memset((void *)&set, 0, sizeof(set));
+    *(long *)set.sig |= (1UL << (SIGTTIN - 1));  // 后台读
+    *(long *)set.sig |= (1UL << (SIGTTOU - 1));  // 后台写  
+    *(long *)set.sig |= (1UL << (SIGTSTP - 1));  // Ctrl+Z
+    __rt_sigprocmask(SIG_BLOCK, &set, (void *)0, 8);
+}
 
 //主测试函数
 void tlibc_test()
 {
     //brk测试
+    long ret = __brk(0);
+    char *ptr  = (char *)__brk((void *)(ret+1024*16)); //分配16k内存示例
+    ptr -= 1024*16;
+    for(int i=0; i<1024*16; i++)
+        ptr[i] = '0';
     //分配然后使用内存
 
     /*printf测试*/
@@ -15,6 +38,9 @@ void tlibc_test()
     __printf("hello!print, number is: %d,next: %d,%d,%d,%d,%d,%d,%d,%d\n",11111,222,3333333,444,5,6,7,114514,1919810);
     __printf("测试!,%d,%d,%d,%d,%d\n",12414,535,3257,73744,1453);
     // __printf("\7\0",1,2,3,4,5,6,7,8,9,10);
+
+    tlibc_sigaction(2,sigint_exit);//SIGINT
+    block_terminal_control();
 
     //shell应用
     void shell();

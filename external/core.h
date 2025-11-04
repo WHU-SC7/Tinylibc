@@ -27,6 +27,24 @@ int __execve(const char *pathname, char *const argv[], char *const envp[]);
 
 int __ioctl(int fd, unsigned long request, void *argp);
 
+long __brk(void *addr);
+int __nanosleep(const struct timespec *req, struct timespec *rem);
+int __sigaction(int signum, const struct sigaction *act, struct sigaction *oldact);
+int tlibc_sigaction(int signum, void (*handler)(int));
+int __pipe2(int pipefd[2], int flags);
+int __yield();
+pid_t __setsid(void);
+int __rt_sigprocmask(int how, const sigset_t *set, sigset_t *oldset, size_t sigsetsize);
+int __kill(pid_t pid, int sig);
+pid_t __getpid(void);
+ssize_t __getrandom(void *buf, size_t buflen, unsigned int flags);
+//clone待验证
+long __clone(unsigned long flags, void *stack, int *parent_tid, int *child_tid, unsigned long tls);
+long tlibc_clone_thread(void *stack);
+
+//string操作
+void *__memset(void *dst, int value, unsigned int n);
+
 //printf
 void print_int(int num);
 void __printf(const char *fmt, ...);

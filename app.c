@@ -38,11 +38,13 @@ void (*command_func_table[MAX_COMMANDS])(int argc, char *argv[]) = { //命令的
 char *internal_command_table[] = {
     "cd",
     "help",
+    "dgame", //用于strace调试
 };
 
 int (*internal_command_func_table[MAX_COMMANDS])(int argc, char *argv[]) = {
     __internal_chdir,
     __internal_help,
+    (int (*)(int,  char **))game,
 };
 
 #define COMMAND_MAX_LEN 16 //命令的最大长度

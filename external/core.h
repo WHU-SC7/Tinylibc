@@ -28,6 +28,7 @@ int __execve(const char *pathname, char *const argv[], char *const envp[]);
 int __ioctl(int fd, unsigned long request, void *argp);
 
 long __brk(void *addr);
+void *tlibc_malloc(unsigned long size);
 int __nanosleep(const struct timespec *req, struct timespec *rem);
 int __sigaction(int signum, const struct sigaction *act, struct sigaction *oldact);
 int tlibc_sigaction(int signum, void (*handler)(int));
@@ -44,6 +45,7 @@ long tlibc_clone_thread(void *stack);
 
 //string操作
 void *__memset(void *dst, int value, unsigned int n);
+void *__memmove(void *dest, const void *src, size_t n);
 
 //printf
 void print_int(int num);

@@ -222,3 +222,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 [feat] 第一个命令行游戏! 吃豆人! 增加很多调用
 1. 新调用都是游戏需要的
 2. 增加make debug
+
+# 2025.11.5
+[feat] 增加vim,能阅读文件
+1. 还有一些小修改。game增加提示信息，增加tlibc_malloc，更新help信息

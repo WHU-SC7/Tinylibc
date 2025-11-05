@@ -116,12 +116,12 @@ void __game_pacman()
     if (__ioctl(1, TIOCGWINSZ, &w) < 0) {
         panic("获取终端信息失败\n"); // 失败
     }
-    if(w.ws_row < SNAKE_SCREEN_WIDTH*2)
+    if(w.ws_row < SNAKE_SCREEN_WIDTH*2+4)
     {
-        PRINT_COLOR(RED_COLOR_PRINT, "屏幕宽度是%d, 小于游戏的要求: %d\n", w.ws_row, SNAKE_SCREEN_WIDTH*2);
+        PRINT_COLOR(RED_COLOR_PRINT, "屏幕宽度是%d, 小于游戏的要求: %d\n", w.ws_row, SNAKE_SCREEN_WIDTH*2+4);
         __exit(0);
     }
-    if(w.ws_col < SNAKE_SCREEN_LENGTH*2)
+    if(w.ws_col < SNAKE_SCREEN_LENGTH*3)
     {
         PRINT_COLOR(RED_COLOR_PRINT, "屏幕长度是%d, 小于游戏的要求: %d\n", w.ws_col, SNAKE_SCREEN_LENGTH*2);
         __exit(0);
@@ -263,7 +263,8 @@ void __game_pacman()
         }
         screen[snake_head_y][snake_head_x] = snake_head_char;
         __printf(CLEAR_SCREEN CURSOR_HOME);
-        __printf("得分: %d\n", score);
+        PRINT_COLOR(GREEN_COLOR_PRINT, "Ctrl+C的SIGINT信号已屏蔽!按q退出游戏.\n您可以修改游戏C文件更改地图大小,游戏速度,甚至游戏逻辑\n");
+        __printf(BLUE_COLOR_PRINT"得分: %d\n"COLOR_RESET, score);
         render_frame();
         __write(1, &final_input, 1);
     }

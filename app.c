@@ -17,6 +17,7 @@ char *command_table[] = { //命令的名称表，同一命令在名称表和函�
     "mv",
     "cp",
     "game",
+    "vim",
 };
 
 #define MAX_COMMANDS 64
@@ -32,6 +33,7 @@ void (*command_func_table[MAX_COMMANDS])(int argc, char *argv[]) = { //命令的
     mv,
     cp,
     game,
+    vim,
 };
 
 // 内置命令，shell按函数调用的方式执行

@@ -154,6 +154,14 @@ long __brk(void *addr)
     return syscall(SYS_brk, addr);
 }
 
+void *tlibc_malloc(unsigned long size)
+{
+    long ret = __brk(0);
+    char *ptr  = (char *)__brk((void *)(ret+size)); //分配16k内存示例
+    ptr -= size;
+    return (void *)ptr;
+}
+
 //睡眠
 int __nanosleep(const struct timespec *req, struct timespec *rem)
 {
@@ -262,6 +270,23 @@ void *__memset(void *dst, int value, unsigned int n)
         cdst[i] = value;
     }
     return dst;
+}
+
+void *__memmove(void *dest, const void *src, size_t n) //简单的memmove, 不考虑重叠情况
+{
+    char *cdest = (char *)dest;
+    char *csrc = (char *)src;
+    char buf[n];
+    for(int i=0; i<n; i++)
+    {
+        buf[i] = csrc[i];
+    }
+    for(int i=0; i<n; i++)
+    {
+        cdest[i] = buf[i];
+    }
+
+    return dest;
 }
 
 //printf

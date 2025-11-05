@@ -19,4 +19,7 @@ int __internal_help(int argc, char *argv[]);
 
 //game
 void game(int argc, char *argv[]);
+
+//vim
+void vim(int argc, char *argv[]);
 #endif

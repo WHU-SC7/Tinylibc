@@ -114,4 +114,8 @@ struct sigaction {
                sigset_t   sa_mask;
            };
 
+#define SEEK_SET 0//绝对
+#define SEEK_CUR 1//当前文件偏移量
+#define SEEK_END 2//从末尾
+
 #endif

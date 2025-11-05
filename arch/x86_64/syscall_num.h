@@ -32,5 +32,7 @@
 
 #define SYS_ioctl __NR_ioctl
 
+#define SYS_lseek       __NR_lseek
+
 // SC7自定义，在qemu才有效
 #define SYS_shutdown 1000

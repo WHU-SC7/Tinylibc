@@ -192,3 +192,27 @@ void openat_append_test()
     __write(openret,"append input",12);
     __close(openret);
 }
+
+void kill_test()
+{
+    //kill测试
+    tlibc_sigaction(2,sigint_exit);//SIGINT
+    int pid = __fork();
+    if(pid == 0)
+    {
+        while(1)
+        {
+
+        tlibc_msleep(100);
+        __printf("子进程存活");
+        }
+    }
+    else
+    {
+        while(1)
+        {
+        tlibc_msleep(500);
+        __kill(pid, 2);
+        }
+    }
+}

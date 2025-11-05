@@ -226,3 +226,6 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 # 2025.11.5
 [feat] 增加vim,能阅读文件
 1. 还有一些小修改。game增加提示信息，增加tlibc_malloc，更新help信息
+
+# 2025.11.5
+[feat] vim能修改文件。还有一些小问题

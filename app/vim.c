@@ -19,23 +19,73 @@ char *line_start_table[VIM_LINE_LIMIT];//存着buf中文件内容每行的起始
 int max_line;//最大行数
 struct winsize w; //存储终端长宽度
 
+int cursor_x=1;
+int cursor_y=1;
+int file_line=0;
+
+//自定义键值
+#define KEY_UP     0x11    // DC1 - 设备控制1
+#define KEY_DOWN   0x12    // DC2 - 设备控制2  
+#define KEY_LEFT   0x13    // DC3 - 设备控制3
+#define KEY_RIGHT  0x14    // DC4 - 设备控制4
 int vim_input_process(int pipe_write_fd)//专门读取键盘输入的进程
 {
     while(1)
     {
-        char input = 0;
-        int ret = __read(0, &input, 1); //阻塞读取
+        char input[16];
+        int ret = __read(0, input, 3); //阻塞读取
         if(ret == 1)
         {
-            int ret = __write(pipe_write_fd, &input, 1);
-            if(input == 'q')
+            int ret = __write(pipe_write_fd, input, 1);
+            if(input[0] == 'q')
                 __exit(0);
             if(ret != 1)
                 panic("ret: %d", ret);
             // __write(0, &input, 1);
         }
-        else
-            panic("ret != 1");
+        else if(ret == 2)
+        {
+            // __creat("vim出现错误!", 0644);
+            input[0] = 'q';
+            __write(pipe_write_fd, input, 1);
+            __exit(0);
+        }
+        else if(ret == 3) //1次三个字节，是转义序列
+        {
+            if(input[0] == 27)//0x1b(ESC) 转义序列开头，读取完整的序列
+            {
+                // char tmp;
+                // __write(pipe_write_fd, &input, 1);
+                // __read(0, &tmp, 1);
+                if(input[1] == 91) //0x5b [
+                {
+                    // __read(0, &tmp, 1);
+                    switch (input[2])
+                    {
+                    case 0x41: //A, 方向上
+                        input[0] = KEY_UP;
+                        __write(pipe_write_fd, input, 1);
+                        // __creat("转义序列上", 0644);
+                        break;
+                    case 0x42: //B, 方向下
+                        input[0] = KEY_DOWN;
+                        __write(pipe_write_fd, input, 1);
+                        break;
+                    case 0x43: //C, 方向右
+                        input[0] = KEY_RIGHT;
+                        __write(pipe_write_fd, input, 1);
+                        break;
+                    case 0x44: //D, 方向左
+                        input[0] = KEY_LEFT;
+                        __write(pipe_write_fd, input, 1);
+                        break;
+                    default:
+                        continue; //忽略
+                        break;
+                    }
+                }
+            }
+        }
     }
     __exit(0);
     return 0;
@@ -52,13 +102,18 @@ void exit_handler(int num)
             __printf("恢复原终端设置\n");
             __ioctl(0, TCSETS, &vim_orig_termios);
         }
-        __kill(vim_child_pid, SIGINT);
         __exit(0);
     }
     if(__getpid()==vim_child_pid)//似乎没用
     {
         __exit(0);
     }
+}
+
+void exit()//主进程让读取输入进程退出
+{
+    // __creat("进程受到信号退出", 0644);
+    __exit(0);
 }
 
 void vim_calcu_line_table(char *buf, int line_length)
@@ -86,8 +141,19 @@ void vim_calcu_line_table(char *buf, int line_length)
         }
         char_count++;
     }
-    line_start_table[line_count] = ptr+1;
+    line_start_table[line_count] = ptr+1; //让文件最后一行能输出
+    file_line = line_count;
     max_line = line_count;
+    // __printf("file_line: %d\n",file_line);
+    // __printf("最大行索引: %d\n", max_line);
+    // for(int i=0; i<max_line; i++)
+    // {
+    //     __printf("%d", i);
+    //     if(line_start_table[i])
+    //     __write(1, line_start_table[i], line_start_table[i+1]-line_start_table[i]);
+    // }
+    // __write(1, "\n", 1);
+    // while(1);
 }
 
 void vim_render_line(int start_line, int line_num)
@@ -131,6 +197,10 @@ void vim(int argc, char *argv[])
     // char *buf = (char *)tlibc_malloc(VIM_BUF_SIZE);
     __memset(buf, 0, VIM_BUF_SIZE);
     int fd = __openat(AT_FDCWD,file_name,O_RDWR,0644);
+    if(fd < 0)
+    {
+        __exit(-2);
+    }
     struct stat statbuf;
     __memset((char *)&statbuf, 0, sizeof(statbuf));
     __fstat(fd,&statbuf);
@@ -145,6 +215,8 @@ void vim(int argc, char *argv[])
 
     __printf(ALT_SCREEN_ON); //使用新的终端缓冲区输出
     __printf(CLEAR_SCREEN CURSOR_HOME); // 清屏并移动到左上角
+    tlibc_sigaction(2,exit_handler);//SIGINT
+    tlibc_sigaction(40,exit);
 
     //这一段应用设置之后，终端输入模式改变
     struct termios t;
@@ -185,6 +257,11 @@ void vim(int argc, char *argv[])
 
     // vim_render_frame(buf, w.ws_row, w.ws_col);
     int first_line=0;//在终端显示的第一行在文件中的行数
+    int input_mode=0;
+    int command_mode=0;
+    char command_buf[64];
+    int command_char_count=0;
+    __memset(command_buf, 0, 64);
     while(1)
     {
         char final_input = 194;
@@ -198,15 +275,117 @@ void vim(int argc, char *argv[])
         {
             exit_handler(114); //退出
         }
+
+        if(input_mode)
+        {
+            int limit;
+            switch (final_input)
+            {
+            case KEY_UP :
+                if(cursor_y>1)
+                    cursor_y--;
+                //向上翻页逻辑
+                break;
+            case KEY_DOWN :
+                if(max_line - first_line < w.ws_row-1)
+                    limit = max_line - first_line;
+                else
+                    limit = w.ws_row-1;
+                if(cursor_y<limit)
+                    cursor_y++;
+                //向下翻页逻辑
+                break;
+            case KEY_RIGHT :
+                if(cursor_x<w.ws_col-1)
+                    cursor_x++;
+                break;
+            case KEY_LEFT :
+                if(cursor_x>1)
+                    cursor_x--;
+                break;
+            case 27 ://ESC
+                // __creat("ESC!", 0644);
+                // __kill(vim_child_pid, 40); //让读取输入进程退出
+                input_mode=0;
+                break;
+            default:
+                if(final_input != (char)-62) //替换
+                {
+                    line_start_table[cursor_y-1][cursor_x-1] = final_input;
+                    __write(1, &final_input, 1);
+                }
+                if(final_input == 194)
+                    continue;
+                break;
+            }
+                __printf("\033[%d;%dH", cursor_y, cursor_x);
+            // __printf(CLEAR_SCREEN CURSOR_HOME);
+            // vim_render_line(first_line, w.ws_row-1);//除了最后一行，都输出文件内容
+            // if(final_input != (char)-62) //在最下行显示用户输入
+            //     __write(1, &final_input, 1);
+
+            continue;
+        }
+
+        if(command_mode)
+        {
+            switch (final_input)
+            {
+            case KEY_UP :
+                break;
+            case KEY_DOWN :
+                break;
+            case KEY_RIGHT :
+                break;
+            case KEY_LEFT :
+                break;
+            case 10 ://enter
+                command_mode=0;
+                //执行输入的命令
+                if(command_buf[0]=='w'&&command_buf[1]==0) // :w保存文件
+                {
+                    __lseek(fd, 0, SEEK_SET);
+                    __write(fd, buf, file_size);
+                    __memset(command_buf, 0, 64);
+                }
+                continue;
+                break;
+            default:
+                break;
+            }
+            // __printf(CLEAR_SCREEN CURSOR_HOME);
+            // vim_render_line(first_line, w.ws_row-1);//除了最后一行，都输出文件内容
+            if(final_input != (char)-62)
+            {
+                __write(1, &final_input, 1);
+                command_buf[command_char_count++] = final_input;
+            }
+            continue;
+        }
+
         switch (final_input)
         {
-        case 'w':
+        case 'w': 
+        case KEY_UP :
             if(first_line > 0)
                 first_line--;
             break;
         case 's':
+        case KEY_DOWN :
             if(first_line < max_line-2)
                 first_line++;
+            break;
+
+        case 'i' :
+            input_mode=1;
+            break;
+        case ':' :
+            command_mode=1;
+            break;
+        case 27 ://ESC
+            // __creat("ESC!", 0644);
+            // __kill(vim_child_pid, 40); //让读取输入进程退出
+            input_mode=0;
             break;
         
         default:
@@ -216,6 +395,7 @@ void vim(int argc, char *argv[])
         __printf(CLEAR_SCREEN CURSOR_HOME);
         // __printf("宽度: %d", w.ws_row);
         vim_render_line(first_line, w.ws_row-1);//除了最后一行，都输出文件内容
+        __printf("\033[%d;%dH", w.ws_row, 1); //移动到最下面一行
         if(final_input != (char)-62) //在最下行显示用户输入
             __write(1, &final_input, 1);
     }

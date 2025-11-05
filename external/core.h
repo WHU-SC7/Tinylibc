@@ -30,6 +30,7 @@ int __ioctl(int fd, unsigned long request, void *argp);
 long __brk(void *addr);
 void *tlibc_malloc(unsigned long size);
 int __nanosleep(const struct timespec *req, struct timespec *rem);
+int tlibc_msleep(unsigned int msecond);
 int __sigaction(int signum, const struct sigaction *act, struct sigaction *oldact);
 int tlibc_sigaction(int signum, void (*handler)(int));
 int __pipe2(int pipefd[2], int flags);
@@ -39,6 +40,7 @@ int __rt_sigprocmask(int how, const sigset_t *set, sigset_t *oldset, size_t sigs
 int __kill(pid_t pid, int sig);
 pid_t __getpid(void);
 ssize_t __getrandom(void *buf, size_t buflen, unsigned int flags);
+off_t __lseek(int fd, off_t offset, int whence);
 //clone待验证
 long __clone(unsigned long flags, void *stack, int *parent_tid, int *child_tid, unsigned long tls);
 long tlibc_clone_thread(void *stack);

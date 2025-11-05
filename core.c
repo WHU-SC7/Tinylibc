@@ -168,6 +168,25 @@ int __nanosleep(const struct timespec *req, struct timespec *rem)
     return syscall(SYS_nanosleep, req, rem);
 }
 
+//睡眠指定的毫秒数
+int tlibc_msleep(unsigned int msecond)
+{
+    struct timespec time;
+    if(msecond < 1000)
+    {
+        time.st_atime_sec = 0;
+        time.st_atime_nsec = msecond*1000000;
+        __nanosleep(&time, &time);
+    }
+    else
+    {
+        time.st_atime_sec = msecond / 1000;
+        time.st_atime_nsec = (msecond%1000)*1000000;
+        __nanosleep(&time, &time);
+    }
+    return 0;
+}
+
 //信号
 int __sigaction(int signum, const struct sigaction *act,
                      struct sigaction *oldact)
@@ -256,6 +275,10 @@ ssize_t __getrandom(void *buf, size_t buflen, unsigned int flags)
     return syscall(SYS_getrandom, buf, buflen, flags);
 }
 
+off_t __lseek(int fd, off_t offset, int whence)
+{
+    return syscall(SYS_lseek, fd, offset, whence);
+}
 
 //string.h
 /**

@@ -280,6 +280,11 @@ off_t __lseek(int fd, off_t offset, int whence)
     return syscall(SYS_lseek, fd, offset, whence);
 }
 
+int __ftruncate(int fd, off_t length)
+{
+    return syscall(SYS_ftruncate, fd, length);
+}
+
 //string.h
 /**
  * @brief 应为string.h的标准库函数，为了避免同名冲突，命名加上下划线

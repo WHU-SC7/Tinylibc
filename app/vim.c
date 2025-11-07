@@ -346,15 +346,16 @@ void vim(int argc, char *argv[])
 
         if(insert_mode)//插入模式
         {
-            // int limit;
             switch (final_input)
             {
             case KEY_UP :
-                if(cursor_y==1 && first_line>0)//需要翻页
+                //接近顶部时翻页
+                if(cursor_y<4 && first_line>0)//需要翻页
                 {
                     first_line--;
                     __printf(CLEAR_SCREEN CURSOR_HOME);
                     vim_render_line(first_line, w.ws_row-1);
+                    continue;
                 }
                 if(cursor_y>1)
                     cursor_y--;
@@ -363,33 +364,87 @@ void vim(int argc, char *argv[])
                     cursor_x = char_num;
                 break;
             case KEY_DOWN :
-                //一般模式下翻页允许在底部继续翻页，可能导致limit行以下的部分是空的
-                // if(max_line - first_line < w.ws_row-1)
-                //     limit = max_line - first_line;
-                // else
-                //     limit = w.ws_row-1;
                 //插入模式不允许在底部继续翻页
-                if(cursor_y==w.ws_row-1 && first_line < max_line-2)//翻页需要重新渲染一次
-                {//因为程序每0.02秒会循环一次，只在翻页时渲染是合适的
+                if(max_line - first_line < w.ws_row-1)
+                {
+                    if(cursor_y<max_line - first_line)//到底了，不改变first_line
+                    {
+                        cursor_y++;
+                        char_num = vim_get_line_length(first_line + cursor_y-1);
+                        if(first_line + cursor_y == max_line)//总之vim设计上，最后一个字符不能修改，否则会异常
+                            char_num--;
+                        if(cursor_x > char_num)
+                            cursor_x = char_num;
+                        __printf("\033[%d;%dH", cursor_y, cursor_x);
+                        continue;
+                    }
+                    else
+                        continue;
+                }
+                //接近底部时翻页
+                if(cursor_y>w.ws_row-4 && max_line - first_line > w.ws_row-1)//翻页需要重新渲染一次
+                {
                     first_line++;
                     __printf(CLEAR_SCREEN CURSOR_HOME);
                     vim_render_line(first_line, w.ws_row-1);
+                    char_num = vim_get_line_length(first_line + cursor_y-1);
+                    if(cursor_x > char_num) //光标y不需要动，改变x适应新行的长度
+                        cursor_x = char_num;
+                    __printf("\033[%d;%dH", cursor_y, cursor_x);
+                    continue;
                 }
                 if(cursor_y<w.ws_row-1)
                     cursor_y++;
                 char_num = vim_get_line_length(first_line + cursor_y-1);
+                if(first_line + cursor_y == max_line)//总之vim设计上，最后一个字符不能修改，否则会异常
+                    char_num--;
                 if(cursor_x > char_num)
                     cursor_x = char_num;
-                //向下翻页逻辑
+                __printf("\033[%d;%dH", cursor_y, cursor_x);
+                continue;
                 break;
             case KEY_RIGHT :
                 char_num = vim_get_line_length(first_line + cursor_y-1);//这一行的字符数
-                if(cursor_x<char_num)
+                if(first_line + cursor_y == max_line)//总之vim设计上，最后一个字符不能修改，否则会异常
+                    char_num--;
+                if(cursor_x<char_num)//移动光标，不能超过这一行
                     cursor_x++;
+                __printf("\033[%d;%dH", cursor_y, cursor_x);
+                continue;
                 break;
             case KEY_LEFT :
                 if(cursor_x>1)
                     cursor_x--;
+                break;
+            case 127 : //backspace输入是0x7f
+                int back_line_x = vim_get_line_length(first_line+cursor_y-2); //保存上一行的字符数，如果退格退到上一行，就到这个位置
+                if(first_line==0 && cursor_x==1 && cursor_y==1) //文件开头，不删除
+                    continue;
+                char *ptr = &line_start_table[first_line + cursor_y-1][cursor_x-1]; //前移一格
+                unsigned long move_size = file_size - (ptr - buf);
+                for(int i=0; i<move_size+2; i++) //src和dest重叠的memmove
+                {
+                    *(ptr-1+i) = *(ptr+i);
+                }
+                buf[file_size-1]=0;
+                file_size--;
+                //移动字符后，行索引失效了。重新计算行索引，并更新屏幕
+                vim_calcu_line_table(buf, w.ws_col);
+                __printf(CLEAR_SCREEN CURSOR_HOME);
+                vim_render_line(first_line, w.ws_row-1);
+                //更新光标
+                if(cursor_x==1)//在行首，如果有上一行，
+                {
+                    if(cursor_y>1)
+                    {
+                        cursor_y--;
+                        cursor_x = back_line_x+1; //为什么+1? 不是算出来的，是因为测试之后发现+1合适
+                    }
+                }
+                if(cursor_x>1)
+                    cursor_x--;
+                __printf("\033[%d;%dH", cursor_y, cursor_x);//更新光标
+                continue;
                 break;
             case 27 ://ESC
                 insert_mode=0;
@@ -410,7 +465,15 @@ void vim(int argc, char *argv[])
                     vim_calcu_line_table(buf, w.ws_col);
                     __printf(CLEAR_SCREEN CURSOR_HOME);
                     vim_render_line(first_line, w.ws_row-1);
-                    // __write(1, &final_input, 1);
+                    if(final_input=='\n')
+                    {
+                        cursor_y++;
+                        cursor_x=1;
+                    }
+                    else
+                        cursor_x++;
+                    __printf("\033[%d;%dH", cursor_y, cursor_x);
+                    continue;
                 }
                 if(final_input == 194)
                     continue;
@@ -421,7 +484,7 @@ void vim(int argc, char *argv[])
             continue;
         }
 
-        if(command_mode)
+        if(command_mode) //命令模式
         {
             switch (final_input)
             {
@@ -439,8 +502,10 @@ void vim(int argc, char *argv[])
                 if(command_buf[0]=='w'&&command_buf[1]==0) // :w保存文件
                 {
                     __lseek(fd, 0, SEEK_SET);
+                    __ftruncate(fd, file_size); //改变文件大小，变小需要这样;变大无影响因为write会改变大小
                     __write(fd, buf, file_size);
                     __memset(command_buf, 0, 64);
+                    command_char_count=0;
                 }
                 continue;
                 break;
@@ -457,7 +522,7 @@ void vim(int argc, char *argv[])
             continue;
         }
 
-        switch (final_input)
+        switch (final_input) //普通模式
         {
         case 'w': 
         case KEY_UP :

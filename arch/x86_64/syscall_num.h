@@ -33,6 +33,7 @@
 #define SYS_ioctl __NR_ioctl
 
 #define SYS_lseek       __NR_lseek
+#define SYS_ftruncate   __NR_ftruncate
 
 // SC7自定义，在qemu才有效
 #define SYS_shutdown 1000

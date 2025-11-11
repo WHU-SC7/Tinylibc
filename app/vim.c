@@ -229,11 +229,8 @@ void vim(int argc, char *argv[])
     //这一段应用设置之后，终端输入模式改变
     struct termios t;
     __ioctl(0, TCGETS, &t);
-    t.c_lflag &= ~(ICANON | ECHO );//| ISIG); // 禁用规范模式、回显
-    // t.c_iflag = 0; // 这个会导致输出变形
-    t.c_oflag = 0; // 这个必须加上
-    t.c_cc[VMIN] = 0;   // 不等待字符
-    t.c_cc[VTIME] = 0;  // 无超时
+    //t.c_cflag = 0x4BF;// 保持不变，原终端设置是这么多
+    t.c_lflag &= ~(ICANON | ECHO );
     // 应用新设置
     __ioctl(0, TCSETS, &t);
     vim_termi_changed = 1;

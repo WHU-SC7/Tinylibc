@@ -246,3 +246,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 # 2025.11.7
 [feat] 测试系统调用耗时
+
+[fix] 修复struct termios的错误
+1. 我就说原来怎么设置了ISIG还屏蔽信号。原来是被ai骗了，struct termios前四个成员是int不是long
+2. 总之以后看linux的include/uapi/asm-generic的头文件更好

@@ -143,12 +143,10 @@ void __game_pacman()
 
     //这一段应用设置之后，终端输入模式改变
     struct termios t;
-    __ioctl(0, TCGETS, &t);
-    t.c_lflag &= ~(ICANON | ECHO );//| ISIG); // 禁用规范模式、回显
-    // t.c_iflag = 0; // 这个会导致输出变形
-    t.c_oflag = 0; // 这个必须加上
-    t.c_cc[VMIN] = 0;   // 不等待字符
-    t.c_cc[VTIME] = 0;  // 无超时
+    __ioctl(0, TCGETS, &t);//获取原终端设置
+    //t.c_cflag = 0x4BF;// 保持不变，原终端设置是这么多
+    //之前错误的版本把t.c_cflag设为0了
+    t.c_lflag &= ~(ICANON | ECHO );
     // 应用新设置
     __ioctl(0, TCSETS, &t);
     termi_changed = 1;
@@ -263,7 +261,7 @@ void __game_pacman()
         }
         screen[snake_head_y][snake_head_x] = snake_head_char;
         __printf(CLEAR_SCREEN CURSOR_HOME);
-        PRINT_COLOR(GREEN_COLOR_PRINT, "Ctrl+C的SIGINT信号已屏蔽!按q退出游戏.\n您可以修改游戏C文件更改地图大小,游戏速度,甚至游戏逻辑\n");
+        PRINT_COLOR(GREEN_COLOR_PRINT, "按q退出游戏.\n您可以修改游戏C文件更改地图大小,游戏速度,甚至游戏逻辑\n");
         __printf(BLUE_COLOR_PRINT"得分: %d\n"COLOR_RESET, score);
         render_frame();
         __write(1, &final_input, 1);

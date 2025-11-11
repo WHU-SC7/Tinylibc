@@ -35,5 +35,8 @@
 #define SYS_lseek       __NR_lseek
 #define SYS_ftruncate   __NR_ftruncate
 
+#define SYS_time        __NR_time
+#define SYS_clock_gettime       __NR_clock_gettime
+
 // SC7自定义，在qemu才有效
 #define SYS_shutdown 1000

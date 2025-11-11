@@ -243,3 +243,6 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 2. 按i进入插入模式，这个模式功能很完全了，对英文文件的增删都正常
 3. 按c的修改模式停止维护
 4. 多数模式下按q退出
+
+# 2025.11.7
+[feat] 测试系统调用耗时

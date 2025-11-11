@@ -16,4 +16,7 @@ typedef long ssize_t;           // 64位有符号，用于可能出错的大小
 typedef int pid_t;
 typedef unsigned long   size_t; // 64位无符号，用于大小和计数
 
+typedef unsigned long time_t;
+typedef int clockid_t;
+
 #endif

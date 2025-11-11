@@ -187,6 +187,16 @@ int tlibc_msleep(unsigned int msecond)
     return 0;
 }
 
+time_t __time(time_t *tloc)
+{
+    return syscall(SYS_time, tloc);
+}
+
+int __clock_gettime(clockid_t clockid, struct timespec *tp)
+{
+    return syscall(SYS_clock_gettime, clockid, tp);
+}
+
 //信号
 int __sigaction(int signum, const struct sigaction *act,
                      struct sigaction *oldact)
@@ -319,6 +329,44 @@ void *__memmove(void *dest, const void *src, size_t n) //简单的memmove, 不�
 
 //printf
 void print_int(int num)
+{
+    
+    char buf[32];
+    char c;
+    int count=0;
+    __memset((void *)buf,0,32);
+
+    //处理负数
+    if(num < 0)
+    {
+        num = -num;
+        char *negative = "-";
+        __write(stdout,negative,1);
+    }
+    if(num == 0)
+    {
+        count = 1;
+        buf[0] = '0';
+    }
+    while(num!=0)
+    {
+        c = num % 10; //从i最低位开始，计算每一位的数字
+        buf[count++] = c + 48; //向缓冲区写入对应字符，48表示字符0
+        num /= 10;
+    }
+
+    char tmp;
+    for(int i=0; i < count/2; i++) //反转，让字符串顺序正确
+    {
+        tmp = buf[i];
+        buf[i] = buf[(count-1)-i];
+        buf[(count-1)-i] = tmp;
+    }
+    
+    __write(stdout,buf,count);
+}
+
+void print_long(long num)
 {
     
     char buf[32];
@@ -506,6 +554,9 @@ void __printf(const char *fmt, ...)
             {
             case 'd':
                 print_int(get_va_arg(&va_list));
+                break;
+            case 'l':
+                print_long(get_va_arg(&va_list));
                 break;
             case 's':
                 //print_string

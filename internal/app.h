@@ -17,6 +17,9 @@ void cp(int argc, char *argv[]);
 int __internal_chdir(int argc, char *argv[]);
 int __internal_help(int argc, char *argv[]);
 
+//研究测试
+int __internal_test(int argc, char *argv[]);
+
 //game
 void game(int argc, char *argv[]);
 

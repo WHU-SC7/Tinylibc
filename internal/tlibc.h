@@ -114,8 +114,21 @@ struct sigaction {
                sigset_t   sa_mask;
            };
 
+//lseek选项
 #define SEEK_SET 0//绝对
 #define SEEK_CUR 1//当前文件偏移量
 #define SEEK_END 2//从末尾
+
+//clock_gettime选项
+#define CLOCK_REALTIME                  0//系统时间
+#define CLOCK_MONOTONIC                 1//系统已运行时间，不包含挂起
+#define CLOCK_PROCESS_CPUTIME_ID        2
+#define CLOCK_THREAD_CPUTIME_ID         3
+#define CLOCK_MONOTONIC_RAW             4//比CLOCK_MONOTONIC更纯净，不受NTP影响
+#define CLOCK_REALTIME_COARSE           5
+#define CLOCK_MONOTONIC_COARSE          6
+#define CLOCK_BOOTTIME                  7//比CLOCK_MONOTONIC多了挂起时间
+#define CLOCK_REALTIME_ALARM            8
+#define CLOCK_BOOTTIME_ALARM            9
 
 #endif

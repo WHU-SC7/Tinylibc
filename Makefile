@@ -33,7 +33,7 @@ CFLAGS += -mno-red-zone
 
 
 #头文件
-CFLAGS += -Iarch -Iinternal -Iexternal
+CFLAGS += -Iarch -Iinclude
 CFLAGS += -Iarch/x86_64
 #宏定义
 CFLAGS += -DX86_64_TLIBC=1
@@ -52,14 +52,14 @@ Tlibc_exe = $(WORKPATH)/build/tlibc_x64
 
 export WORKPATH = $(shell pwd)
 
-x64_c_srcs := $(wildcard *.c app/*.c) 
+x64_c_srcs := $(wildcard *.c app/*.c lib/*.c) 
 x64_c_objs := $(patsubst %.c,$(WORKPATH)/build/%.o,$(x64_c_srcs))
 
 all: clean init_dir x86_64
 
 init_dir:
 	mkdir -p build
-	mkdir -p build/app
+	mkdir -p build/app build/lib
 	@echo $(x64_c_srcs)
 	@echo $(x64_c_objs)
 	

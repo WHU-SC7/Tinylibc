@@ -250,3 +250,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 [fix] 修复struct termios的错误
 1. 我就说原来怎么设置了ISIG还屏蔽信号。原来是被ai骗了，struct termios前四个成员是int不是long
 2. 总之以后看linux的include/uapi/asm-generic的头文件更好
+
+# 2025.11.12
+[refactor] 重构，Tinylibc进入新阶段!
+1. 还更新了项目文档README.md和项目计划.md！

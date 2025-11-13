@@ -254,3 +254,8 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 # 2025.11.12
 [refactor] 重构，Tinylibc进入新阶段!
 1. 还更新了项目文档README.md和项目计划.md！
+
+# 2025.11.13
+[feat] 增加template.c模版程序
+1. 包装了一些库函数。以后写类似vim,top的命令行程序应该更方便了
+2. 一些小修改

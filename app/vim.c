@@ -275,7 +275,7 @@ void vim(int argc, char *argv[])
 
         struct timespec time;
         time.st_atime_sec = 0;
-        time.st_atime_nsec = 20000000; //0.2秒
+        time.st_atime_nsec = 20000000; //0.02秒
         __nanosleep(&time, &time);
         while(__read(pipefd[PIPE_READ], &final_input, 1) != -11){}
         if(final_input == 'q')

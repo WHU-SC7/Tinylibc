@@ -25,4 +25,7 @@ void game(int argc, char *argv[]);
 
 //vim
 void vim(int argc, char *argv[]);
+//更多有趣的程序
+void top(int argc, char *argv[]);
+void template(int argc, char *argv[]);//这个是模版程序
 #endif

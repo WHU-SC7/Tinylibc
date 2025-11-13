@@ -131,4 +131,14 @@ struct sigaction {
 #define CLOCK_REALTIME_ALARM            8
 #define CLOCK_BOOTTIME_ALARM            9
 
+//pipe
+#define O_NONBLOCK      0x800//如果管道没有数据，直接返回-11,不会阻塞
+#define PIPE_READ   0
+#define PIPE_WRITE  1
+
+//标准文件描述符
+#define STDIN 0
+#define STDOUT 1
+#define STDERR 2
+
 #endif

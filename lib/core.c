@@ -2,14 +2,6 @@
 #include "syscall_num.h"
 #include "tlibc.h"
 
-//宏定义
-#define stdout 1
-
-//高级库函数
-void fopen();
-void fwrite();
-void fread();
-void fclose();
 
 //系统调用包装
 //为了避免同名冲突，命名加上下划线
@@ -341,7 +333,7 @@ void print_int(int num)
     {
         num = -num;
         char *negative = "-";
-        __write(stdout,negative,1);
+        __write(STDOUT,negative,1);
     }
     if(num == 0)
     {
@@ -363,7 +355,7 @@ void print_int(int num)
         buf[(count-1)-i] = tmp;
     }
     
-    __write(stdout,buf,count);
+    __write(STDOUT,buf,count);
 }
 
 void print_long(long num)
@@ -379,7 +371,7 @@ void print_long(long num)
     {
         num = -num;
         char *negative = "-";
-        __write(stdout,negative,1);
+        __write(STDOUT,negative,1);
     }
     if(num == 0)
     {
@@ -401,7 +393,7 @@ void print_long(long num)
         buf[(count-1)-i] = tmp;
     }
     
-    __write(stdout,buf,count);
+    __write(STDOUT,buf,count);
 }
 
 void print_string(const char *str)
@@ -410,7 +402,7 @@ void print_string(const char *str)
     char *str_calcu = (char *)str; //计算字符个数
     while(*str_calcu++)
         count++;
-    __write(stdout,str,count);
+    __write(STDOUT,str,count);
 }
 
 struct my_va_list
@@ -565,7 +557,7 @@ void __printf(const char *fmt, ...)
                 int count = 0;
                 while(*tmp++)
                     count++;
-                __write(stdout,arg_str,count);
+                __write(STDOUT,arg_str,count);
                 break;
             default:
                 char error_string[3];
@@ -584,7 +576,7 @@ void __printf(const char *fmt, ...)
             str_end++;
         }
         int count = str_end-str; //计算输出字符的个数
-        __write(stdout,str,count);
+        __write(STDOUT,str,count);
         str = str_end;
     }
     

@@ -19,29 +19,6 @@
 #define ALT_SCREEN_ON   ESC "[?1049h"     // 启用替代屏幕缓冲区
 #define ALT_SCREEN_OFF  ESC "[?1049l"     // 禁用替代屏幕缓冲区
 
-/* terminal控制 */
-/*
-ioctl(0, TCGETS, {B38400 opost isig icanon echo ...}) = 0
-ioctl(0, SNDCTL_TMR_START or TCSETS, {B0 opost -isig -icanon -echo ...}) = 0
-
-c_cc是B和opost
-
-t.c_lflag &= ~(ICANON | ECHO );
-t.c_oflag = 0; // 这个必须加上
-    t.c_cc[VMIN] = 0;   // 不等待字符
-    t.c_cc[VTIME] = 0;  // 无超时
-
-原来错误的设置:
-c_iflag   c_oflag   c_cflag  c_lflag  line c_cc
-0000 0000 0000 0000 00000000 00001010 0    0...
-
-
-正确的
-i    o    c    l    lc 
-0000 0000 0000 0000 00000000 00000000
-设置了c_cc的[11] [13]
-o_flag设置了B和icano,echo
-*/
 #define NCCS 19
 struct termios {
     unsigned int c_iflag;  // 输入模式

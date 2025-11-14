@@ -259,3 +259,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 [feat] 增加template.c模版程序
 1. 包装了一些库函数。以后写类似vim,top的命令行程序应该更方便了
 2. 一些小修改
+
+[feat] top可以查看所有进程的信息
+1. 现在只会显示pid,进程名,进程内存的VMSIZE和VMRSS,exe路径
+2. 增加string.c和一些字符串函数。还有readlinkat调用

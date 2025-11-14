@@ -44,6 +44,7 @@ pid_t __getpid(void);
 ssize_t __getrandom(void *buf, size_t buflen, unsigned int flags);
 off_t __lseek(int fd, off_t offset, int whence);
 int __ftruncate(int fd, off_t length);
+long __readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);
 //clone待验证
 long __clone(unsigned long flags, void *stack, int *parent_tid, int *child_tid, unsigned long tls);
 long tlibc_clone_thread(void *stack);

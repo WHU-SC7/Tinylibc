@@ -38,5 +38,7 @@
 #define SYS_time        __NR_time
 #define SYS_clock_gettime       __NR_clock_gettime
 
+#define SYS_readlinkat  __NR_readlinkat
+
 // SC7自定义，在qemu才有效
 #define SYS_shutdown 1000

@@ -55,7 +55,11 @@ export WORKPATH = $(shell pwd)
 x64_c_srcs := $(wildcard *.c app/*.c lib/*.c) 
 x64_c_objs := $(patsubst %.c,$(WORKPATH)/build/%.o,$(x64_c_srcs))
 
-all: clean init_dir x86_64
+all: __x86_64
+
+#先建立目录，再多线程编译。否则可能出错
+__x86_64: clean init_dir 
+	make x86_64 -j
 
 init_dir:
 	mkdir -p build

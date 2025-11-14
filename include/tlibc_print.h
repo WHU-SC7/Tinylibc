@@ -33,4 +33,26 @@
             ; \
     } while(0)
 
+/* 256 色前景/背景宏 */
+#define FG_BLACK   16
+#define FG_WHITE   231
+#define FG_RED     196
+#define FG_GREEN   46
+#define FG_YELLOW  226
+#define FG_BLUE    21
+#define FG_MAGENTA 201
+#define FG_CYAN    51
+
+#define BG_BLACK   16
+#define BG_WHITE   231
+#define BG_RED     196
+#define BG_GREEN   46
+#define BG_YELLOW  226
+#define BG_BLUE    21
+#define BG_MAGENTA 201
+#define BG_CYAN    51
+
+#define SET_ROW_COLOR(row, bg, fg) \
+    __printf("\033[%d;1H\033[48;5;%dm\033[38;5;%dm\033[2K", (row), (bg), (fg))
+
 #endif

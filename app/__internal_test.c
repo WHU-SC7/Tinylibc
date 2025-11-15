@@ -17,7 +17,7 @@ int __internal_test(int argc, char *argv[])
     struct timespec tp;
     struct timespec tp1;
     __clock_gettime(CLOCK_REALTIME, &tp);
-    __printf("开始时间: %d.%d\n", tp.st_atime_sec, tp.st_atime_nsec);
+    __printf("开始时间: %d+%d微秒\n", tp.st_atime_sec, tp.st_atime_nsec/1000);
 
     //do something
     /*
@@ -32,7 +32,31 @@ int __internal_test(int argc, char *argv[])
     //     panic("fd < 0");
     // for(long i=0; i<1000000; i++) //1M次lseek, 0.26秒， 每次耗时0.26微秒 //服务器是0.11秒， 每次0.11微秒
     //     __lseek(fd, i, SEEK_SET);
-    for(long i=0; i<10000000; i++) __getpid();
+    // for(long i=0; i<10000000; i++) __getpid();
+
+    //fork测试，结论: GB级别的进程fork耗时是100ms级别，耗时与内存大小线性相关
+    int pid;
+    // #define SIZE (long)4294967296//0.5秒 4G
+    // #define SIZE (long)2294967296//0.003
+    // #define SIZE (long)1024 //0.0004
+    #define SIZE (long)8589934592 //0.002 . 0.11秒,写入
+    char *ptr = tlibc_malloc(SIZE);//分配大内存
+    for(long i=0; i<SIZE/4096; i++)//写入一些内容，确保进程真实占有物理内存
+    {
+        //如果8G内存每字节写入，耗时约15秒. 写入4k字节耗时4微秒
+        //如果每页只写入1字节，耗时约4秒。这是缺页异常的开销。8G是2M页。1秒是500k次，一次开销是2微秒
+        ptr[i*4096] = 1;
+    }
+     __clock_gettime(CLOCK_REALTIME, &tp);
+    __printf("fork前的时间: %d+%d微秒\n", tp.st_atime_sec, tp.st_atime_nsec/1000);
+    pid = __fork();
+    if(pid ==0)//fork出子进程时，内核为父进程占有的物理页的引用计数+1，这是耗时的主要来源
+    {
+        ptr[0] = 2;
+        __exit(0);
+    }
+    
+    
 
     __clock_gettime(CLOCK_REALTIME, &tp1);
     long sec = tp1.st_atime_sec-tp.st_atime_sec;
@@ -44,7 +68,7 @@ int __internal_test(int argc, char *argv[])
     }
     else
         nsec = tp1.st_atime_nsec - tp.st_atime_nsec;
-    __printf("结束时间: %l.%l, 用时: %l.%l\n", tp1.st_atime_sec, tp1.st_atime_nsec, sec, nsec);
+    __printf("结束时间: %l+%l微秒, 用时: %l+%l微秒\n", tp1.st_atime_sec, tp1.st_atime_nsec/1000, sec, nsec/1000);
     
 
     return 0;

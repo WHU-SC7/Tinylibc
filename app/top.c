@@ -13,6 +13,7 @@
 #define TOP_PROCESS_NUM_SHOW 12//每次显示的进程数
 #define PROMPT_LINE_BG_COLOR BG_BLACK
 #define PROMPT_LINE_FG_COLOR FG_CYAN
+#define TOP_MAX_PROC 1024//最多能处理的进程数，影响内存分配
 
 void top_exit_handler()
 {
@@ -29,7 +30,6 @@ void top_get_process_status(const char* proc_pid, char* status_buf, int buf_size
     strcat(path, proc_pid);
     strcat(path, "/status");
     int status_fd = __openat(AT_FDCWD,path, O_RDONLY, 0644);
-    __memset(status_buf, 0, buf_size);
     __read(status_fd, status_buf, buf_size);
     __close(status_fd);
 }
@@ -118,15 +118,15 @@ void top_get_file(const char *proc_pid, char *file, char *file_buf, int buf_size
     __close(comm_fd);
 }
 
-void sort_procs(char (*proc_pid)[8], unsigned long sort_buf[1024])
+void sort_procs(char (*proc_pid)[8], unsigned long sort_buf[TOP_MAX_PROC])
 {
     int i, j;
     char temp_pid[8];
     unsigned long temp_buf;
     
     // 冒泡排序（从大到小）
-    for (i = 0; i < 1024 - 1; i++) {
-        for (j = 0; j < 1024 - 1 - i; j++) {
+    for (i = 0; i < TOP_MAX_PROC - 1; i++) {
+        for (j = 0; j < TOP_MAX_PROC - 1 - i; j++) {
             if (sort_buf[j] < sort_buf[j + 1]) {
                 // 交换 sort_buf
                 temp_buf = sort_buf[j];
@@ -134,6 +134,7 @@ void sort_procs(char (*proc_pid)[8], unsigned long sort_buf[1024])
                 sort_buf[j + 1] = temp_buf;
                 
                 // 交换 proc_pid
+                __memset(temp_pid, 0, 8);//啊，怀疑是这个地方没清零，导致交换时proc_pid错乱 deepseek误我!
                 memcpy(temp_pid, proc_pid[j], 8);
                 memcpy(proc_pid[j], proc_pid[j + 1], 8);
                 memcpy(proc_pid[j + 1], temp_pid, 8);
@@ -142,14 +143,48 @@ void sort_procs(char (*proc_pid)[8], unsigned long sort_buf[1024])
     }
 }
 
+//时间单位是Jiffies，一般是10ms
+//获取进程已运行时间
+long top_get_run_time(char *pid)
+{
+    char stat_buf[512];
+    top_get_file(pid, "/stat", stat_buf, 512);
+    char *time = stat_buf; 
+    //取stat的第14,15字段
+    for(int j=0; j<13; j++)
+    {
+        while(*time != ' ')//跳过一个字段
+            time++;
+        time++;//下个字段
+    }
+    char utime[8];
+    int count=0;
+    __memset(utime, 0, 8);
+    while(*time != ' ')
+    {
+        utime[count++] = *time;
+        time++;
+    }
+    long run_time = tlibc_strtoul(utime);
+    __memset(utime, 0, 8);//复用utime来存stime
+    count = 0;
+    while(*time != ' ')
+    {
+        utime[count++] = *time;//stime
+        time++;
+    }
+    run_time += tlibc_strtoul(utime);
+    return run_time;
+}
+
 void top(int argc, char *argv[])
 {
     int proc_fd;
-    char *getdent_buf = (char *)tlibc_malloc(64*1024); //8k缓冲区
-    char (*proc_pid)[8] = tlibc_malloc(8*1024*8); //每个pid应该不会超过8字节
     int proc_count;
-    char *proc_mask = tlibc_malloc(8*1024);//为1时不显示对应pid的进程信息
-    unsigned long *sort_buf = tlibc_malloc(8*1024);//存储每个进程用于排序的量
+    char *getdent_buf = (char *)tlibc_malloc(64*1024); //64k缓冲区
+    char (*proc_pid)[8] = tlibc_malloc(8*TOP_MAX_PROC); //每个pid应该不会超过8字节
+    unsigned long *sort_buf = tlibc_malloc(8*TOP_MAX_PROC);//存储每个进程用于排序的量
+
 
     tlibc_check_term_size(1, TOP_ROW_WANTED, TOP_COL_WANTED);
     tlibc_set_term_raw_and_noecho(0);
@@ -183,6 +218,7 @@ void top(int argc, char *argv[])
     #define NAME_WIDTH 16
     #define VM_SIZE_WIDTH 16
     #define VM_RSS_WIDTH 16
+    #define RUN_TIME_WIDTH 8
     #define EXE_WIDTH 128
     char name[NAME_WIDTH];
     char vm_size[VM_SIZE_WIDTH];
@@ -202,10 +238,18 @@ void top(int argc, char *argv[])
         //while会读取pipe直到最后一个字符
         //最终保留最后一个字符作为用户输入，或者没有输入final_input保持194
         while(__read(pipefd[PIPE_READ], &final_input, 1) != -11){}
+
+        if(final_input == 'q')//优先检查退出
+        {
+            top_exit_handler(); //退出
+        }
         if(final_input == 'p')//暂停
         {
             if(top_stop==0)
+            {
                 top_stop = 1;
+                __printf(GREEN_COLOR_PRINT"已经暂停"COLOR_RESET);//提示暂停了
+            }
             else
             {
                 top_stop = 0;
@@ -216,54 +260,76 @@ void top(int argc, char *argv[])
         {
             continue;
         }
-        if(final_input == 'q')
-        {
-            top_exit_handler(); //退出
-        }
-        if(final_input == 'r')
+        if(final_input == 'r')//刷新
         {
             refresh_time = 50; //强制刷新
         }
-        if(final_input == KEY_UP&&index > 0)
+        if(final_input == KEY_UP&&index > 0)//向上滚动
         {
             index--;
             refresh_time = 50;
         }
-        if(final_input == KEY_DOWN&&index < proc_count-1)
+        if(final_input == KEY_DOWN&&index < proc_count-show_line)//向下滚动
         {
             index++;
             refresh_time = 50;
         }
-        if(final_input == 'k')
+        if(final_input == 'k')//显示内核进程
         {
             if(show_kernel_proc==0)
                 show_kernel_proc=1;
             else
                 show_kernel_proc=0;
         }
-        if(final_input == 'w' && show_line<32)
+        if(final_input == 'w' && show_line<32)//多显示一行
         {
             show_line++;
+            if(index > proc_count - show_line)
+                index = proc_count-show_line;
             refresh_time = 50;
         }
-        if(final_input == 's' && show_line>0)
+        if(final_input == 's' && show_line>0)//少显示一行
         {
             show_line--;
             refresh_time = 50;
         }
+        if(final_input == 'd')//到底部
+        {
+            index = proc_count-show_line;
+            refresh_time = 50;
+        }
+        if(final_input == 'u')//到顶部
+        {
+            index = 0;
+            refresh_time = 50;
+        }
         if(final_input == '0')
+        {
             sort_option = 0;
+            refresh_time = 50;
+        }
         if(final_input == '1')
+        {
             sort_option = 1;//按照VMRSS排序
-
-        if(refresh_time >= 50) //每1秒刷新一次
+            refresh_time = 50;
+        }
+        if(final_input == '2')
+        {
+            sort_option = 2;
+            refresh_time = 50;
+        }
+        if(final_input == '3')
+        {
+            sort_option = 3;
+            refresh_time = 50;
+        }
+        if(refresh_time >= 50) //大约每1秒刷新一次
         {
             refresh_time = 0;
             //刷新进程列表
             proc_fd = __openat(AT_FDCWD, "/proc", O_RDONLY|O_DIRECTORY|O_CLOEXEC, 0644);
             __memset(getdent_buf, 0, 64*1024);
-            __memset(proc_pid, 0, 8*1024*8);
-            __memset(proc_mask, 0 ,8*1024);//刷新屏蔽位
+            __memset(proc_pid, 0, 8*TOP_MAX_PROC);
             __getdents64(proc_fd, (struct linux_dirent64 *)getdent_buf, 64*1024);
             __close(proc_fd);
             
@@ -272,7 +338,7 @@ void top(int argc, char *argv[])
             while(dent->d_off != 0)//找出所有进程
             {
                 //进程目录名全是数字
-                if(dent->d_name[0] >= '0' && dent->d_name[0] <= '9')
+                if(dent->d_name[0] >= '0' && dent->d_name[0] <= '9' && proc_count < TOP_MAX_PROC)
                 {
                     int i;
                     for(i=0; dent->d_name[i] != 0 && i < 7; i++)
@@ -282,6 +348,7 @@ void top(int argc, char *argv[])
                     proc_pid[proc_count][i+1] = 0; //结束符
                     proc_count++;
                 }
+
                 dent = (struct linux_dirent64 *)((char *)dent + dent->d_reclen); //< 遍历
             }
 
@@ -312,7 +379,7 @@ void top(int argc, char *argv[])
             //按VMRSS排序
             if(sort_option==1)
             {
-                __memset(sort_buf, 0, 8*1024);
+                __memset(sort_buf, 0, 8*TOP_MAX_PROC);
                 for(int i=0; i<proc_count; i++)//获取VMRSS，保存到sort_buf中
                 {
                     __memset(status_buf, 0, 2048);
@@ -333,13 +400,44 @@ void top(int argc, char *argv[])
                 }
                 sort_procs(proc_pid, sort_buf);
             }
+            if(sort_option == 2)//按VMSIZE排序
+            {
+                __memset(sort_buf, 0, 8*TOP_MAX_PROC);
+                for(int i=0; i<proc_count; i++)//获取VMSIZE，保存到sort_buf中
+                {
+                    __memset(status_buf, 0, 2048);
+                    __memset(vm_rss, 0, VM_RSS_WIDTH);
+                    top_get_process_status(proc_pid[i], status_buf, 2048);
+                    int ret = top_status_search_line(status_buf, "VmSize", vm_rss, VM_RSS_WIDTH);
+                    if(ret < 0)//没有VMSIZE字段
+                    {
+                        sort_buf[i] = 0;
+                        continue;
+                    }
+                    char *ptr = vm_rss;
+                    while(*ptr != ' ')//找到空格
+                        ptr++;
+                    __memset(ptr, 0, 3);//把" kB"清零
+                    //转换成数字
+                    sort_buf[i] = tlibc_strtoul(vm_rss);
+                }
+                sort_procs(proc_pid, sort_buf);
+            }
+            if(sort_option == 3)//按已运行时间排序
+            {
+                __memset(sort_buf, 0, 8*TOP_MAX_PROC);
+                for(int i=0; i<proc_count; i++)
+                    sort_buf[i] = top_get_run_time(proc_pid[i]);
+                sort_procs(proc_pid, sort_buf);
+            }
 
             __printf(CLEAR_SCREEN CURSOR_HOME); // 清屏并移动到左上角
             __printf("按q退出,按r刷新,按k控制内核进程显示,按w/s以增加/减少显示行数,按p暂停和回复,使用上下方向键滚动\n");
-            __printf(BLUE_COLOR_PRINT"按1以VMRSS(物理内存占用)排序, 按0以pid排序\n"COLOR_RESET);
+            __printf("按d滚动到底部,按u滚动到头部\n");
+            __printf(BLUE_COLOR_PRINT"按1以VMRSS(物理内存占用)排序, 按2以VMSIZE排序, 按3以已运行时间排序, 按0以pid排序\n"COLOR_RESET);
             __printf("进程数: %d. index: %d. show_line: %d, sort_option: %d\n", proc_count, index, show_line, sort_option);
 
-            SET_ROW_COLOR(4, PROMPT_LINE_BG_COLOR, PROMPT_LINE_FG_COLOR);//设置提示行颜色
+            SET_ROW_COLOR(5, PROMPT_LINE_BG_COLOR, PROMPT_LINE_FG_COLOR);//设置提示行颜色
             __printf("PID");
             __printf("\033[%dG", START);
             __printf("NAME");
@@ -348,6 +446,8 @@ void top(int argc, char *argv[])
             __printf("\033[%dG", START+NAME_WIDTH+VM_SIZE_WIDTH);
             __printf("VMRSS");
             __printf("\033[%dG", START+NAME_WIDTH+VM_SIZE_WIDTH+VM_RSS_WIDTH);
+            __printf("TIME+");
+            __printf("\033[%dG", START+NAME_WIDTH+VM_SIZE_WIDTH+VM_RSS_WIDTH+RUN_TIME_WIDTH);
             __printf("EXE");
             __printf(COLOR_RESET "\n");
 
@@ -367,6 +467,9 @@ void top(int argc, char *argv[])
                 top_status_search_line(status_buf, "VmRSS", vm_rss, VM_RSS_WIDTH);
                 top_readlink(proc_pid[i], "/exe", exe, EXE_WIDTH);
 
+                if(name[0]>128)//防止可能的段错误
+                    continue;
+
                 __write(1, proc_pid[i], 8);//输出pid
                 __printf("\033[%dG", START); //到当前行的第9列
                 __write(1, name, NAME_WIDTH);//Name
@@ -375,6 +478,16 @@ void top(int argc, char *argv[])
                 __printf("\033[%dG", START+NAME_WIDTH+VM_SIZE_WIDTH);
                 __write(1, vm_rss, VM_RSS_WIDTH);//VmRSS
                 __printf("\033[%dG", START+NAME_WIDTH+VM_SIZE_WIDTH+VM_RSS_WIDTH);
+
+                //输出已运行时间
+                long run_time = top_get_run_time(proc_pid[i]);
+                long t_time = run_time%100;
+                run_time /= 100;
+                if(t_time<10)
+                    __printf("%l.0%ls ", run_time, t_time);//补齐小数点后的0,用整数来表示浮点数有点麻烦
+                else
+                    __printf("%l.%ls ", run_time, t_time);
+                __printf("\033[%dG", START+NAME_WIDTH+VM_SIZE_WIDTH+VM_RSS_WIDTH+RUN_TIME_WIDTH);
 
                 #define EXE_END 48
                 if(exe[EXE_END]!=0)

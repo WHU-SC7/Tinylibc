@@ -268,3 +268,6 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 [feat] top可以筛选内核进程
 1. top还是只按pid排序，之后做按CPU占用排序的功能
 2. 因为要用，写了strcmp. 以及make run能一键编译运行
+
+[feat] top能按VMRSS排序进程
+1. 是冒泡排序。还增加了自定义的tlibc_strtoul

@@ -118,6 +118,30 @@ void top_get_file(const char *proc_pid, char *file, char *file_buf, int buf_size
     __close(comm_fd);
 }
 
+void sort_procs(char (*proc_pid)[8], unsigned long sort_buf[1024])
+{
+    int i, j;
+    char temp_pid[8];
+    unsigned long temp_buf;
+    
+    // 冒泡排序（从大到小）
+    for (i = 0; i < 1024 - 1; i++) {
+        for (j = 0; j < 1024 - 1 - i; j++) {
+            if (sort_buf[j] < sort_buf[j + 1]) {
+                // 交换 sort_buf
+                temp_buf = sort_buf[j];
+                sort_buf[j] = sort_buf[j + 1];
+                sort_buf[j + 1] = temp_buf;
+                
+                // 交换 proc_pid
+                memcpy(temp_pid, proc_pid[j], 8);
+                memcpy(proc_pid[j], proc_pid[j + 1], 8);
+                memcpy(proc_pid[j + 1], temp_pid, 8);
+            }
+        }
+    }
+}
+
 void top(int argc, char *argv[])
 {
     int proc_fd;
@@ -125,6 +149,7 @@ void top(int argc, char *argv[])
     char (*proc_pid)[8] = tlibc_malloc(8*1024*8); //每个pid应该不会超过8字节
     int proc_count;
     char *proc_mask = tlibc_malloc(8*1024);//为1时不显示对应pid的进程信息
+    unsigned long *sort_buf = tlibc_malloc(8*1024);//存储每个进程用于排序的量
 
     tlibc_check_term_size(1, TOP_ROW_WANTED, TOP_COL_WANTED);
     tlibc_set_term_raw_and_noecho(0);
@@ -151,6 +176,8 @@ void top(int argc, char *argv[])
     int index = 0;
     int show_kernel_proc = 1;//默认不显示内核进程
     int show_line =12;//显示的行数
+    int sort_option = 0;//排序选项，默认是按pid
+    int top_stop = 0;
 
     #define START 9//某个光标起始位置
     #define NAME_WIDTH 16
@@ -175,6 +202,20 @@ void top(int argc, char *argv[])
         //while会读取pipe直到最后一个字符
         //最终保留最后一个字符作为用户输入，或者没有输入final_input保持194
         while(__read(pipefd[PIPE_READ], &final_input, 1) != -11){}
+        if(final_input == 'p')//暂停
+        {
+            if(top_stop==0)
+                top_stop = 1;
+            else
+            {
+                top_stop = 0;
+                refresh_time = 50;
+            }
+        }
+        if(top_stop==1)
+        {
+            continue;
+        }
         if(final_input == 'q')
         {
             top_exit_handler(); //退出
@@ -203,11 +244,17 @@ void top(int argc, char *argv[])
         if(final_input == 'w' && show_line<32)
         {
             show_line++;
+            refresh_time = 50;
         }
         if(final_input == 's' && show_line>0)
         {
             show_line--;
+            refresh_time = 50;
         }
+        if(final_input == '0')
+            sort_option = 0;
+        if(final_input == '1')
+            sort_option = 1;//按照VMRSS排序
 
         if(refresh_time >= 50) //每1秒刷新一次
         {
@@ -262,11 +309,37 @@ void top(int argc, char *argv[])
                 }
             }
 
-            __printf(CLEAR_SCREEN CURSOR_HOME); // 清屏并移动到左上角
-            __printf("按q退出,按r刷新,按k控制内核进程显示,按w/s以增加/减少显示行数,使用上下方向键滚动\n");
-            __printf("进程数: %d. index: %d. show_line: %d\n", proc_count, index, show_line);
+            //按VMRSS排序
+            if(sort_option==1)
+            {
+                __memset(sort_buf, 0, 8*1024);
+                for(int i=0; i<proc_count; i++)//获取VMRSS，保存到sort_buf中
+                {
+                    __memset(status_buf, 0, 2048);
+                    __memset(vm_rss, 0, VM_RSS_WIDTH);
+                    top_get_process_status(proc_pid[i], status_buf, 2048);
+                    int ret = top_status_search_line(status_buf, "VmRSS", vm_rss, VM_RSS_WIDTH);
+                    if(ret < 0)//没有VMRSS字段
+                    {
+                        sort_buf[i] = 0;
+                        continue;
+                    }
+                    char *ptr = vm_rss;
+                    while(*ptr != ' ')//找到空格
+                        ptr++;
+                    __memset(ptr, 0, 3);//把" kB"清零
+                    //转换成数字
+                    sort_buf[i] = tlibc_strtoul(vm_rss);
+                }
+                sort_procs(proc_pid, sort_buf);
+            }
 
-            SET_ROW_COLOR(3, PROMPT_LINE_BG_COLOR, PROMPT_LINE_FG_COLOR);//设置提示行颜色
+            __printf(CLEAR_SCREEN CURSOR_HOME); // 清屏并移动到左上角
+            __printf("按q退出,按r刷新,按k控制内核进程显示,按w/s以增加/减少显示行数,按p暂停和回复,使用上下方向键滚动\n");
+            __printf(BLUE_COLOR_PRINT"按1以VMRSS(物理内存占用)排序, 按0以pid排序\n"COLOR_RESET);
+            __printf("进程数: %d. index: %d. show_line: %d, sort_option: %d\n", proc_count, index, show_line, sort_option);
+
+            SET_ROW_COLOR(4, PROMPT_LINE_BG_COLOR, PROMPT_LINE_FG_COLOR);//设置提示行颜色
             __printf("PID");
             __printf("\033[%dG", START);
             __printf("NAME");

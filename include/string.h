@@ -7,4 +7,7 @@ char *strcat(char *restrict dst, const char *restrict src);
 
 int strcmp(const char *s1, const char *s2);
 
+unsigned long tlibc_strtoul(char *str);
+void* memcpy(void* dest, const void* src, unsigned long n);
+
 #endif

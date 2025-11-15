@@ -75,7 +75,7 @@ $(x64_c_objs): $(WORKPATH)/build/%.o: %.c
 	$(CC) -c $(CFLAGS) -MF $(WORKPATH)/build/$*.d -o $@ $<
 
 Tlibc_exe_name = $(notdir $(Tlibc_exe)) 
-run:
+run: __x86_64
 	./build/$(Tlibc_exe_name)
 
 clean:

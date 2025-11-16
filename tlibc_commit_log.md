@@ -275,3 +275,5 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 [feat] top能显示已运行时间，还能按时间和VMRSS排序。还修复两个小bug
 1. 有时候top的最后会冒出来一个名字奇怪的进程，触发段错误。怀疑是sort_procs中没有清零交换缓冲导致的
 2. 修复了暂停时按q导致子进程退出，主进程接受不到输入空等待的bug
+
+[test] 关于fork的实验

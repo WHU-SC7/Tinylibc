@@ -277,3 +277,6 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 2. 修复了暂停时按q导致子进程退出，主进程接受不到输入空等待的bug
 
 [test] 关于fork的实验
+
+# 2025.11.16
+[feat] top能显示CPU占用，能按CPU占用排序

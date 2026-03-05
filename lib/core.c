@@ -234,20 +234,19 @@ int __yield()//主动让出CPU
     return syscall(SYS_sched_yield);
 }
 
-#define CLONE_VM        0x00000100  /* 共享内存空间 */
-#define CLONE_FS        0x00000200  /* 共享工作目录等 */
-#define CLONE_FILES     0x00000400  /* 共享文件描述符表 */
-#define CLONE_SIGHAND   0x00000800  /* 共享信号处理函数 */
-#define CLONE_THREAD    0x00010000  /* 让它成为同进程的线程 */
-#define CLONE_FLAGS (CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD)
-long __clone(unsigned long flags, void *stack, int *parent_tid, int *child_tid, unsigned long tls)
+pid_t __gettid(void)
 {
-    return syscall(SYS_clone, flags, stack, parent_tid, child_tid, tls);
+    return (pid_t)syscall(SYS_gettid);
 }
 
-long tlibc_clone_thread(void *stack)//创建线程,失败了
+void *__mmap(void *addr, size_t length, int prot, int flags,
+                  int fd, off_t offset)
 {
-    return __clone(CLONE_FLAGS, stack, 0, 0, 0);
+    return (void *)syscall(SYS_mmap, addr, length, prot, flags, fd, offset);
+}
+int __munmap(void *addr, size_t length)
+{
+    return (int)syscall(SYS_munmap, addr, length);
 }
 
 pid_t __setsid(void)//不明

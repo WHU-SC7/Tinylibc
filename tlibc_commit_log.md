@@ -280,3 +280,9 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 # 2025.11.16
 [feat] top能显示CPU占用，能按CPU占用排序
+
+# 2026.3.5
+[feat] 增加极简版pthread_create函数，可以创建线程
+1. 在shell中输入p执行pthread测试。目前pthread_create函数及相关定义都在pthread.c中，之后考虑在lib创建专门的文件
+2. 增加了x86_64架构的clone.S实现__clone函数。怀疑这个是实现pthread_create的关键
+3. 增加mmap,munmap系统调用的包装

@@ -40,5 +40,9 @@
 
 #define SYS_readlinkat  __NR_readlinkat
 
+#define SYS_mmap        __NR_mmap
+#define SYS_munmap      __NR_munmap
+#define SYS_gettid      __NR_gettid
+
 // SC7自定义，在qemu才有效
 #define SYS_shutdown 1000

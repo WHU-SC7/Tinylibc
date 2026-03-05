@@ -28,4 +28,7 @@ void vim(int argc, char *argv[]);
 //更多有趣的程序
 void top(int argc, char *argv[]);
 void template(int argc, char *argv[]);//这个是模版程序
+
+//pthread
+void pthread(int argc, char *argv[]);
 #endif

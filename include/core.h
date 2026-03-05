@@ -46,7 +46,10 @@ off_t __lseek(int fd, off_t offset, int whence);
 int __ftruncate(int fd, off_t length);
 long __readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);
 //clone待验证
-long __clone(unsigned long flags, void *stack, int *parent_tid, int *child_tid, unsigned long tls);
+int __clone(int (*fn)(void *), void *stack, int flags, void *arg, pid_t *parent_tid, void *tls, pid_t *child_tid);
+pid_t __gettid(void);
+void *__mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset);
+int __munmap(void *addr, size_t length);
 long tlibc_clone_thread(void *stack);
 
 //string操作

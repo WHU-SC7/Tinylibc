@@ -55,6 +55,9 @@ export WORKPATH = $(shell pwd)
 x64_c_srcs := $(wildcard *.c app/*.c lib/*.c) 
 x64_c_objs := $(patsubst %.c,$(WORKPATH)/build/%.o,$(x64_c_srcs))
 
+x64_s_srcs := $(wildcard lib/*.S) 
+x64_s_objs := $(patsubst %.S,$(WORKPATH)/build/%.o,$(x64_s_srcs))
+
 all: __x86_64
 
 #先建立目录，再多线程编译。否则可能出错
@@ -66,12 +69,17 @@ init_dir:
 	mkdir -p build/app build/lib
 	@echo $(x64_c_srcs)
 	@echo $(x64_c_objs)
+	@echo $(x64_s_srcs)
+	@echo $(x64_s_objs)
 	
 #这个目标会编译并链接出可执行文件
-x86_64: $(x64_c_objs)
-	$(LD) $(LDFLAGS) -T $(LD_SCRIPT) -o $(Tlibc_exe) $(x64_c_objs) 
+x86_64: $(x64_c_objs) $(x64_s_objs)
+	$(LD) $(LDFLAGS) -T $(LD_SCRIPT) -o $(Tlibc_exe) $(x64_c_objs) $(x64_s_objs)
 
 $(x64_c_objs): $(WORKPATH)/build/%.o: %.c
+	$(CC) -c $(CFLAGS) -MF $(WORKPATH)/build/$*.d -o $@ $<
+
+$(x64_s_objs): $(WORKPATH)/build/%.o: %.S
 	$(CC) -c $(CFLAGS) -MF $(WORKPATH)/build/$*.d -o $@ $<
 
 Tlibc_exe_name = $(notdir $(Tlibc_exe)) 

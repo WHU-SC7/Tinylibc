@@ -286,3 +286,5 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 1. 在shell中输入p执行pthread测试。目前pthread_create函数及相关定义都在pthread.c中，之后考虑在lib创建专门的文件
 2. 增加了x86_64架构的clone.S实现__clone函数。怀疑这个是实现pthread_create的关键
 3. 增加mmap,munmap系统调用的包装
+
+[feat] 为pthread_create和clone添加注释，修正res.能从tls获取线程信息

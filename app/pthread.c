@@ -144,6 +144,20 @@ static int start(void *p)
     return 0;
 }
 
+/*
+    sys_clone           int (*fn)(void *)   线程入口函数，pthread_create默认设为库自带的start
+                        void *stack         线程栈
+                        int flags           选项，如CLONE_FILES共享fd
+                        void *arg           传给线程的参数
+                        pid_t *parent_tid   存父线程tid
+                        void *tls           线程本地存储，自定义的struct pthread
+                        pid_t *child_tid    大概存子线程tid
+
+    pthread_create      pthread_t *restrict res                 指针，是struct pthread的地址，空间在线程自己的栈上
+                        const pthread_attr_t *restrict attrp,   删减后未使用
+                        void *(*entry)(void *),                 入口函数
+                        void *restrict arg)                     传给线程的参数
+*/
 int __pthread_create(pthread_t *restrict res, 
                      const pthread_attr_t *restrict attrp, 
                      void *(*entry)(void *), 
@@ -180,7 +194,7 @@ int __pthread_create(pthread_t *restrict res,
     stack -= sizeof(void *) * 2;  // 为参数留空间
     struct { void *(*func)(void *); void *arg; } *args = 
         (void *)stack;
-    args->func = entry;
+    args->func = entry; //入口函数
     args->arg = arg;
     
     /* 创建线程 */
@@ -191,7 +205,8 @@ int __pthread_create(pthread_t *restrict res,
         __munmap(map, size);
         return EAGAIN;
     }
-    // *res = new;
+    //因为类型定义与musl不同，加上类型转换。让res指向线程栈底部的struct pthread
+    *res = (pthread_t)new;
     return 0;
 }
 
@@ -209,6 +224,8 @@ void pthread(int argc, char *argv[])
     //期望中，两个线程会打印不同的线程号
     pthread_t thread;
     __pthread_create(&thread, NULL, thread_func, NULL);
+    struct pthread *pthread = (struct pthread *)thread; //通过pthread_create的res获取子线程信息
+    __printf("从tls获取child thread tid: %d\n", pthread->tid);
     // tlibc_msleep(1000); //thread_func打印可能会交错，因为gettid调用时可能线程被调度
     pthread_t thread1;
     __pthread_create(&thread1, NULL, thread_func, NULL);

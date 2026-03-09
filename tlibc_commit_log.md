@@ -287,4 +287,9 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 2. 增加了x86_64架构的clone.S实现__clone函数。怀疑这个是实现pthread_create的关键
 3. 增加mmap,munmap系统调用的包装
 
+# 2026.3.7
 [feat] 为pthread_create和clone添加注释，修正res.能从tls获取线程信息
+
+# 2026.3.9
+[feat] 添加简单的pthread_join,等待指定子线程退出。修正了struct pthread的字段
+1. 参考glibc的方式来检查子线程的推出。之后为了提高效率考虑使用futex

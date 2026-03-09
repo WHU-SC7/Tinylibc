@@ -81,23 +81,24 @@ typedef union pthread_attr_t pthread_attr_t;
 struct pthread {
 // 	/* Part 1 -- these fields may be external or
 // 	 * internal (accessed via asm) ABI. Do not change. */
+//这里的字段必须与内核要求的定义一致，这样才能保证内核正确修改用户空间的tid， detach_state字段
 	struct pthread *self;
-// #ifndef TLS_ABOVE_TP
-// 	uintptr_t *dtv;
-// #endif
-// 	struct pthread *prev, *next; /* non-ABI */
-// 	uintptr_t sysinfo;
-// #ifndef TLS_ABOVE_TP
-// #ifdef CANARY_PAD
+#ifndef TLS_ABOVE_TP //x64没有定义这个
+	unsigned long *dtv;
+#endif
+	struct pthread *prev, *next; /* non-ABI */
+	unsigned long sysinfo;
+#ifndef TLS_ABOVE_TP
+// #ifdef CANARY_PAD //推测只有x32使用
 // 	uintptr_t canary_pad;
 // #endif
-// 	uintptr_t canary;
-// #endif
+	unsigned long canary;
+#endif
 
 	/* Part 2 -- implementation details, non-ABI. */
 	int tid;
 	int errno_val;
-	volatile int detach_state;
+	volatile int detach_state; //字段偏移是56
 	volatile int cancel;
 	volatile unsigned char canceldisable, cancelasync;
 	unsigned char tsd_used:1;
@@ -124,10 +125,10 @@ struct pthread {
 
 // 	/* Part 3 -- the positions of these fields relative to
 // 	 * the end of the structure is external and internal ABI. */
-// #ifdef TLS_ABOVE_TP
-// 	uintptr_t canary;
-// 	uintptr_t *dtv;
-// #endif
+#ifdef TLS_ABOVE_TP
+	uintptr_t canary;
+	uintptr_t *dtv;
+#endif
 };
 
 static int start(void *p)
@@ -210,10 +211,40 @@ int __pthread_create(pthread_t *restrict res,
     return 0;
 }
 
+//下面的定义并没有使用
+#define FUTEX_WAIT_BITSET	9
+#define FUTEX_CLOCK_REALTIME 256
+//pthread->detach_state字段的取值
+enum {
+	DT_EXITED = 0,
+	DT_EXITING,
+	DT_JOINABLE,
+	DT_DETACHED,
+};
+
+//简单的pthread_join，等待指定的线程退出.完全不保证与musl或glibc通用！！！完全不保证！
+int __pthread_join(pthread_t t, void **res) //res不使用
+{
+    // __futex(tid_addr, FUTEX_WAIT_BITSET|FUTEX_CLOCK_REALTIME, tid, NULL, (void *)0 ,0); //glibc的pthread_join的futex调用类似这样
+    struct pthread *thread = (struct pthread *)t;
+    //不管线程刚创建时detach_state的值，似乎变化没有规律？？
+    //检查线程是否推出按照glibc的做法。musl的做法难懂
+    while(thread->tid != 0) //简单的等待。clone时CLONE_CHILD_CLEARTID标志，让内核在子线程退出时把tid设为0
+    {
+        // __printf("从tls获取child thread tid: %d, detach_status: %d\n", thread->tid, thread->detach_state);
+        tlibc_msleep(100); //如果一直检查浪费CPU。之后考虑futex更好，为了简单先用睡眠替代
+    }
+    // __printf("从tls获取child thread tid: %d, detach_status: %d\n", thread->tid, thread->detach_state);
+    // __printf("准备回收线程栈\n");
+	if (thread->map_base) __munmap(thread->map_base, thread->map_size); //回收按照glibc的做法
+    return 0;
+}
+
 int thread_info = 0; //验证子线程能主进程的变量值，虽然没有用原子变量和操作，但是目前用睡眠1秒保证没有竞争
 
 void* thread_func(void* arg) {
     thread_info = 1;
+    tlibc_msleep(1000);
     __printf("Hello from thread %d\n", __gettid());
     return (void *)0;
 }
@@ -225,7 +256,10 @@ void pthread(int argc, char *argv[])
     pthread_t thread;
     __pthread_create(&thread, NULL, thread_func, NULL);
     struct pthread *pthread = (struct pthread *)thread; //通过pthread_create的res获取子线程信息
+    struct pthread *t = pthread;
+    __printf("detach_state值: %d, 偏移: %d\n", t->detach_state, ((char *)&t->detach_state)-(char *)t);
     __printf("从tls获取child thread tid: %d\n", pthread->tid);
+    __pthread_join(thread, NULL);
     // tlibc_msleep(1000); //thread_func打印可能会交错，因为gettid调用时可能线程被调度
     pthread_t thread1;
     __pthread_create(&thread1, NULL, thread_func, NULL);

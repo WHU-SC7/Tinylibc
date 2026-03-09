@@ -50,6 +50,7 @@ int __clone(int (*fn)(void *), void *stack, int flags, void *arg, pid_t *parent_
 pid_t __gettid(void);
 void *__mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset);
 int __munmap(void *addr, size_t length);
+long __futex(unsigned int *uaddr, int futex_op, unsigned int val, const struct timespec *timeout, unsigned int *uaddr2, unsigned int val3);
 long tlibc_clone_thread(void *stack);
 
 //string操作

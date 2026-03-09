@@ -249,6 +249,11 @@ int __munmap(void *addr, size_t length)
     return (int)syscall(SYS_munmap, addr, length);
 }
 
+long __futex(unsigned int *uaddr, int futex_op, unsigned int val, const struct timespec *timeout, unsigned int *uaddr2, unsigned int val3)
+{
+    return syscall(SYS_futex, uaddr, futex_op, val, timeout, uaddr2, val3);
+}
+
 pid_t __setsid(void)//不明
 {
     return syscall(SYS_setsid);

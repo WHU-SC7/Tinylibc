@@ -294,4 +294,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 [feat] 添加简单的pthread_join,等待指定子线程退出。修正了struct pthread的字段
 1. 参考glibc的方式来检查子线程的推出。之后为了提高效率考虑使用futex
 
+# 2026.3.10
 [refactor] 新建pthread.c放pthread的两个函数
+
+[feat] 第一个简单的多线程程序quene.c

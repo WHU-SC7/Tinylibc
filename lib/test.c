@@ -21,7 +21,32 @@ void block_terminal_control(void) //未验证，但strace显示rt_sigprocmaski�
     *(long *)set.sig |= (1UL << (SIGTSTP - 1));  // Ctrl+Z
     __rt_sigprocmask(SIG_BLOCK, &set, (void *)0, 8);
 }
-
+# define MADV_NORMAL	  0	/* No further special treatment.  */
+# define MADV_RANDOM	  1	/* Expect random page references.  */
+# define MADV_SEQUENTIAL  2	/* Expect sequential page references.  */
+# define MADV_WILLNEED	  3	/* Will need these pages.  */
+# define MADV_DONTNEED	  4	/* Don't need these pages.  */
+# define MADV_FREE	  8	/* Free pages only if memory pressure.  */
+# define MADV_REMOVE	  9	/* Remove these pages and resources.  */
+# define MADV_DONTFORK	  10	/* Do not inherit across fork.  */
+# define MADV_DOFORK	  11	/* Do inherit across fork.  */
+# define MADV_MERGEABLE	  12	/* KSM may merge identical pages.  */
+# define MADV_UNMERGEABLE 13	/* KSM may not merge identical pages.  */
+# define MADV_HUGEPAGE	  14	/* Worth backing with hugepages.  */
+# define MADV_NOHUGEPAGE  15	/* Not worth backing with hugepages.  */
+# define MADV_DONTDUMP	  16    /* Explicity exclude from the core dump,
+                                   overrides the coredump filter bits.  */
+# define MADV_DODUMP	  17	/* Clear the MADV_DONTDUMP flag.  */
+# define MADV_WIPEONFORK  18	/* Zero memory on fork, child only.  */
+# define MADV_KEEPONFORK  19	/* Undo MADV_WIPEONFORK.  */
+# define MADV_COLD        20	/* Deactivate these pages.  */
+# define MADV_PAGEOUT     21	/* Reclaim these pages.  */
+# define MADV_POPULATE_READ 22	/* Populate (prefault) page tables
+				   readable.  */
+# define MADV_POPULATE_WRITE 23	/* Populate (prefault) page tables
+				   writable.  */
+# define MADV_HWPOISON	  100	/* Poison a page for testing.  */
+#include "pthread.h"
 //主测试函数
 void tlibc_test()
 {
@@ -41,6 +66,21 @@ void tlibc_test()
 
     tlibc_sigaction(2,sigint_exit);//SIGINT
     block_terminal_control();
+
+    void *addr = __mmap(NULL, 4096, 
+               PROT_READ | PROT_WRITE,
+               MAP_PRIVATE | MAP_ANONYMOUS, 
+               -1, 0);
+    __madvise(addr, 4096, MADV_NORMAL);
+    __madvise(addr, 4096, MADV_RANDOM);
+    __madvise(addr, 4096, MADV_SEQUENTIAL);
+    __madvise(addr, 4096, MADV_WILLNEED);
+    __madvise(addr, 4096, MADV_DONTNEED);
+    __madvise(addr, 4096, MADV_COLD);
+
+    __printf("addr: %l\n", addr);
+
+    __exit(0);
 
     //shell应用
     void shell();

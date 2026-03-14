@@ -277,4 +277,5 @@ int main(int argc, char *argv[])
     __printf("正在启动space invader...\n");
     // __game_space_invader(argc, argv);
     __game_pacman();
+    return 0;
 }

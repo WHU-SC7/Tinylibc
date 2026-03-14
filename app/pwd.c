@@ -14,4 +14,5 @@ int main(int argc, char *argv[])
         panic("getcwd系统调用失败,错误码: %d\n",ret);
     __printf("%s\n",buf);
     __exit(0);
+    return 0;
 }

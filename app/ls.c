@@ -53,7 +53,7 @@ void print_getdents64_buf(struct linux_dirent64 *buf) //要求buf无数据部分
 }
 
 #define LS_BUF_SIZE 4096 //缓冲区大小
-void main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     int open_ret;
     if(argc == 1) //没有给参数
@@ -86,4 +86,5 @@ void main(int argc, char *argv[])
     LOG("很大off是正常的,可能是文件系统内部使用的哈希值。然后__printf只能输出int的数\n");
 #endif
     __exit(0);
+    return 0;
 }

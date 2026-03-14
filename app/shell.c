@@ -1,7 +1,6 @@
 #include "core.h"
 #include "tlibc_print.h"
 #include "tlibc.h"
-#include "app.h"
 #include "errno.h"
 //这里现在只放shell
 int __internal_chdir(int argc, char *argv[])
@@ -42,41 +41,48 @@ int __internal_chdir(int argc, char *argv[])
     return 0; //正常执行，结束
 }
 
-//普通命令，shell按照fork,wait的方式执行
-char *command_table[] = { //命令的名称表，同一命令在名称表和函数表的次序必须严格对应
-    "ls",
-    "touch",
-    "cat",
-    "rm",
-    "echo",
-    "pwd",
-    "mkdir",
-    "rmdir",
-    "mv",
-    "cp",
-    "game",
-    "vim",
-    "top",
-    "template",
-    "p",
-    "qu"
-};
+int __internal_help(int argc, char *argv[])
+{
+    __printf("Tlibc shell, 版本 0.1\n");
+    __printf("下面是可用的应用列表:\n");
+    __printf("  vim [file]                  - 使用Tinylibc的vim打开文件, 现在只能阅读, 使用w s上下滚动\n");
+    __printf("  game                        - 玩游戏，现在只有吃豆人一个游戏\n");
+    __printf("下面是可用的命令列表:\n");
+    __printf("文件操作:\n");
+    __printf("  cat [file]                  - 显示文件内容\n");
+    __printf("  cp [in] [out]               - 复制文件\n");
+    __printf("  touch [file]                - 创建空文件\n");
+    __printf("  rm [file]                   - 删除文件\n\n");
+
+    __printf("目录操作:\n");
+    __printf("  ls                          - 列出当前目录内容\n");
+    __printf("  ls [dir]                    - 列出目录内容\n");
+    __printf("  mkdir [dir]                 - 创建目录\n");
+    __printf("  rmdir [dir]                 - 删除空目录\n");
+    __printf("  pwd                         - 显示当前目录\n\n");
+
+    __printf("其他:\n");
+    __printf("  echo [text]                 - 输出文本\n");
+    __printf("  echo [string] > [text]      - 输出文本\n");
+    __printf("  mv [old] [new]              - 移动/重命名文件\n\n");
+
+    __printf("下面是可用的shell内置命令列表:\n");
+    __printf("  cd [dir]                    - 切换工作目录\n");
+    __printf("  help                        - 帮助信息\n");
+    return 0;
+}
 
 #define MAX_COMMANDS 64
 
 // 内置命令，shell按函数调用的方式执行
 char *internal_command_table[] = {
     "cd",
-    // "help",
-    // "dgame", //用于strace调试
-    // "test",
+    "help",
 };
 
 int (*internal_command_func_table[MAX_COMMANDS])(int argc, char *argv[]) = {
     __internal_chdir,
-    // __internal_help,
-    // (int (*)(int,  char **))game,
-    // __internal_test,
+    __internal_help,
 };
 
 #define COMMAND_MAX_LEN 16 //命令的最大长度
@@ -326,4 +332,5 @@ int main(int argc, char *argv[])
         }
     }
     tlibc_shutdown();
+    return 0;
 }

@@ -221,4 +221,5 @@ int main(int argc, char *argv[]) {
     destroy_queue(queue);
     
     __exit(0);
+    return 0;
 }

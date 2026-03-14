@@ -33,4 +33,5 @@ int main(int argc, char *argv[])
         __exit(-4);
     }
     __exit(-5);
+    return 0;
 }

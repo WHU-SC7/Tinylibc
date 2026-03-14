@@ -58,4 +58,5 @@ int main(int argc, char *argv[])
     cat_buf[file_size] = '\n';
     __write(1,cat_buf,file_size+1);
     __exit(0);
+    return 0;
 }

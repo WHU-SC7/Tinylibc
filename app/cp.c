@@ -48,4 +48,5 @@ int main(int argc, char *argv[])
         count -= 4096;
     }
     __exit(0);
+    return 0;
 }

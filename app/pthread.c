@@ -31,4 +31,5 @@ int main(int argc, char *argv[])
     if(thread_info==1)
         __printf("验证！子线程改变了thread_info的值为: %d\n", thread_info);
     __exit(0);
+    return 0;
 }

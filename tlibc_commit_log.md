@@ -301,3 +301,6 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 # 2026.3.14
 [refactor] 大改。编译出单独的用户程序和静态库
+
+[fix] 小删改
+在wsl上编译不会检查main函数忽略了return 0.现在补上。

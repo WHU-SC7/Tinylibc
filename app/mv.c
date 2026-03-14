@@ -22,4 +22,5 @@ int main(int argc, char *argv[])
         __exit(-3);
     }
     __exit(0);
+    return 0;
 }

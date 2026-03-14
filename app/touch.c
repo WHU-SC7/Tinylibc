@@ -20,4 +20,5 @@ int main(int argc, char *argv[])
     __close(open_ret);
     // __printf("openat返回值: %d\n",open_ret);
     __exit(0);
+    return 0;
 }

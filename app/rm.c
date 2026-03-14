@@ -3,7 +3,7 @@
 #include "tlibc.h"
 #include "errno.h"
 
-void rm(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     if(argc == 1)
     {

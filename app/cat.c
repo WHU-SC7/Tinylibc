@@ -2,7 +2,7 @@
 #include "tlibc_print.h"
 #include "tlibc.h"
 
-void cat(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     if(argc != 2)
     {

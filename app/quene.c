@@ -145,7 +145,7 @@ void* consumer_task(void* arg) {
     return NULL;
 }
 
-void quene(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
     if(argc == 2)//一个参数
     {
         thread_num = tlibc_strtoul(argv[1]);

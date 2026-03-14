@@ -248,7 +248,7 @@ void top_refresh_time_list(struct top_proc_time *proc_time)
     }
 }
 
-void top(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     int proc_fd;
     int proc_count;

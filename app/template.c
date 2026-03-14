@@ -19,7 +19,7 @@ void template_exit_handler()
     __exit(0);
 }
 
-void template(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     //强制检查终端大小
     tlibc_check_term_size(1, TEMPLATE_ROW_WANTED, TEMPLATE_COL_WANTED);

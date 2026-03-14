@@ -5,7 +5,7 @@
 
 // 带AT_REMOVEDIR的unlinkat会直接删除整个文件夹，不管里面有没有文件
 // 只删除空文件夹的逻辑是交给用户程序实现的。这需要在unlinkat之前getdents64
-void rmdir(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     if(argc == 1)
     {

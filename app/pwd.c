@@ -3,7 +3,7 @@
 #include "tlibc.h"
 #include "errno.h"
 
-void pwd(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     // 不管参数
     char buf[256];

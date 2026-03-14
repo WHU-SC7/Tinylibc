@@ -184,7 +184,7 @@ struct winsize {
 };
 #define TIOCGWINSZ 0x5413
 
-void vim(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     __memset((void*)&w, 0, sizeof(w));
     if (__ioctl(1, TIOCGWINSZ, &w) < 0) {

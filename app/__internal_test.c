@@ -3,7 +3,7 @@
 #include "tlibc.h"
 #include "errno.h"
 
-int __internal_test(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     // unsigned long time_second;
     // unsigned long time_second_1;

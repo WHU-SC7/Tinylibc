@@ -3,7 +3,7 @@
 #include "tlibc.h"
 #include "errno.h"
 
-void mv(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     if(argc < 3)
     {

@@ -272,7 +272,7 @@ void __game_pacman()
 
 
 //游戏管理程序
-void game(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     __printf("正在启动space invader...\n");
     // __game_space_invader(argc, argv);

@@ -13,7 +13,7 @@ void* thread_func(void* arg) {
     return (void *)0;
 }
 
-void pthread(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     __printf("pthread test\n");
     //期望中，两个线程会打印不同的线程号

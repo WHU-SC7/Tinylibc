@@ -298,3 +298,6 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 [refactor] 新建pthread.c放pthread的两个函数
 
 [feat] 第一个简单的多线程程序quene.c
+
+# 2026.3.14
+[refactor] 大改。编译出单独的用户程序和静态库

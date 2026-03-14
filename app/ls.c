@@ -53,7 +53,7 @@ void print_getdents64_buf(struct linux_dirent64 *buf) //要求buf无数据部分
 }
 
 #define LS_BUF_SIZE 4096 //缓冲区大小
-void ls(int argc, char *argv[])
+void main(int argc, char *argv[])
 {
     int open_ret;
     if(argc == 1) //没有给参数

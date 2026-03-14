@@ -3,8 +3,10 @@
 #include "tlibc.h"
 #include "errno.h"
 
-void echo(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
+    __printf("这是echo程序,支持echo \"字符串\"和echo \"字符串\" > 文件两种格式\n");
+    __printf("参数个数：%d\n",argc);
     // 支持echo "字符串"和echo "字符串" > 文件
     if(argc == 2)
     {
@@ -50,4 +52,5 @@ void echo(int argc, char *argv[])
     }
     __write(1,"\n",1);
     __exit(0);
+    return 0;
 }

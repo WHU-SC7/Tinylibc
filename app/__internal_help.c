@@ -3,7 +3,7 @@
 #include "tlibc.h"
 #include "errno.h"
 
-int __internal_help(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     __printf("Tlibc shell, 版本 0.1\n");
     __printf("下面是可用的应用列表:\n");

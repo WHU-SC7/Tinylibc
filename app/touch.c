@@ -2,7 +2,7 @@
 #include "tlibc_print.h"
 #include "tlibc.h"
 
-void touch(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     //先认为参数正确
     if(argc == 1)

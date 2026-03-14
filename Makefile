@@ -62,19 +62,15 @@ all: __x86_64
 
 #先建立目录，再多线程编译。否则可能出错
 __x86_64: clean init_dir 
-	make x86_64 -j
+	make app -j
 
 init_dir:
 	mkdir -p build
-	mkdir -p build/app build/lib
+	mkdir -p build/app build/lib build/bin
 	@echo $(x64_c_srcs)
 	@echo $(x64_c_objs)
 	@echo $(x64_s_srcs)
 	@echo $(x64_s_objs)
-	
-#这个目标会编译并链接出可执行文件
-x86_64: $(x64_c_objs) $(x64_s_objs)
-	$(LD) $(LDFLAGS) -T $(LD_SCRIPT) -o $(Tlibc_exe) $(x64_c_objs) $(x64_s_objs)
 
 $(x64_c_objs): $(WORKPATH)/build/%.o: %.c
 	$(CC) -c $(CFLAGS) -MF $(WORKPATH)/build/$*.d -o $@ $<
@@ -82,9 +78,8 @@ $(x64_c_objs): $(WORKPATH)/build/%.o: %.c
 $(x64_s_objs): $(WORKPATH)/build/%.o: %.S
 	$(CC) -c $(CFLAGS) -MF $(WORKPATH)/build/$*.d -o $@ $<
 
-Tlibc_exe_name = $(notdir $(Tlibc_exe)) 
 run: __x86_64
-	./build/$(Tlibc_exe_name)
+	cd build/bin && ./shell
 
 clean:
 	rm -rf build
@@ -96,6 +91,33 @@ disassemb:
 
 debug: all
 	strace $(Tlibc_exe)
+
+# 源文件定义
+lib_c_srcs := $(wildcard lib/*.c)
+lib_s_srcs := $(wildcard lib/*.S)
+lib_srcs := $(lib_c_srcs) $(lib_s_srcs)
+
+# 目标文件定义
+lib_c_objs := $(patsubst lib/%.c,$(WORKPATH)/build/lib/%.o,$(lib_c_srcs))
+lib_s_objs := $(patsubst lib/%.S,$(WORKPATH)/build/lib/%.o,$(lib_s_srcs))
+lib_objs := $(lib_c_objs) $(lib_s_objs)
+
+app_srcs := $(wildcard app/*.c)
+app_objs := $(patsubst app/%.c,$(WORKPATH)/build/app/%.o,$(app_srcs))
+app_exe := $(patsubst app/%.c,$(WORKPATH)/build/bin/%,$(app_srcs))
+
+# 静态库文件名
+lib_static := $(WORKPATH)/build/tlibc.a
+
+# 创建静态库
+$(lib_static): $(lib_objs)
+	ar rcs $@ $^
+
+# 链接出每个应用程序
+$(WORKPATH)/build/bin/%: $(WORKPATH)/build/app/%.o $(lib_static)
+	$(LD) $(LDFLAGS) -T $(LD_SCRIPT) -o $@ $< $(lib_static)
+
+app: $(app_exe)
 
 #再向下是原来用于riscv的部分
 

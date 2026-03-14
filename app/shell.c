@@ -2,7 +2,45 @@
 #include "tlibc_print.h"
 #include "tlibc.h"
 #include "app.h"
+#include "errno.h"
 //这里现在只放shell
+int __internal_chdir(int argc, char *argv[])
+{
+    //检查参数
+    if(argc == 1)
+    {
+        __printf("错误，缺少参数\n");
+        return -1;
+    }
+    if(argc >2)
+    {
+        __printf("错误，参数超过两个，太多了\n");
+        return -2;
+    }
+    if(*argv[1] == 0)
+    {
+        __printf("错误，传入路径是空\n");
+        return -3;
+    }
+    //执行
+    int ret = __chdir(argv[1]);
+    if(ret < 0) //错误码处理
+    {
+        if(ret == -ENOENT)
+        {
+            __printf("错误，给定路径不存在\n");
+            return -5;
+        }
+        if(ret == -ENOTDIR)
+        {
+            __printf("错误，给定路径不是文件夹\n");
+            return -6;
+        }
+        __printf("错误,chdir系统调用失败,错误码: %d\n",ret);
+        return -7;
+    }
+    return 0; //正常执行，结束
+}
 
 //普通命令，shell按照fork,wait的方式执行
 char *command_table[] = { //命令的名称表，同一命令在名称表和函数表的次序必须严格对应
@@ -25,38 +63,20 @@ char *command_table[] = { //命令的名称表，同一命令在名称表和函�
 };
 
 #define MAX_COMMANDS 64
-void (*command_func_table[MAX_COMMANDS])(int argc, char *argv[]) = { //命令的函数表
-    ls,
-    touch,
-    cat,
-    rm,
-    echo,
-    pwd,
-    mkdir,
-    rmdir,
-    mv,
-    cp,
-    game,
-    vim,
-    top,
-    template,
-    pthread,
-    quene,
-};
 
 // 内置命令，shell按函数调用的方式执行
 char *internal_command_table[] = {
     "cd",
-    "help",
-    "dgame", //用于strace调试
-    "test",
+    // "help",
+    // "dgame", //用于strace调试
+    // "test",
 };
 
 int (*internal_command_func_table[MAX_COMMANDS])(int argc, char *argv[]) = {
     __internal_chdir,
-    __internal_help,
-    (int (*)(int,  char **))game,
-    __internal_test,
+    // __internal_help,
+    // (int (*)(int,  char **))game,
+    // __internal_test,
 };
 
 #define COMMAND_MAX_LEN 16 //命令的最大长度
@@ -179,26 +199,22 @@ int search_command(const char *input_str, char **command_table_to_search, int nu
 /**
  * @brief 根据给定的index执行命令,并传入args和argc
  */
-void run_command(int index, struct command *command)
+void run_command(struct command *command)
 {
     // show_cmd_info(command);
-    if(index < 0)
-    {
-        __printf("错误index<0!\n");
-        return;
-    }
-    if(index > COMMAND_NUM)
-    {
-        __printf("错误,无效的index,超出了命令数量");
-        return;
-    }
 
     // 创建子进程来执行命令
     int status = 0;
+    int ret = 0;
     int pid = __fork();
     if(pid == 0) //子进程
     {
-        command_func_table[index](command->argc,command->args);
+        ret = __execve(command->name, command->args, (void *)0);
+        if(ret < 0)
+        {
+            __printf("execve调用失败, 路径: %s, 错误码: %d\n", command->name, ret);
+            __exit(1); //执行失败，退出
+        }
         __exit(0); //执行完正常退出，但一般不会到这。命令应该执行完自己正常退出
     }
     else
@@ -220,7 +236,7 @@ void run_command(int index, struct command *command)
             }
             else
             {
-                __printf("执行命令%s异常,退出的错误码: %d\n",command_table[index],exit_status);
+                __printf("执行命令%s异常,退出的错误码: %d\n", command->name, exit_status);
                 return;
             }
         }
@@ -241,7 +257,7 @@ void print_promt()
 /**
  * @brief shell,现在只能接收输入
  */
-void shell()
+int main(int argc, char *argv[])
 {
     LOG("欢迎使用Tlibc Shell!\n");
     LOG("使用help查看支持的命令, 输入q退出shell\n");
@@ -301,16 +317,7 @@ void shell()
                 continue;
             }
             //不是内置命令，检查是不是普通命令
-            ret = search_command(command.name,command_table, COMMAND_NUM);
-            if(ret != -1)
-            {
-                // __printf("匹配到命令: %s,开始执行\n",command_table[ret]);
-                run_command(ret,&command);
-            }
-            else //都不是，没有找到命令
-            {
-                __printf("没有找到输入的命令:%s\n",buf);
-            }
+            run_command(&command);
             continue;
         }
         else //解析失败

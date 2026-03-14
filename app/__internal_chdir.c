@@ -6,7 +6,7 @@
 //这是shell的内置命令，不按父子进程的模式执行。而是以函数调用的方式进行
 //因为子进程chdir不能改变父进程的cwd,不是我们想要的效果
 //所以不会使用__exit(),而是return
-int __internal_chdir(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     //检查参数
     if(argc == 1)

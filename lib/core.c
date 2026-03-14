@@ -296,6 +296,11 @@ ssize_t __readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz)
     return syscall(SYS_readlinkat, dirfd, pathname, buf, bufsiz);
 }
 
+int __madvise(void *addr, size_t length, int advice)
+{
+    return syscall(__NR_madvise, addr, length, advice);
+}
+
 //string.h
 /**
  * @brief 应为string.h的标准库函数，为了避免同名冲突，命名加上下划线

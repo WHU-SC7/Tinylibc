@@ -26,7 +26,7 @@ void* thread_func(void* arg) {
 #define STACK_MEM 200*1024*1020
 void* void_thread_func(void* arg) {
     __printf("Hello from thread %d\n", __gettid());
-    char stackvec[STACK_MEM];//约4MB
+    char stackvec[STACK_MEM];//200MB
     char *ptr = stackvec;
     for(int i=0;i<STACK_MEM/4096;i++)
     {

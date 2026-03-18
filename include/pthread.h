@@ -105,9 +105,11 @@ struct pthread {
 	int errno_val;
 	volatile int detach_state; //字段偏移是56
 	volatile int cancel;
+
 	volatile unsigned char canceldisable, cancelasync;
 	unsigned char tsd_used:1;
 	unsigned char dlerror_flag:1;
+
 	unsigned char *map_base;
 	size_t map_size;
 	void *stack;
@@ -115,25 +117,25 @@ struct pthread {
 	size_t guard_size;
 	void *result;
 	// struct __ptcb *cancelbuf;
-	void **tsd;
-	struct {
-		volatile void *volatile head;
-		long off;
-		volatile void *volatile pending;
-	} robust_list;
-	int h_errno_val;
-	volatile int timer_id;
+	// void **tsd;
+	// struct {
+	// 	volatile void *volatile head;
+	// 	long off;
+	// 	volatile void *volatile pending;
+	// } robust_list;
+	// int h_errno_val;
+	// volatile int timer_id;
 	// locale_t locale;
-	volatile int killlock[1];
-	char *dlerror_buf;
-	void *stdio_locks;
+	// volatile int killlock[1];
+	// char *dlerror_buf;
+	// void *stdio_locks;
 
 // 	/* Part 3 -- the positions of these fields relative to
 // 	 * the end of the structure is external and internal ABI. */
-#ifdef TLS_ABOVE_TP
-	uintptr_t canary;
-	uintptr_t *dtv;
-#endif
+// #ifdef TLS_ABOVE_TP
+// 	uintptr_t canary;
+// 	uintptr_t *dtv;
+// #endif
 };
 int __pthread_create(pthread_t *restrict res, const pthread_attr_t *restrict attrp, void *(*entry)(void *), void *restrict arg);
 int __pthread_join(pthread_t t, void **res);

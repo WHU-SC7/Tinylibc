@@ -306,3 +306,6 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 在wsl上编译不会检查main函数忽略了return 0.现在补上。
 
 [experiment] 线程实验
+
+[fix] 修改struct pthread, 补上clone的child_tid参数
+1. 发现在map_base上面增加成员不会有问题，在下面增加却会导致map_base不对

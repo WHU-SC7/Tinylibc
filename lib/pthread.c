@@ -1,6 +1,9 @@
 #include "core.h"
 #include "errno.h"
 #include "pthread.h"
+#include "tlibc_print.h"
+
+#define THREAD_STACK_SIZE 200 * 1024 * 4096 //
 
 //现在只有pthread_create和pthread_join
 
@@ -46,7 +49,7 @@ int __pthread_create(pthread_t *restrict res,
 
     /* 简化：使用默认栈大小 */
     //guard = 0;  // 简化：不使用保护页
-    size = 200* 4096 * 1024;  // 默认 4MB 栈
+    size =  THREAD_STACK_SIZE;  // 默认 4MB 栈
     
     /* 分配内存 */
     map = __mmap(0, size, PROT_READ|PROT_WRITE, 
@@ -72,11 +75,12 @@ int __pthread_create(pthread_t *restrict res,
     args->arg = arg;
     
     /* 创建线程 */
-    int ret = __clone(start, stack, flags, args, &new->tid, 
-                      new, 0);
+    int ret = __clone(start, stack, flags, args, 0, 
+                      new, &new->tid);
     
     if (ret < 0) {
         __munmap(map, size);
+        __printf("映射失败!\n");
         return EAGAIN;
     }
     //因为类型定义与musl不同，加上类型转换。让res指向线程栈底部的struct pthread
@@ -100,8 +104,6 @@ int __pthread_join(pthread_t t, void **res) //res不使用
 {
     // __futex(tid_addr, FUTEX_WAIT_BITSET|FUTEX_CLOCK_REALTIME, tid, NULL, (void *)0 ,0); //glibc的pthread_join的futex调用类似这样
     struct pthread *thread = (struct pthread *)t;
-    //不管线程刚创建时detach_state的值，似乎变化没有规律？？
-    //检查线程是否推出按照glibc的做法。musl的做法难懂
     while(thread->tid != 0) //简单的等待。clone时CLONE_CHILD_CLEARTID标志，让内核在子线程退出时把tid设为0
     {
         // __printf("从tls获取child thread tid: %d, detach_status: %d\n", thread->tid, thread->detach_state);
@@ -109,6 +111,16 @@ int __pthread_join(pthread_t t, void **res) //res不使用
     }
     // __printf("从tls获取child thread tid: %d, detach_status: %d\n", thread->tid, thread->detach_state);
     // __printf("准备回收线程栈\n");
-	if (thread->map_base) __munmap(thread->map_base, thread->map_size); //回收按照glibc的做法
+	if (thread->map_base) 
+    {
+        //线程退出后，map_size被内核(推测是内核)修改为最高地址，+16字节(两个参数)就是整块mmap
+        //__printf("回收线程栈,%l, %l, 差值:%l\n", thread->map_base, thread->map_size, thread->map_size-(size_t)thread->map_base);//thread->map_size-(size_t)thread->map_base+16
+
+        int ret = __munmap(thread->map_base, THREAD_STACK_SIZE); //回收按照glibc的做法
+        if(ret != 0)
+            __printf("ret: %d\n", ret); //-22是参数错误
+    }
+    else
+        __printf("ERROR! thread->map_base = 0!\n");
     return 0;
 }

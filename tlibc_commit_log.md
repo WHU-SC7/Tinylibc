@@ -307,5 +307,9 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 [experiment] 线程实验
 
+# 2026.3.18
 [fix] 修改struct pthread, 补上clone的child_tid参数
 1. 发现在map_base上面增加成员不会有问题，在下面增加却会导致map_base不对
+
+[feat] 新增mempool,按线程管理内存
+1. 顺便再修正一下pthread_create, 补上parent_tid位

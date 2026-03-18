@@ -301,6 +301,11 @@ int __madvise(void *addr, size_t length, int advice)
     return syscall(__NR_madvise, addr, length, advice);
 }
 
+void __exit_group(int status)
+{
+    syscall(__NR_exit_group, status);
+}
+
 //string.h
 /**
  * @brief 应为string.h的标准库函数，为了避免同名冲突，命名加上下划线

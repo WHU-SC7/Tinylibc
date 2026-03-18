@@ -304,3 +304,5 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 [fix] 小删改
 在wsl上编译不会检查main函数忽略了return 0.现在补上。
+
+[experiment] 线程实验

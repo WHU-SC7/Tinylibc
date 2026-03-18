@@ -53,6 +53,7 @@ int __munmap(void *addr, size_t length);
 long __futex(unsigned int *uaddr, int futex_op, unsigned int val, const struct timespec *timeout, unsigned int *uaddr2, unsigned int val3);
 long tlibc_clone_thread(void *stack);
 int __madvise(void *addr, size_t length, int advice);
+void __exit_group(int status);
 
 //string操作
 void *__memset(void *dst, int value, unsigned int n);

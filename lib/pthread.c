@@ -46,7 +46,7 @@ int __pthread_create(pthread_t *restrict res,
 
     /* 简化：使用默认栈大小 */
     //guard = 0;  // 简化：不使用保护页
-    size = 4096 * 1024;  // 默认 4MB 栈
+    size = 200* 4096 * 1024;  // 默认 4MB 栈
     
     /* 分配内存 */
     map = __mmap(0, size, PROT_READ|PROT_WRITE, 

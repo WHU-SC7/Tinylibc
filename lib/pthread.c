@@ -75,7 +75,7 @@ int __pthread_create(pthread_t *restrict res,
     args->arg = arg;
     
     /* 创建线程 */
-    int ret = __clone(start, stack, flags, args, 0, 
+    int ret = __clone(start, stack, flags, args, &new->tid, 
                       new, &new->tid);
     
     if (ret < 0) {

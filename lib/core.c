@@ -1,6 +1,7 @@
 #include "syscall.h"
 #include "syscall_num.h"
 #include "tlibc.h"
+#include "core.h"
 
 
 //系统调用包装
@@ -151,6 +152,7 @@ void *tlibc_malloc(unsigned long size)
     long ret = __brk(0);
     char *ptr  = (char *)__brk((void *)(ret+size)); //分配16k内存示例
     ptr -= size;
+    __memset((void *)ptr, 0, size);
     return (void *)ptr;
 }
 

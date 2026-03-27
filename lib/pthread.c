@@ -60,7 +60,7 @@ int __pthread_create(pthread_t *restrict res,
             __printf("预分配线程栈失败!\n");
             return EAGAIN;
         }
-        remain_thread_stack_num = 1000;
+        remain_thread_stack_num = PRE_ALLOC_SIZE;
     }
     //使用一个栈
     map = (unsigned char *)pre_alloc_stack;

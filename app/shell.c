@@ -331,6 +331,5 @@ int main(int argc, char *argv[])
             __printf("解析命令出错!, 错误码: %d\n",ret);
         }
     }
-    tlibc_shutdown();
     return 0;
 }

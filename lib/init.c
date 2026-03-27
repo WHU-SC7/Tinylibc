@@ -24,6 +24,8 @@ int tlibc_init(int argc, char *argv[])
     //初始化mempool
     mem_pool_init();
 
-    return main(argc, argv);
+    int ret = main(argc, argv);
+    inform_work_thread_to_exit();//先让工作线程退出
+    return ret;
 }
 

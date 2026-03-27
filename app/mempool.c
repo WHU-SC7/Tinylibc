@@ -24,17 +24,14 @@ int main(int argc, char *argv[])
     pthread_t thread;
     __pthread_create(&thread, NULL, thread_func, NULL);
     struct pthread *pthread = (struct pthread *)thread;
-    int tid = pthread->tid;
     // tlibc_msleep(2000); //决定join时子线程是否已经退出
     __printf("从struct pthread, %l获取child thread tid: %d\n", pthread ,pthread->tid);
     __pthread_join(thread, NULL);
 
     malloc(4096);
     debug_print_global_mem_list();
-    clean_with_tid(tid);
-    debug_print_global_mem_list();
-    clean_with_tid(__gettid());
-    debug_print_global_mem_list();
+
+    tlibc_msleep(2000);//等待一会。如果马上退出，工作线程来不及回收
     
     return 0;
 }

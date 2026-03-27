@@ -19,7 +19,7 @@ int tlibc_init(int argc, char *argv[])
         __printf("预分配线程栈失败!\n"); //mmap限制
         return -1;
     }
-    remain_thread_stack_num = 1000;
+    remain_thread_stack_num = PRE_ALLOC_SIZE;
 
     return main(argc, argv);
 }

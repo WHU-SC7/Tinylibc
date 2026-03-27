@@ -3,6 +3,7 @@
 #include "syscall.h"
 #include "syscall_num.h"
 #include "tlibc.h"
+#include "mempool.h"
 
 #define MAX_THREAD_OF_MEMPOOL 256
 struct global_mem_list{
@@ -13,6 +14,9 @@ struct thread_mem_list{
     pid_t tid;
     int chunk_num;
     struct mem_chunk *first;
+    long stack_base;
+    long stack_size;
+    enum Thread_state state;
 };
 struct mem_chunk{
     struct mem_chunk *next;
@@ -26,9 +30,53 @@ char whether_have_init = 0;//禁止未初始化时使用
 
 int mem_pool_init()
 {
-    global_mem_list = tlibc_malloc(16 * MAX_THREAD_OF_MEMPOOL +16);
-    whether_have_init = 1;
-    return 0;
+    if(whether_have_init != 1){
+        global_mem_list = tlibc_malloc(16 * MAX_THREAD_OF_MEMPOOL +16);
+        int thread_idx = find_or_alloc_thread_idx(__gettid()); //记录主线程
+        global_mem_list->thread_mem_list[thread_idx]->state = MAIN_THREAD;
+        whether_have_init = 1;
+        return 0;
+    }
+    else return 0;
+}
+
+int find_or_alloc_thread_idx(pid_t tid)
+{
+    int thread_idx = -1; //请求malloc的线程对应的idex
+    for(int i=0; i<MAX_THREAD_OF_MEMPOOL; i++)
+    {
+        if(global_mem_list->thread_id_idx[i]==0){//选择这个空位,并分配一个struct thread_mem_list
+            thread_idx = i;
+            struct thread_mem_list *t_mem_list = tlibc_malloc(sizeof(struct thread_mem_list));
+            t_mem_list->tid = tid;//记录tid
+            global_mem_list->thread_id_idx[i] = tid;
+            global_mem_list->thread_mem_list[i] = t_mem_list;
+            break;
+        }
+        if(tid == global_mem_list->thread_id_idx[i])
+        {
+            thread_idx = i;
+            break;
+        }
+    }
+    if(thread_idx == -1)
+        return -1;
+    else
+        return thread_idx;
+}
+
+int register_thread_stack(pid_t tid, long stack_base, long stack_size)
+{
+    int thread_idx = find_or_alloc_thread_idx(tid);
+    if(thread_idx == -1){
+        __printf("ERROR!列表已满\n");
+        return -1;
+    }
+    struct thread_mem_list *t_mem_list = global_mem_list->thread_mem_list[thread_idx];
+    t_mem_list->stack_base = stack_base;
+    t_mem_list->stack_size = stack_size;
+    t_mem_list->state = ALIVE;
+    return thread_idx;
 }
 
 void *malloc(unsigned long size)
@@ -146,6 +194,8 @@ void debug_print_global_mem_list()
         for(int i=0; i<thread_count; i++){
             struct thread_mem_list *t_mem_list = global_mem_list->thread_mem_list[i];
             struct mem_chunk *chunk = t_mem_list->first; 
+            __printf("线程%d的状态: %d\n", t_mem_list->tid, t_mem_list->state);
+            __printf("线程%d的栈base: %l, size: %l\n", t_mem_list->tid, t_mem_list->stack_base, t_mem_list->stack_size);
             __printf("线程%d的内存统计:\n", t_mem_list->tid);
             for(int j=0; j<t_mem_list->chunk_num; j++){
                 __printf("\tchunk%d, map_base: %l, map_size: %l, flag: %l\n", j, chunk->base, chunk->size, chunk->flag);

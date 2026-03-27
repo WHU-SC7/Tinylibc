@@ -3,6 +3,7 @@
 #include "pthread.h"
 #include "tlibc_print.h"
 #include "init.h"
+#include "mempool.h"
 
 //现在只有pthread_create和pthread_join
 
@@ -67,6 +68,7 @@ int __pthread_create(pthread_t *restrict res,
     pre_alloc_stack = ((char *)pre_alloc_stack + THREAD_STACK_SIZE);
     remain_thread_stack_num --;
     // __printf("使用栈%l, 剩余的栈数量: %d\n", (long)pre_alloc_stack, remain_thread_stack_num);
+
     
     stack = map + size;
     
@@ -91,10 +93,12 @@ int __pthread_create(pthread_t *restrict res,
                       new, &new->tid);
     
     if (ret < 0) {
-        __munmap(map, size);
+        pre_alloc_stack = ((char *)pre_alloc_stack - THREAD_STACK_SIZE);
+        remain_thread_stack_num ++;
         __printf("映射失败!\n");
         return EAGAIN;
     }
+    register_thread_stack(new->tid, (long)map, size);
     //因为类型定义与musl不同，加上类型转换。让res指向线程栈底部的struct pthread
     *res = (pthread_t)new;
     return 0;

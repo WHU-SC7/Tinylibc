@@ -27,14 +27,18 @@ struct mem_chunk{
 
 struct global_mem_list *global_mem_list;
 char whether_have_init = 0;//禁止未初始化时使用
+int work_thread_exit = 0;
 
 int mem_pool_init()
 {
     if(whether_have_init != 1){
-        global_mem_list = tlibc_malloc(16 * MAX_THREAD_OF_MEMPOOL +16);
+        global_mem_list = tlibc_malloc(sizeof(struct global_mem_list));
         int thread_idx = find_or_alloc_thread_idx(__gettid()); //记录主线程
         global_mem_list->thread_mem_list[thread_idx]->state = MAIN_THREAD;
         whether_have_init = 1;
+        //创建工作线程，定期回收已经退出的线程资源
+        pthread_t thread;
+        __pthread_create(&thread, NULL, mempool_work_thread_func, NULL);
         return 0;
     }
     else return 0;
@@ -77,6 +81,76 @@ int register_thread_stack(pid_t tid, long stack_base, long stack_size)
     t_mem_list->stack_size = stack_size;
     t_mem_list->state = ALIVE;
     return thread_idx;
+}
+
+//标识一个线程的退出，pthread_exit调用
+int mempool_mark_thread_exit(pid_t tid)
+{
+    int thread_idx = find_or_alloc_thread_idx(tid);
+    if(thread_idx == -1){
+        __printf("ERROR!没有找到指定线程\n");
+        return -1;
+    }
+    struct thread_mem_list *t_mem_list = global_mem_list->thread_mem_list[thread_idx];
+    if(t_mem_list->state == MAIN_THREAD)
+        return -1;//禁止让主线程退出
+    t_mem_list->state = EXIT;
+    __printf("线程%d标记为EXIT\n", tid);
+    return 0;
+}
+
+
+//扫描一遍，清理已经退出的线程
+int mempool_clean_thread()
+{
+    for(int i=0; i<MAX_THREAD_OF_MEMPOOL; i++){
+        if(global_mem_list->thread_id_idx[i] == 0)//扫描完了
+            break;
+        if(global_mem_list->thread_mem_list[i]->state == EXIT){
+            __printf("回收线程%d的资源\n", global_mem_list->thread_id_idx[i]);
+            struct thread_mem_list *t_mem_list = global_mem_list->thread_mem_list[i];
+            struct mem_chunk *chunk = t_mem_list->first; 
+            //回收线程栈
+            int ret = __munmap((void *)t_mem_list->stack_base, t_mem_list->stack_size);
+            if(ret==0)
+                __printf("回收栈成功!base: %l, size: %l\n", t_mem_list->stack_base, t_mem_list->stack_size);
+            else
+                __printf("ERROR!回收栈失败\n");
+            for(int i=0; i<t_mem_list->chunk_num; i++){ //回收所有映射和struct mem_chunk
+                if(__munmap((void *)chunk->base, chunk->size) == -1){
+                    __printf("ERROR! 回收内存失败, base: %l, size: %l\n", chunk->base, chunk->size);
+                }
+                __printf("成功回收内存, base: %l, size: %l\n", chunk->base, chunk->size);
+                chunk = chunk->next;
+                __munmap((void *)chunk, sizeof(struct mem_chunk));
+            }
+            //线程内存全部释放，回收struct thread_mem_list;
+            __munmap((void *)t_mem_list, sizeof(struct thread_mem_list));
+            //前移填空，保持有序
+            for(int j= i; j<MAX_THREAD_OF_MEMPOOL; j++){
+                global_mem_list->thread_id_idx[j] = global_mem_list->thread_id_idx[j+1];
+                global_mem_list->thread_mem_list[j] = global_mem_list->thread_mem_list[j+1];
+            }
+            i--; //因为前移，要-1
+        }
+    }
+    return 0;
+}
+
+//负责清理的线程
+void *mempool_work_thread_func(void* arg)
+{
+    while(1){
+        if(work_thread_exit == 1)
+            __exit(0);
+        tlibc_msleep(1000); //每次睡眠1秒
+        mempool_clean_thread();
+    }
+}
+
+void inform_work_thread_to_exit()
+{
+    work_thread_exit = 1;
 }
 
 void *malloc(unsigned long size)

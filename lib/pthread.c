@@ -14,10 +14,10 @@ static int start(void *p)
         void *start_arg;
     } *args = p;
     
-    args->start_func(args->start_arg);
+    void *ret = args->start_func(args->start_arg);
     
     /* 线程退出 */
-    __exit(0);
+    __pthread_exit(ret);
     return 0;
 }
 
@@ -118,25 +118,38 @@ enum {
 //简单的pthread_join，等待指定的线程退出.完全不保证与musl或glibc通用！！！完全不保证！
 int __pthread_join(pthread_t t, void **res) //res不使用
 {
-    // __futex(tid_addr, FUTEX_WAIT_BITSET|FUTEX_CLOCK_REALTIME, tid, NULL, (void *)0 ,0); //glibc的pthread_join的futex调用类似这样
-    struct pthread *thread = (struct pthread *)t;
-    while(thread->tid != 0) //简单的等待。clone时CLONE_CHILD_CLEARTID标志，让内核在子线程退出时把tid设为0
-    {
-        // __printf("从tls获取child thread tid: %d, detach_status: %d\n", thread->tid, thread->detach_state);
-        tlibc_msleep(100); //如果一直检查浪费CPU。之后考虑futex更好，为了简单先用睡眠替代
-    }
-    // __printf("从tls获取child thread tid: %d, detach_status: %d\n", thread->tid, thread->detach_state);
-    // __printf("准备回收线程栈\n");
-	if (thread->map_base) 
-    {
-        //线程退出后，map_size被内核(推测是内核)修改为最高地址，+16字节(两个参数)就是整块mmap
-        //__printf("回收线程栈,%l, %l, 差值:%l\n", thread->map_base, thread->map_size, thread->map_size-(size_t)thread->map_base);//thread->map_size-(size_t)thread->map_base+16
+    // // __futex(tid_addr, FUTEX_WAIT_BITSET|FUTEX_CLOCK_REALTIME, tid, NULL, (void *)0 ,0); //glibc的pthread_join的futex调用类似这样
+    // struct pthread *thread = (struct pthread *)t;
+    // while(thread->tid != 0) //简单的等待。clone时CLONE_CHILD_CLEARTID标志，让内核在子线程退出时把tid设为0
+    // {
+    //     // __printf("从tls获取child thread tid: %d, detach_status: %d\n", thread->tid, thread->detach_state);
+    //     tlibc_msleep(100); //如果一直检查浪费CPU。之后考虑futex更好，为了简单先用睡眠替代
+    // }
+    // // __printf("从tls获取child thread tid: %d, detach_status: %d\n", thread->tid, thread->detach_state);
+    // // __printf("准备回收线程栈\n");
+	// if (thread->map_base) 
+    // {
+    //     //线程退出后，map_size被内核(推测是内核)修改为最高地址，+16字节(两个参数)就是整块mmap
+    //     //__printf("回收线程栈,%l, %l, 差值:%l\n", thread->map_base, thread->map_size, thread->map_size-(size_t)thread->map_base);//thread->map_size-(size_t)thread->map_base+16
 
-        int ret = __munmap(thread->map_base, THREAD_STACK_SIZE); //回收按照glibc的做法
-        if(ret != 0)
-            __printf("ret: %d\n", ret); //-22是参数错误
-    }
-    else
-        __printf("ERROR! thread->map_base = 0!\n");
+    //     int ret = __munmap(thread->map_base, THREAD_STACK_SIZE); //回收按照glibc的做法
+    //     if(ret != 0)
+    //         __printf("ret: %d\n", ret); //-22是参数错误
+    // }
+    // else
+    //     __printf("ERROR! thread->map_base = 0!\n");
+
+    //新的逻辑，或许根本不需要等待。只尝试检查一次join的线程是否退出，如果没退出就不管了，如果退出了就回收。
+    //因为工作线程会自动回收退出的线程
+
     return 0;
+}
+
+//如果是异步回收，返回值不好处理。总不能真的等待返回值。先忽略retval
+void __pthread_exit(void *retval)
+{
+    //标识自身退出
+    mempool_mark_thread_exit(__gettid());
+    //exit系统调用，让内核销毁task_struct结构体
+    __exit(0);
 }

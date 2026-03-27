@@ -140,4 +140,5 @@ struct pthread {
 };
 int __pthread_create(pthread_t *restrict res, const pthread_attr_t *restrict attrp, void *(*entry)(void *), void *restrict arg);
 int __pthread_join(pthread_t t, void **res);
+void __pthread_exit(void *retval);
 #endif

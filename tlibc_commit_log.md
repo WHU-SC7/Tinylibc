@@ -319,3 +319,10 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 [feat] 记录线程栈。区分主线程和子线程
 1. 现在mempool能记录一个线程的所有资源了，栈和请求的内存。前提是请求内存都是用malloc接口
+
+[feat] 实现异步回收线程栈和内存
+1. 副作用是把以前的用户程序都干掉了。在main函数之后才让工作线程退出。之前不规范的做法是在main函数中直接exit，会留下工作线程一直不退出。
+现在就改了shell.c pthread.c mempool.c。剩下的暂时不管
+2. 初始化时创建工作线程，工作线程隔一段时间就扫描并回收已退出线程的资源，资源包括栈和通过malloc请求的内存
+3. 大改pthread_join和pthread_exit。pthread_exit会对mempool标识自身退出然后exit；pthread_join现在先什么都不做，清理工作委托给工作线程异步来做了
+[todo] 考虑mempool的锁问题。写点pthread_join的逻辑 

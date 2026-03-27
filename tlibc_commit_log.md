@@ -316,3 +316,6 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 # 2026.3.27
 [feat] 预分配线程栈的空间，减小pthread_create的mmap调用开销
+
+[feat] 记录线程栈。区分主线程和子线程
+1. 现在mempool能记录一个线程的所有资源了，栈和请求的内存。前提是请求内存都是用malloc接口

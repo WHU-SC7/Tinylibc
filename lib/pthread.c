@@ -2,8 +2,7 @@
 #include "errno.h"
 #include "pthread.h"
 #include "tlibc_print.h"
-
-#define THREAD_STACK_SIZE 200 * 1024 * 4096 //
+#include "init.h"
 
 //现在只有pthread_create和pthread_join
 
@@ -52,9 +51,22 @@ int __pthread_create(pthread_t *restrict res,
     size =  THREAD_STACK_SIZE;  // 默认 4MB 栈
     
     /* 分配内存 */
-    map = __mmap(0, size, PROT_READ|PROT_WRITE, 
-                 MAP_PRIVATE|MAP_ANON, -1, 0);
-    if (map == MAP_FAILED) return EAGAIN;
+    //一次分配PRE_ALLOC_SIZE个栈大小的空间，这样不必每次都mmap
+    if(remain_thread_stack_num==0){
+        pre_alloc_stack = __mmap(0, PRE_ALLOC_SIZE*THREAD_STACK_SIZE, PROT_READ|PROT_WRITE, 
+                     MAP_PRIVATE|MAP_ANON, -1, 0);
+        if(map == (void *)-1)
+        {
+            __printf("预分配线程栈失败!\n");
+            return EAGAIN;
+        }
+        remain_thread_stack_num = 1000;
+    }
+    //使用一个栈
+    map = (unsigned char *)pre_alloc_stack;
+    pre_alloc_stack = ((char *)pre_alloc_stack + THREAD_STACK_SIZE);
+    remain_thread_stack_num --;
+    // __printf("使用栈%l, 剩余的栈数量: %d\n", (long)pre_alloc_stack, remain_thread_stack_num);
     
     stack = map + size;
     

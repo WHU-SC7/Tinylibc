@@ -3,6 +3,7 @@
 
 #include "tlibc.h" //需要_NSIG
 #define NULL ((void *)0)
+#define THREAD_STACK_SIZE 4 * 1024 * 4096
 
 struct start_args {
 	void *(*start_func)(void *);

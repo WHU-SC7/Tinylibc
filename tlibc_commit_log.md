@@ -313,3 +313,6 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 [feat] 新增mempool,按线程管理内存
 1. 顺便再修正一下pthread_create, 补上parent_tid位
+
+# 2026.3.27
+[feat] 预分配线程栈的空间，减小pthread_create的mmap调用开销

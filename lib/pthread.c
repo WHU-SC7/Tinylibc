@@ -17,7 +17,7 @@ static int start(void *p)
     void *ret = args->start_func(args->start_arg);
     
     /* 线程退出 */
-    __pthread_exit(ret);
+    pthread_exit(ret);
     return 0;
 }
 
@@ -35,7 +35,7 @@ static int start(void *p)
                         void *(*entry)(void *),                 入口函数
                         void *restrict arg)                     传给线程的参数
 */
-int __pthread_create(pthread_t *restrict res, 
+int pthread_create(pthread_t *restrict res, 
                      const pthread_attr_t *restrict attrp, 
                      void *(*entry)(void *), 
                      void *restrict arg)
@@ -116,7 +116,7 @@ enum {
 };
 
 //简单的pthread_join，等待指定的线程退出.完全不保证与musl或glibc通用！！！完全不保证！
-int __pthread_join(pthread_t t, void **res) //res不使用
+int pthread_join(pthread_t t, void **res) //res不使用
 {
     // // __futex(tid_addr, FUTEX_WAIT_BITSET|FUTEX_CLOCK_REALTIME, tid, NULL, (void *)0 ,0); //glibc的pthread_join的futex调用类似这样
     // struct pthread *thread = (struct pthread *)t;
@@ -146,7 +146,7 @@ int __pthread_join(pthread_t t, void **res) //res不使用
 }
 
 //如果是异步回收，返回值不好处理。总不能真的等待返回值。先忽略retval
-void __pthread_exit(void *retval)
+void pthread_exit(void *retval)
 {
     //标识自身退出
     mempool_mark_thread_exit(__gettid());

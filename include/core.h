@@ -31,6 +31,7 @@ long __brk(void *addr);
 void *tlibc_malloc(unsigned long size);
 int __nanosleep(const struct timespec *req, struct timespec *rem);
 int tlibc_msleep(unsigned int msecond);
+int usleep(unsigned int usecond);
 time_t __time(time_t *tloc);
 int __clock_gettime(clockid_t clockid, struct timespec *tp);
 int __sigaction(int signum, const struct sigaction *act, struct sigaction *oldact);

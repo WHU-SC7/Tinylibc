@@ -46,7 +46,7 @@ int main(int argc, char *argv[])
     for(int i=0;i<THREAD_NUM; i++)
     {
         // tlibc_msleep(100);
-        __pthread_create(&thread, NULL, void_thread_func, NULL);
+        pthread_create(&thread, NULL, void_thread_func, NULL);
     }
     for(int i=0;i<5;i++)
     {

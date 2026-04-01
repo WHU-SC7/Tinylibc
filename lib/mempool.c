@@ -38,7 +38,7 @@ int mem_pool_init()
         whether_have_init = 1;
         //创建工作线程，定期回收已经退出的线程资源
         pthread_t thread;
-        __pthread_create(&thread, NULL, mempool_work_thread_func, NULL);
+        pthread_create(&thread, NULL, mempool_work_thread_func, NULL);
         return 0;
     }
     else return 0;

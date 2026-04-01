@@ -176,7 +176,7 @@ int main(int argc, char *argv[]) {
     
     // 创建生产者线程
     for (int i = 0; i < thread_num; i++) {
-        ret = __pthread_create(&producers[i], NULL, producer_task, queue);
+        ret = pthread_create(&producers[i], NULL, producer_task, queue);
         if (ret != 0) {
             __printf("创建生产者线程失败: %d\n", ret);
             __exit(-1);
@@ -185,7 +185,7 @@ int main(int argc, char *argv[]) {
     
     // 创建消费者线程（如果取消注释）
     // for (int i = 0; i < thread_num; i++) {
-    //     ret = __pthread_create(&consumers[i], NULL, consumer_task, queue);
+    //     ret = pthread_create(&consumers[i], NULL, consumer_task, queue);
     //     if (ret != 0) {
     //         __printf("创建消费者线程失败: %d\n", ret);
     //         return -1;
@@ -194,8 +194,8 @@ int main(int argc, char *argv[]) {
     
     // 等待所有线程完成
     for (int i = 0; i < thread_num; i++) {
-        __pthread_join(producers[i], NULL);
-        // __pthread_join(consumers[i], NULL);
+        pthread_join(producers[i], NULL);
+        // pthread_join(consumers[i], NULL);
     }
     
     // 验证结果

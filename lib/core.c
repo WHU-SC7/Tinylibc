@@ -181,6 +181,24 @@ int tlibc_msleep(unsigned int msecond)
     return 0;
 }
 
+int usleep(unsigned int usecond)
+{
+    struct timespec time;
+    if(usecond < 1000)
+    {
+        time.st_atime_sec = 0;
+        time.st_atime_nsec = usecond * 1000;
+        __nanosleep(&time, &time);
+    }
+    else
+    {
+        time.st_atime_sec = usecond / 1000;
+        time.st_atime_nsec = (usecond%1000000)*1000;
+        __nanosleep(&time, &time);
+    }
+    return 0;
+}
+
 time_t __time(time_t *tloc)
 {
     return syscall(SYS_time, tloc);

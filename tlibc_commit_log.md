@@ -329,3 +329,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 # 2026.4.1
 [refactor] 修改函数名，准备与glibc对比实验
+
+# 2026.4.6
+[feat] 修改printf，支持%f
+使用gcc内置的__builtin_va_list系列内建宏

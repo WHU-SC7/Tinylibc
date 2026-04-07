@@ -14,7 +14,7 @@
 #include <unistd.h>
 #endif
 
-#define THREAD_NUM_PER_CIRCLE 50
+#define THREAD_NUM_PER_CIRCLE 200
 
 void* thread_func(void* arg) {
     for(int i=0;i<1000000;i++); //400微秒

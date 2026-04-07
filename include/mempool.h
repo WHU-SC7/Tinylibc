@@ -9,7 +9,8 @@ int clean_with_tid(pid_t tid);
 int scan_and_clean_global_mem_list();
 void debug_print_global_mem_list();
 int register_thread_stack(pid_t tid, long stack_base, long stack_size);
-int find_or_alloc_thread_idx(pid_t tid);
+int alloc_thread_idx(pid_t tid);
+int find_thread_idx(pid_t tid);
 int mempool_mark_thread_exit(pid_t tid);
 void *mempool_work_thread_func(void* arg);
 void inform_work_thread_to_exit();
@@ -19,6 +20,7 @@ enum Thread_state{
     MAIN_THREAD, //初始的主线程
     ALIVE,
     EXIT,
+    WORK_THREAD, //负责清理的线程
 };
 
 #endif

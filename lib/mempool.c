@@ -61,7 +61,7 @@ int mem_pool_init()
 {
     if(whether_have_init != 1){
         global_mem_list = tlibc_malloc(sizeof(struct global_mem_list));
-        int thread_idx = find_or_alloc_thread_idx(__gettid()); //记录主线程
+        int thread_idx = alloc_thread_idx(__gettid()); //记录主线程
         global_mem_list->thread_mem_list[thread_idx]->state = MAIN_THREAD;
         whether_have_init = 1;
         global_mem_list->spinlock.lock = 0;
@@ -73,7 +73,7 @@ int mem_pool_init()
     else return 0;
 }
 
-int find_or_alloc_thread_idx(pid_t tid)
+int alloc_thread_idx(pid_t tid)
 {
     int thread_idx = -1; //请求malloc的线程对应的idex
     for(int i=0; i<MAX_THREAD_OF_MEMPOOL; i++)
@@ -86,6 +86,18 @@ int find_or_alloc_thread_idx(pid_t tid)
             global_mem_list->thread_mem_list[i] = t_mem_list;
             break;
         }
+    }
+    if(thread_idx == -1)
+        return -1;
+    else
+        return thread_idx;
+}
+
+int find_thread_idx(pid_t tid)
+{
+    int thread_idx = -1;
+    for(int i=0; i<MAX_THREAD_OF_MEMPOOL; i++)
+    {
         if(tid == global_mem_list->thread_id_idx[i])
         {
             thread_idx = i;
@@ -101,9 +113,9 @@ int find_or_alloc_thread_idx(pid_t tid)
 int register_thread_stack(pid_t tid, long stack_base, long stack_size)
 {
     spinlock_lock(&global_mem_list->spinlock);
-    int thread_idx = find_or_alloc_thread_idx(tid);
+    int thread_idx = alloc_thread_idx(tid);
     if(thread_idx == -1){
-        DEBUG_PRINTF("ERROR!列表已满\n");
+        ERROR_DEBUG_PRINTF("ERROR!列表已满\n");
         spinlock_unlock(&global_mem_list->spinlock);
         return -1;
     }
@@ -123,9 +135,9 @@ int register_thread_stack(pid_t tid, long stack_base, long stack_size)
 int mempool_mark_thread_exit(pid_t tid)
 {
     spinlock_lock(&global_mem_list->spinlock);
-    int thread_idx = find_or_alloc_thread_idx(tid);
+    int thread_idx = find_thread_idx(tid);
     if(thread_idx == -1){
-        DEBUG_PRINTF("ERROR!没有找到指定线程\n");
+        ERROR_DEBUG_PRINTF("ERROR!没有找到指定线程%d\n", tid);
         spinlock_unlock(&global_mem_list->spinlock);
         return -1;
     }
@@ -145,7 +157,7 @@ int mempool_clean_thread()
     spinlock_lock(&global_mem_list->spinlock);
     for(int i=0; i<MAX_THREAD_OF_MEMPOOL; i++){
         if(global_mem_list->thread_id_idx[i] == 0)//扫描完了
-            break;
+            continue;
         if(global_mem_list->thread_mem_list[i]->state == EXIT){
             DEBUG_PRINTF("回收线程%d的资源\n", global_mem_list->thread_id_idx[i]);
             struct thread_mem_list *t_mem_list = global_mem_list->thread_mem_list[i];
@@ -170,12 +182,14 @@ int mempool_clean_thread()
 clean:
             //线程内存全部释放，回收struct thread_mem_list;
             __munmap((void *)t_mem_list, sizeof(struct thread_mem_list));
+            global_mem_list->thread_id_idx[i]=0;
+            global_mem_list->thread_mem_list[i]=0;
             //前移填空，保持有序
-            for(int j= i; j<MAX_THREAD_OF_MEMPOOL; j++){
-                global_mem_list->thread_id_idx[j] = global_mem_list->thread_id_idx[j+1];
-                global_mem_list->thread_mem_list[j] = global_mem_list->thread_mem_list[j+1];
-            }
-            i--; //因为前移，要-1
+            // for(int j= i; j<MAX_THREAD_OF_MEMPOOL; j++){
+            //     global_mem_list->thread_id_idx[j] = global_mem_list->thread_id_idx[j+1];
+            //     global_mem_list->thread_mem_list[j] = global_mem_list->thread_mem_list[j+1];
+            // }
+            // i--; //因为前移，要-1
         }
     }
     spinlock_unlock(&global_mem_list->spinlock);
@@ -322,5 +336,6 @@ void debug_print_global_mem_list()
             }
         }
     }
+    ERROR_DEBUG_PRINTF("共有%d个线程,第一个是主线程,第二个是工作线程\n", thread_count);
     ERROR_DEBUG_PRINTF("--------------------------------------------------\n\n");
 }

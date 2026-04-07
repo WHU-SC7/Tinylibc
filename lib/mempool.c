@@ -113,14 +113,14 @@ int mempool_clean_thread()
             //回收线程栈
             int ret = __munmap((void *)t_mem_list->stack_base, t_mem_list->stack_size);
             if(ret==0)
-                __printf("回收栈成功!base: %l, size: %l\n", t_mem_list->stack_base, t_mem_list->stack_size);
+                __printf("回收栈成功!base: %ld, size: %ld\n", t_mem_list->stack_base, t_mem_list->stack_size);
             else
                 __printf("ERROR!回收栈失败\n");
             for(int i=0; i<t_mem_list->chunk_num; i++){ //回收所有映射和struct mem_chunk
                 if(__munmap((void *)chunk->base, chunk->size) == -1){
-                    __printf("ERROR! 回收内存失败, base: %l, size: %l\n", chunk->base, chunk->size);
+                    __printf("ERROR! 回收内存失败, base: %ld, size: %ld\n", chunk->base, chunk->size);
                 }
-                __printf("成功回收内存, base: %l, size: %l\n", chunk->base, chunk->size);
+                __printf("成功回收内存, base: %ld, size: %ld\n", chunk->base, chunk->size);
                 chunk = chunk->next;
                 __munmap((void *)chunk, sizeof(struct mem_chunk));
             }
@@ -225,7 +225,7 @@ int clean_with_tid(pid_t tid)
         struct mem_chunk *chunk = t_mem_list->first; 
         for(int i=0; i<t_mem_list->chunk_num; i++){ //回收所有映射和struct mem_chunk
             if(__munmap((void *)chunk->base, chunk->size) == -1){
-                __printf("ERROR! 回收内存失败, base: %l, size: %l\n", chunk->base, chunk->size);
+                __printf("ERROR! 回收内存失败, base: %ld, size: %ld\n", chunk->base, chunk->size);
             }
             chunk = chunk->next;
             __munmap((void *)chunk, sizeof(struct mem_chunk));
@@ -269,10 +269,10 @@ void debug_print_global_mem_list()
             struct thread_mem_list *t_mem_list = global_mem_list->thread_mem_list[i];
             struct mem_chunk *chunk = t_mem_list->first; 
             __printf("线程%d的状态: %d\n", t_mem_list->tid, t_mem_list->state);
-            __printf("线程%d的栈base: %l, size: %l\n", t_mem_list->tid, t_mem_list->stack_base, t_mem_list->stack_size);
+            __printf("线程%d的栈base: %ld, size: %ld\n", t_mem_list->tid, t_mem_list->stack_base, t_mem_list->stack_size);
             __printf("线程%d的内存统计:\n", t_mem_list->tid);
             for(int j=0; j<t_mem_list->chunk_num; j++){
-                __printf("\tchunk%d, map_base: %l, map_size: %l, flag: %l\n", j, chunk->base, chunk->size, chunk->flag);
+                __printf("\tchunk%d, map_base: %ld, map_size: %ld, flag: %ld\n", j, chunk->base, chunk->size, chunk->flag);
                 chunk = chunk->next;
             }
         }

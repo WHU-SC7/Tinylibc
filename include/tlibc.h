@@ -59,8 +59,8 @@ struct linux_dirent64 {
 
 //stat,放到什么文件呢？之后参考别的libc吧
 struct timespec {
-    unsigned long st_atime_sec;
-    unsigned long st_atime_nsec;
+    unsigned long tv_sec;
+    unsigned long tv_nsec;
 };
 //参考man 2 fstat
 #include "stat.h"

@@ -8,7 +8,7 @@
 
 void* thread_func(void* arg) {
     // struct pthread *pthread = (struct pthread *)arg;
-    // __printf("从struct pthread, %l获取child thread tid: %d\n", pthread, pthread->tid);
+    // __printf("从struct pthread, %ld获取child thread tid: %d\n", pthread, pthread->tid);
     tlibc_msleep(1000);
     // __printf("Hello from thread %d\n", __gettid());
 
@@ -25,7 +25,7 @@ int main(int argc, char *argv[])
     pthread_create(&thread, NULL, thread_func, NULL);
     struct pthread *pthread = (struct pthread *)thread;
     // tlibc_msleep(2000); //决定join时子线程是否已经退出
-    __printf("从struct pthread, %l获取child thread tid: %d\n", pthread ,pthread->tid);
+    __printf("从struct pthread, %ld获取child thread tid: %d\n", pthread ,pthread->tid);
     pthread_join(thread, NULL);
 
     malloc(4096);

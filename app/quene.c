@@ -158,7 +158,7 @@ int main(int argc, char *argv[]) {
     __printf("线程数: %d, 执行次数: %d\n", thread_num, task_time);
     struct timespec tp, tp1;
     __clock_gettime(CLOCK_REALTIME, &tp);
-    __printf("开始时间: %l秒 %l纳秒\n", tp.st_atime_sec, tp.st_atime_nsec);
+    __printf("开始时间: %ld秒 %ld纳秒\n", tp.tv_sec, tp.tv_nsec);
 
     // 初始化队列
     Queue *queue = (Queue*)tlibc_malloc(sizeof(Queue));
@@ -204,18 +204,18 @@ int main(int argc, char *argv[]) {
     __printf("队列剩余元素: %d\n", queue->num);
     
     __clock_gettime(CLOCK_REALTIME, &tp1);
-    long sec = tp1.st_atime_sec - tp.st_atime_sec;
-    long nsec = tp1.st_atime_nsec - tp.st_atime_nsec;
+    long sec = tp1.tv_sec - tp.tv_sec;
+    long nsec = tp1.tv_nsec - tp.tv_nsec;
     
     if (nsec < 0) {
         sec--;
         nsec += 1000000000L;
     }
     
-    __printf("结束时间: %l秒 %l纳秒\n", tp1.st_atime_sec, tp1.st_atime_nsec);
-    __printf("总用时: %l秒 %l微秒\n", sec, nsec/1000);
+    __printf("结束时间: %ld秒 %ld纳秒\n", tp1.tv_sec, tp1.tv_nsec);
+    __printf("总用时: %ld秒 %ld微秒\n", sec, nsec/1000);
     // long throughout = consumed * 1000 / (sec * 1000 + nsec/1000000);
-    // __printf("每秒执行次数: %lK\n", throughout);
+    // __printf("每秒执行次数: %ldK\n", throughout);
     
     // 清理资源
     destroy_queue(queue);

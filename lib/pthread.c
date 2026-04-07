@@ -56,7 +56,7 @@ int pthread_create(pthread_t *restrict res,
     if(remain_thread_stack_num==0){
         pre_alloc_stack = __mmap(0, PRE_ALLOC_SIZE*THREAD_STACK_SIZE, PROT_READ|PROT_WRITE, 
                      MAP_PRIVATE|MAP_ANON, -1, 0);
-        if(map == (void *)-1)
+        if(pre_alloc_stack == (void *)-1)
         {
             __printf("预分配线程栈失败!\n");
             return EAGAIN;

@@ -336,3 +336,5 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 # 2026.4.7
 [feat] 增加exp.c，用于与glibc对比。修正%l和struct timespec
+
+[feat] 一个与glibc的对比实验

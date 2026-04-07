@@ -192,7 +192,7 @@ int usleep(unsigned int usecond)
     }
     else
     {
-        time.tv_sec = usecond / 1000;
+        time.tv_sec = usecond / 1000000;
         time.tv_nsec = (usecond%1000000)*1000;
         __nanosleep(&time, &time);
     }

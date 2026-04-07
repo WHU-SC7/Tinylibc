@@ -338,3 +338,6 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 [feat] 增加exp.c，用于与glibc对比。修正%l和struct timespec
 
 [feat] 一个与glibc的对比实验
+
+[fix] 修复错误
+竟然是tlibc_malloc的分配方式导致mempool的错误!

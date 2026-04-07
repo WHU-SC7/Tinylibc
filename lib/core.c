@@ -147,11 +147,15 @@ long __brk(void *addr)
     return syscall(SYS_brk, addr);
 }
 
+#include "pthread.h"
 void *tlibc_malloc(unsigned long size)
 {
-    long ret = __brk(0);
-    char *ptr  = (char *)__brk((void *)(ret+size)); //分配16k内存示例
-    ptr -= size;
+    // long ret = __brk(0);
+    // char *ptr  = (char *)__brk((void *)(ret+size)); //分配16k内存示例
+    char *ptr = (char *)__mmap(0, size, PROT_READ|PROT_WRITE, 
+                     MAP_PRIVATE|MAP_ANON, -1, 0);
+    if(ptr == (char *)-1)
+        return (void *)ptr;
     __memset((void *)ptr, 0, size);
     return (void *)ptr;
 }

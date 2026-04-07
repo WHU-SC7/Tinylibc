@@ -125,7 +125,7 @@ int mempool_mark_thread_exit(pid_t tid)
     spinlock_lock(&global_mem_list->spinlock);
     int thread_idx = find_or_alloc_thread_idx(tid);
     if(thread_idx == -1){
-        DEBUG_PRINTF("ERROR!没有找到指定线程\n");
+        ERROR_DEBUG_PRINTF("ERROR!没有找到指定线程\n");
         spinlock_unlock(&global_mem_list->spinlock);
         return -1;
     }

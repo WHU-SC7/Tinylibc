@@ -333,3 +333,6 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 # 2026.4.6
 [feat] 修改printf，支持%f
 使用gcc内置的__builtin_va_list系列内建宏
+
+# 2026.4.7
+[feat] 增加exp.c，用于与glibc对比。修正%l和struct timespec

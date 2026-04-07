@@ -303,7 +303,7 @@ int main(int argc, char *argv[])
 
     //初始化last_time,会有误差
     struct timespec tp;
-    last_time = tp.st_atime_nsec*100 + tp.st_atime_sec;
+    last_time = tp.tv_nsec*100 + tp.tv_sec;
     __clock_gettime(CLOCK_REALTIME, &tp);
     while(1)
     {
@@ -311,8 +311,8 @@ int main(int argc, char *argv[])
         char final_input = NOINPUT;
 
         struct timespec time;
-        time.st_atime_sec = 0;
-        time.st_atime_nsec = 20000000; //0.02秒
+        time.tv_sec = 0;
+        time.tv_nsec = 20000000; //0.02秒
         __nanosleep(&time, &time);
         //pipe被设置成NONBLOCK时，如果没有数据可读，read会返回-11. 有数据则返回读取的字节数
         //while会读取pipe直到最后一个字符
@@ -526,7 +526,7 @@ int main(int argc, char *argv[])
                     {
                         struct timespec tp;
                         __clock_gettime(CLOCK_REALTIME, &tp);
-                        long now_time = tp.st_atime_sec*100 + tp.st_atime_nsec/10000000;
+                        long now_time = tp.tv_sec*100 + tp.tv_nsec/10000000;
 
                         long run_time = top_get_run_time(proc_pid[i]);
                         long cpu = run_time - proc_time[ret].cpu_time;//这一次的已运行时间减去上一次的已运行时间
@@ -593,9 +593,9 @@ int main(int argc, char *argv[])
                 long t_time = run_time%100;
                 long sec_time = run_time / 100;
                 if(t_time<10)
-                    __printf("%l.0%ls ", sec_time, t_time);//补齐小数点后的0,用整数来表示浮点数有点麻烦
+                    __printf("%ld.0%lds ", sec_time, t_time);//补齐小数点后的0,用整数来表示浮点数有点麻烦
                 else
-                    __printf("%l.%ls ", sec_time, t_time);
+                    __printf("%ld.%lds ", sec_time, t_time);
                 __printf("\033[%dG", START+NAME_WIDTH+VM_SIZE_WIDTH+VM_RSS_WIDTH+RUN_TIME_WIDTH);
 
                 //输出CPU占用
@@ -605,12 +605,12 @@ int main(int argc, char *argv[])
                     //刷新当前时间，以计算时间间隔
                     struct timespec tp;
                     __clock_gettime(CLOCK_REALTIME, &tp);
-                    long now_time = tp.st_atime_sec*100 + tp.st_atime_nsec/10000000;
+                    long now_time = tp.tv_sec*100 + tp.tv_nsec/10000000;
 
                     long cpu = run_time - proc_time[ret].cpu_time;//这一次的已运行时间减去上一次的已运行时间
                     cpu = cpu *100 / (now_time - last_time); //采样间隔内进程的运行时间 除以 采样间隔时间
-                    // PRINT_COLOR(BLUE_COLOR_PRINT, "%l", proc_time[ret].cpu_time);//调试查看上一次保存的时间
-                    __printf("%l% ",cpu);
+                    // PRINT_COLOR(BLUE_COLOR_PRINT, "%ld", proc_time[ret].cpu_time);//调试查看上一次保存的时间
+                    __printf("%ld% ",cpu);
                 }
                 else
                     __printf("0%");
@@ -636,7 +636,7 @@ int main(int argc, char *argv[])
             top_refresh_time_list(proc_time);
             //保存时间到last_time
             __clock_gettime(CLOCK_REALTIME, &tp);
-            last_time = tp.st_atime_sec*100 + tp.st_atime_nsec/10000000;
+            last_time = tp.tv_sec*100 + tp.tv_nsec/10000000;
         }
         refresh_time++;
     }

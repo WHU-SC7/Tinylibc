@@ -64,6 +64,7 @@ void *__memmove(void *dest, const void *src, size_t n);
 void print_int(int num);
 void __printf(const char *fmt, ...);
 
-//自定义
-void tlibc_shutdown();
+#define TIME_UTC 1
+int timespec_get(struct timespec *ts, int base);
+#define printf(fmt, ...) __printf(fmt, ##__VA_ARGS__)
 #endif

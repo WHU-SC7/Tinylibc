@@ -185,9 +185,9 @@ void __printf(const char *fmt, ...) {
                     print_int(n);
                 } else {
                     p--;  // 回退
-                    long n = my_va_arg(args, long); //原来大量使用了%l
+                    long n = my_va_arg(args, long); //原来大量使用了%ld
                     print_int(n);
-                    // 可扩展其他 %l 格式
+                    // 可扩展其他 %ld 格式
                 }
                 break;
             case 's': {

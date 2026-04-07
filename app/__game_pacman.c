@@ -183,8 +183,8 @@ void __game_pacman()
         for(int i=0; i<50/FPS; i++) // 近似每秒渲染FPS次画面
         {
             struct timespec time;
-            time.st_atime_sec = 0;
-            time.st_atime_nsec = 20000000; //0.02秒，这个速度快到能吃掉按住键盘时的所有输入
+            time.tv_sec = 0;
+            time.tv_nsec = 20000000; //0.02秒，这个速度快到能吃掉按住键盘时的所有输入
             __nanosleep(&time, &time);
             // __write(1, ".", 1);
             char input;

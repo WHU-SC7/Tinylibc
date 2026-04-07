@@ -50,8 +50,8 @@ int main(int argc, char *argv[])
         char final_input = NOINPUT;
 
         struct timespec time;
-        time.st_atime_sec = 0;
-        time.st_atime_nsec = 20000000; //0.02秒
+        time.tv_sec = 0;
+        time.tv_nsec = 20000000; //0.02秒
         __nanosleep(&time, &time);
         //pipe被设置成NONBLOCK时，如果没有数据可读，read会返回-11. 有数据则返回读取的字节数
         //while会读取pipe直到最后一个字符

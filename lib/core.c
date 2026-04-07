@@ -168,14 +168,14 @@ int tlibc_msleep(unsigned int msecond)
     struct timespec time;
     if(msecond < 1000)
     {
-        time.st_atime_sec = 0;
-        time.st_atime_nsec = msecond*1000000;
+        time.tv_sec = 0;
+        time.tv_nsec = msecond*1000000;
         __nanosleep(&time, &time);
     }
     else
     {
-        time.st_atime_sec = msecond / 1000;
-        time.st_atime_nsec = (msecond%1000)*1000000;
+        time.tv_sec = msecond / 1000;
+        time.tv_nsec = (msecond%1000)*1000000;
         __nanosleep(&time, &time);
     }
     return 0;
@@ -186,14 +186,14 @@ int usleep(unsigned int usecond)
     struct timespec time;
     if(usecond < 1000)
     {
-        time.st_atime_sec = 0;
-        time.st_atime_nsec = usecond * 1000;
+        time.tv_sec = 0;
+        time.tv_nsec = usecond * 1000;
         __nanosleep(&time, &time);
     }
     else
     {
-        time.st_atime_sec = usecond / 1000;
-        time.st_atime_nsec = (usecond%1000000)*1000;
+        time.tv_sec = usecond / 1000;
+        time.tv_nsec = (usecond%1000000)*1000;
         __nanosleep(&time, &time);
     }
     return 0;
@@ -356,4 +356,10 @@ void *__memmove(void *dest, const void *src, size_t n) //简单的memmove, 不�
     }
 
     return dest;
+}
+
+//为了兼容
+
+int timespec_get(struct timespec *ts, int base){
+    return __clock_gettime(CLOCK_REALTIME, ts);
 }

@@ -274,8 +274,8 @@ int main(int argc, char *argv[])
         char final_input = 194;
 
         struct timespec time;
-        time.st_atime_sec = 0;
-        time.st_atime_nsec = 20000000; //0.02秒
+        time.tv_sec = 0;
+        time.tv_nsec = 20000000; //0.02秒
         __nanosleep(&time, &time);
         while(__read(pipefd[PIPE_READ], &final_input, 1) != -11){}
         if(final_input == 'q')

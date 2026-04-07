@@ -17,7 +17,7 @@ int main(int argc, char *argv[])
     struct timespec tp;
     struct timespec tp1;
     __clock_gettime(CLOCK_REALTIME, &tp);
-    __printf("开始时间: %d+%d微秒\n", tp.st_atime_sec, tp.st_atime_nsec/1000);
+    __printf("开始时间: %d+%d微秒\n", tp.tv_sec, tp.tv_nsec/1000);
 
     //do something
     /*
@@ -48,7 +48,7 @@ int main(int argc, char *argv[])
         ptr[i*4096] = 1;
     }
      __clock_gettime(CLOCK_REALTIME, &tp);
-    __printf("fork前的时间: %d+%d微秒\n", tp.st_atime_sec, tp.st_atime_nsec/1000);
+    __printf("fork前的时间: %d+%d微秒\n", tp.tv_sec, tp.tv_nsec/1000);
     pid = __fork();
     if(pid ==0)//fork出子进程时，内核为父进程占有的物理页的引用计数+1，这是耗时的主要来源
     {
@@ -59,16 +59,16 @@ int main(int argc, char *argv[])
     
 
     __clock_gettime(CLOCK_REALTIME, &tp1);
-    long sec = tp1.st_atime_sec-tp.st_atime_sec;
+    long sec = tp1.tv_sec-tp.tv_sec;
     long nsec;
-    if(tp1.st_atime_nsec < tp.st_atime_nsec)
+    if(tp1.tv_nsec < tp.tv_nsec)
     {
         sec--;
-        nsec = 1000000000 + tp1.st_atime_nsec - tp.st_atime_nsec;
+        nsec = 1000000000 + tp1.tv_nsec - tp.tv_nsec;
     }
     else
-        nsec = tp1.st_atime_nsec - tp.st_atime_nsec;
-    __printf("结束时间: %l+%l微秒, 用时: %l+%l微秒\n", tp1.st_atime_sec, tp1.st_atime_nsec/1000, sec, nsec/1000);
+        nsec = tp1.tv_nsec - tp.tv_nsec;
+    __printf("结束时间: %ld+%ld微秒, 用时: %ld+%ld微秒\n", tp1.tv_sec, tp1.tv_nsec/1000, sec, nsec/1000);
     
 
     return 0;

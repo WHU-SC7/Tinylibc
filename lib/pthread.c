@@ -67,7 +67,7 @@ int pthread_create(pthread_t *restrict res,
     map = (unsigned char *)pre_alloc_stack;
     pre_alloc_stack = ((char *)pre_alloc_stack + THREAD_STACK_SIZE);
     remain_thread_stack_num --;
-    // __printf("使用栈%l, 剩余的栈数量: %d\n", (long)pre_alloc_stack, remain_thread_stack_num);
+    // __printf("使用栈%ld, 剩余的栈数量: %d\n", (long)pre_alloc_stack, remain_thread_stack_num);
 
     
     stack = map + size;
@@ -130,7 +130,7 @@ int pthread_join(pthread_t t, void **res) //res不使用
 	// if (thread->map_base) 
     // {
     //     //线程退出后，map_size被内核(推测是内核)修改为最高地址，+16字节(两个参数)就是整块mmap
-    //     //__printf("回收线程栈,%l, %l, 差值:%l\n", thread->map_base, thread->map_size, thread->map_size-(size_t)thread->map_base);//thread->map_size-(size_t)thread->map_base+16
+    //     //__printf("回收线程栈,%ld, %ld, 差值:%ld\n", thread->map_base, thread->map_size, thread->map_size-(size_t)thread->map_base);//thread->map_size-(size_t)thread->map_base+16
 
     //     int ret = __munmap(thread->map_base, THREAD_STACK_SIZE); //回收按照glibc的做法
     //     if(ret != 0)

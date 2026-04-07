@@ -18,7 +18,7 @@ struct stat {
                struct timespec st_mtim;  /* Time of last modification */
                struct timespec st_ctim;  /* Time of last status change */
 
-           #define st_atime st_atim.tv_sec      /* Backward compatibility */
+           #define st_atime st_atim.tv_sec     /* Backward compatibility */
            #define st_mtime st_mtim.tv_sec
            #define st_ctime st_ctim.tv_sec
            };

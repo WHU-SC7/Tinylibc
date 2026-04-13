@@ -1,20 +1,27 @@
 # 1.Tinylibc介绍
-Tinylibc支持x64平台，不使用标准库，使用系统调用，静态编译出Linux命令行的可执行程序。现有自定义的vim，命令行的吃豆人游戏，基本的文件操作命令，简单的shell。
+Tinylibc是轻量级的、独立的部分 C 标准库实现。对Pthread的机制进行创新性修改，设计了新的线程资源异步回收的机制。不仅实现了异步地回收线程栈；而且能自动异步地回收线程未释放的内存
+
 ## 平台支持
 1. 在x86_64主机的Linux上运行. Ubuntu和Debian都可以
 
-2. 在qemu-system-riscv64使用SC7内核运行，见SC7项目的tlibc分支(https://github.com/WHU-SC7/SC7.git)
+## 实验例程
+使用下面两个命令，可以比较Tinylibc与Glibc的性能
+```bash
+make glibc      # 使用Glibc编译exp.c并运行
+```
+```bash
+make tlibc      # 使用本项目Tinylibc编译exp.c并运行
+```
 
 ## 如何运行
 在x64主机上，只需要x86_64-linux-gnu-gcc就可以编译
 ```bash
-make all      # 编译生成可执行文件tlibc_x64
+make all      # 编译生成所有用户程序
 ```
-或者更简单的，使用make就可以。
 ```bash
-make run      # 执行生成的可执行文件tlibc_x64
+make run      # 编译并运行shell
 ```
-或者执行./build/tlibc_x64
+进入shell后会进入build/bin目录，目录下对每个app下的.c文件都编译了可执行程序
 
 riscv架构待更新
 # 2.Tlibc项目结构

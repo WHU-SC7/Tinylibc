@@ -341,3 +341,6 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 [fix] 修复错误
 竟然是tlibc_malloc的分配方式导致mempool的错误!
+
+# 2026.4.13
+[doc] 更新README.md

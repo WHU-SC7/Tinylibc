@@ -24,7 +24,7 @@ void __game_space_invader(int argc, char *argv[])
     }
     __printf("获取到终端宽度: %d, 长度: %d\n", w.ws_row, w.ws_col);
     __printf("space invader正在开发中, 敬请期待!\n");
-    __exit(0);
+    return ;
 }
 
 
@@ -78,11 +78,11 @@ void sigint_handler(int num)
             __ioctl(0, TCSETS, &orig_termios);
         }
         __kill(child_pid, SIGINT);
-        __exit(0);
+        __exit_group(0);
     }
     if(__getpid()==child_pid)//似乎没用
     {
-        __exit(0);
+        __exit_group(0);
     }
     
 }
@@ -97,7 +97,7 @@ int game_input_process(int pipe_write_fd)//专门读取键盘输入的进程
         {
             int ret = __write(pipe_write_fd, &input, 1);//传给游戏主进程
             if(input == 'q')
-                __exit(0);
+                return 0;
             if(ret != 1)
                 panic("ret: %d", ret);
             // __write(0, &input, 1);
@@ -105,7 +105,6 @@ int game_input_process(int pipe_write_fd)//专门读取键盘输入的进程
         else
             panic("ret != 1");
     }
-    __exit(0);
     return 0;
 }
 
@@ -119,12 +118,12 @@ void __game_pacman()
     if(w.ws_row < SNAKE_SCREEN_WIDTH*2+4)
     {
         PRINT_COLOR(RED_COLOR_PRINT, "屏幕宽度是%d, 小于游戏的要求: %d\n", w.ws_row, SNAKE_SCREEN_WIDTH*2+4);
-        __exit(0);
+        return ;
     }
     if(w.ws_col < SNAKE_SCREEN_LENGTH*3)
     {
         PRINT_COLOR(RED_COLOR_PRINT, "屏幕长度是%d, 小于游戏的要求: %d\n", w.ws_col, SNAKE_SCREEN_LENGTH*2);
-        __exit(0);
+        return ;
     }
 
     if (__ioctl(0, TCGETS, &orig_termios) < 0) {
@@ -266,7 +265,7 @@ void __game_pacman()
         render_frame();
         __write(1, &final_input, 1);
     }
-    __exit(0); //不会到这
+    return ; //不会到这
 }
 
 

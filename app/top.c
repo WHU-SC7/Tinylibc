@@ -19,7 +19,7 @@ void top_exit_handler()
 {
     __printf(ALT_SCREEN_OFF); //恢复原终端缓冲区
     tlibc_restore_term(0);
-    __exit(0);
+    __exit_group(0);
 }
 
 void top_get_process_status(const char* proc_pid, char* status_buf, int buf_size)
@@ -641,5 +641,5 @@ int main(int argc, char *argv[])
         refresh_time++;
     }
     //should never reach here
-    __exit(0);
+    __exit_group(0);
 }

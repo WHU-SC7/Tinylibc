@@ -8,12 +8,12 @@ int main(int argc, char *argv[])
     if(argc < 3)
     {
         __printf("缺少参数\n");
-        __exit(-1);
+        return -1;
     }
     if(argc > 3)
     {
         __printf("参数超过三个，太多了\n");
-        __exit(-2);
+        return -1;
     }
 
     int open_ret = __openat(AT_FDCWD, argv[1], O_RDONLY, 0644);
@@ -28,7 +28,7 @@ int main(int argc, char *argv[])
     if(ret != 0)
     {
         __printf("错误,fstat失败,返回值: %d\n", ret);
-        __exit(-3);
+        return -1;
     }
 
     int cp_fd = __creat(argv[2],0644); //创建目标复制文件
@@ -47,6 +47,5 @@ int main(int argc, char *argv[])
         __write(cp_fd, buf, 4096);
         count -= 4096;
     }
-    __exit(0);
     return 0;
 }

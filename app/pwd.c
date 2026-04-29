@@ -13,6 +13,5 @@ int main(int argc, char *argv[])
     if(ret < 0)//不太可能失败吧
         panic("getcwd系统调用失败,错误码: %d\n",ret);
     __printf("%s\n",buf);
-    __exit(0);
     return 0;
 }

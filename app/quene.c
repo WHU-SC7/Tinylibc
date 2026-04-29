@@ -164,7 +164,7 @@ int main(int argc, char *argv[]) {
     Queue *queue = (Queue*)tlibc_malloc(sizeof(Queue));
     if (!queue) {
         __printf("内存分配失败\n");
-        __exit(-1);
+        return -1;
     }
     init_queue(queue);
     __printf("队列初始化完成\n");
@@ -179,7 +179,7 @@ int main(int argc, char *argv[]) {
         ret = pthread_create(&producers[i], NULL, producer_task, queue);
         if (ret != 0) {
             __printf("创建生产者线程失败: %d\n", ret);
-            __exit(-1);
+            return -1;
         }
     }
     
@@ -220,6 +220,6 @@ int main(int argc, char *argv[]) {
     // 清理资源
     destroy_queue(queue);
     
-    __exit(0);
+    return -1;
     return 0;
 }

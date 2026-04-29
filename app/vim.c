@@ -38,7 +38,7 @@ int vim_input_process(int pipe_write_fd)//专门读取键盘输入的进程
         {
             int ret = __write(pipe_write_fd, input, 1);
             if(input[0] == 'q')
-                __exit(0);
+                __exit_group(0);
             if(ret != 1)
                 panic("ret: %d", ret);
             // __write(0, &input, 1);
@@ -48,7 +48,7 @@ int vim_input_process(int pipe_write_fd)//专门读取键盘输入的进程
             // __creat("vim出现错误!", 0644);
             input[0] = 'q';
             __write(pipe_write_fd, input, 1);
-            __exit(0);
+            __exit_group(0);
         }
         else if(ret == 3) //1次三个字节，是转义序列
         {
@@ -87,7 +87,7 @@ int vim_input_process(int pipe_write_fd)//专门读取键盘输入的进程
             }
         }
     }
-    __exit(0);
+    __exit_group(0);
     return 0;
 }
 
@@ -102,18 +102,18 @@ void exit_handler(int num)
             __printf("恢复原终端设置\n");
             __ioctl(0, TCSETS, &vim_orig_termios);
         }
-        __exit(0);
+        __exit_group(0);
     }
     if(__getpid()==vim_child_pid)//似乎没用
     {
-        __exit(0);
+        __exit_group(0);
     }
 }
 
 void exit()//主进程让读取输入进程退出
 {
     // __creat("进程受到信号退出", 0644);
-    __exit(0);
+    __exit_group(0);
 }
 
 void vim_calcu_line_table(char *buf, int line_length)
@@ -192,7 +192,7 @@ int main(int argc, char *argv[])
     }
     __printf("屏幕长度是%d, 宽度是%d\n", w.ws_col, w.ws_row);
     if (__ioctl(0, TCGETS, &vim_orig_termios) < 0) {
-        __exit(0);
+        __exit_group(0);
     }
     char *file_name;
     if(argc == 2)
@@ -207,7 +207,7 @@ int main(int argc, char *argv[])
     int fd = __openat(AT_FDCWD,file_name,O_RDWR,0644);
     if(fd < 0)
     {
-        __exit(-2);
+        __exit_group(-2);
     }
     struct stat statbuf;
     __memset((char *)&statbuf, 0, sizeof(statbuf));
@@ -215,7 +215,7 @@ int main(int argc, char *argv[])
     unsigned long file_size = statbuf.st_size;
     int read_ret = __read(fd, buf, file_size);
     if(read_ret < 0)
-        __exit(-1);
+        __exit_group(-1);
     vim_calcu_line_table(buf, w.ws_col);//计算出行索引
     // __printf("文件%s大小%d,读取了%d\n", file_name, file_size, read_ret);
     // char tmp;

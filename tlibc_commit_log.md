@@ -344,3 +344,8 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 # 2026.4.13
 [doc] 更新README.md
+
+# 2026.4.29
+[fix] 修复了老程序的兼容问题
+因为默认都启用内存池，所以老程序的直接exit方式有问题
+memtest程序的兼容有问题，原因不明

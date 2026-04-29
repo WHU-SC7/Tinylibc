@@ -219,9 +219,9 @@ void run_command(struct command *command)
         if(ret < 0)
         {
             __printf("execve调用失败, 路径: %s, 错误码: %d\n", command->name, ret);
-            __exit(1); //执行失败，退出
+            __exit_group(-1); //执行失败，退出
         }
-        __exit(0); //执行完正常退出，但一般不会到这。命令应该执行完自己正常退出
+        __exit_group(0); //执行完正常退出，但一般不会到这。命令应该执行完自己正常退出
     }
     else
     {

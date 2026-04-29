@@ -13,7 +13,7 @@ void* thread_func(void* arg) {
     if(ptr == (char *)-1)
     {
         __printf("malloc失败!\n");
-        __exit(0);
+        return (void *)-1;
     }
     for(int i=0;i<THREAD_MEM/4096;i++)
     {
@@ -47,6 +47,7 @@ int main(int argc, char *argv[])
     {
         // tlibc_msleep(100);
         pthread_create(&thread, NULL, void_thread_func, NULL);
+        printf("创建\n");
     }
     for(int i=0;i<5;i++)
     {

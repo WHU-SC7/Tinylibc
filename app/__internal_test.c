@@ -53,7 +53,7 @@ int main(int argc, char *argv[])
     if(pid ==0)//fork出子进程时，内核为父进程占有的物理页的引用计数+1，这是耗时的主要来源
     {
         ptr[0] = 2;
-        __exit(0);
+        return 0;
     }
     
     

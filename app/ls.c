@@ -69,7 +69,7 @@ int main(int argc, char *argv[])
     if(argc > 2)
     {
         __printf("参数超过两个，太多了\n");
-        __exit(-1);
+        return -1;
     }
     char getdent_buf[LS_BUF_SIZE];
     for(int i=0;i<LS_BUF_SIZE;i++) //必须先清零
@@ -77,7 +77,7 @@ int main(int argc, char *argv[])
     if(open_ret < 0)
     {
         __printf("打开失败\n");
-        __exit(-2);
+        return -1;
     }
     __getdents64(open_ret,(struct linux_dirent64 *)getdent_buf, LS_BUF_SIZE);
     __close(open_ret);
@@ -85,6 +85,5 @@ int main(int argc, char *argv[])
 #if X86_64_TLIBC == 1
     LOG("很大off是正常的,可能是文件系统内部使用的哈希值。然后__printf只能输出int的数\n");
 #endif
-    __exit(0);
     return 0;
 }

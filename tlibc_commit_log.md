@@ -349,3 +349,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 [fix] 修复了老程序的兼容问题
 因为默认都启用内存池，所以老程序的直接exit方式有问题
 memtest程序的兼容有问题，原因不明
+
+# 2026.5.2
+[feat] http程序，增加标准type定义
+getaddrinfo先放一放

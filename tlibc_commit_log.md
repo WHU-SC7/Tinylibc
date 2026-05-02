@@ -344,3 +344,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
 # 2026.4.13
 [doc] 更新README.md
+
+# 2026.5.2
+[feat] http程序，增加标准type定义
+getaddrinfo先放一放

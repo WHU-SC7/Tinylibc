@@ -45,5 +45,9 @@
 #define SYS_gettid      __NR_gettid
 #define SYS_futex       __NR_futex
 
+//网络
+#define SYS_socket      __NR_socket
+#define SYS_connect     __NR_connect
+
 // SC7自定义，在qemu才有效
 #define SYS_shutdown 1000

@@ -33,23 +33,23 @@ int main(int argc, char *argv[])
     printf("start time: %f\n", t);
 
     //如果全部创建完之后再join，glibc性能会更好，从1600上升到5000
-    pthread_t thread[THREAD_NUM_PER_CIRCLE];
-    for(int i=0;i<THREAD_NUM_PER_CIRCLE;i++)
-    {
-        pthread_create(&thread[i], NULL, thread_func, NULL);
-    }
-    for(int i=0;i<THREAD_NUM_PER_CIRCLE;i++)
-    {
-        pthread_join(thread[i], NULL);
-    }
-
-    //每次创建后立刻join，glibc吞吐量约为1600.说明了线程回收的重要性。
-    // pthread_t thread;
+    // pthread_t thread[THREAD_NUM_PER_CIRCLE];
     // for(int i=0;i<THREAD_NUM_PER_CIRCLE;i++)
     // {
-    //     pthread_create(&thread, NULL, thread_func, NULL);
-    //     pthread_join(thread, NULL);
+    //     pthread_create(&thread[i], NULL, thread_func, NULL);
     // }
+    // for(int i=0;i<THREAD_NUM_PER_CIRCLE;i++)
+    // {
+    //     pthread_join(thread[i], NULL);
+    // }
+
+    //每次创建后立刻join，glibc吞吐量约为1600.说明了线程回收的重要性。
+    pthread_t thread;
+    for(int i=0;i<THREAD_NUM_PER_CIRCLE;i++)
+    {
+        pthread_create(&thread, NULL, thread_func, NULL);
+        pthread_join(thread, NULL);
+    }
 
     timespec_get(&ts1, TIME_UTC);
     double t1 = ts1.tv_sec+ ts1.tv_nsec / 1e9;//end time

@@ -353,3 +353,8 @@ memtest程序的兼容有问题，原因不明
 # 2026.5.2
 [feat] http程序，增加标准type定义
 getaddrinfo先放一放
+
+bug, 加了同步回收线程栈的选项，只对极端测试有用
+# 2026.5.10
+增加同步回收的方式，临时用mempool_clean_thread清理，之后要改。
+futex有问题，struct pthread也有问题。现在只能对极端测试跑

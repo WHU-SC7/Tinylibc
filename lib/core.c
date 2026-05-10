@@ -330,6 +330,13 @@ void __exit_group(int status)
     syscall(__NR_exit_group, status);
 }
 
+long futex(uint32_t *uaddr, int futex_op, uint32_t val,
+                 const struct timespec *timeout,   /* or: uint32_t val2 */
+                 uint32_t *uaddr2, uint32_t val3)
+{
+    return syscall(SYS_futex, uaddr, futex_op, val, timeout, uaddr2, val3);
+}
+
 //string.h
 /**
  * @brief 应为string.h的标准库函数，为了避免同名冲突，命名加上下划线

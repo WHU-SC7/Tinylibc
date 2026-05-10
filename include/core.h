@@ -55,6 +55,7 @@ long __futex(unsigned int *uaddr, int futex_op, unsigned int val, const struct t
 long tlibc_clone_thread(void *stack);
 int __madvise(void *addr, size_t length, int advice);
 void __exit_group(int status);
+long futex(uint32_t *uaddr, int futex_op, uint32_t val, const struct timespec *timeout, uint32_t *uaddr2, uint32_t val3);
 
 //string操作
 void *__memset(void *dst, int value, unsigned int n);

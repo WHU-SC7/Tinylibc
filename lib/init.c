@@ -23,8 +23,13 @@ int tlibc_init(int argc, char *argv[])
     }
     remain_thread_stack_num = PRE_ALLOC_SIZE;
 
+#if USING_MEMPOOL == 1
     //初始化mempool
     mem_pool_init();
+#else
+    mem_pool_init();
+    LOG("不使用异步回收机制\n");
+#endif
 
     int ret = main(argc, argv);
     if(__gettid() == main_tid)

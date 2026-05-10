@@ -13,6 +13,7 @@ int find_or_alloc_thread_idx(pid_t tid);
 int mempool_mark_thread_exit(pid_t tid);
 void *mempool_work_thread_func(void* arg);
 void inform_work_thread_to_exit();
+int mempool_clean_thread();
 
 enum Thread_state{
     UNKNOWN,

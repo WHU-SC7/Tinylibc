@@ -49,5 +49,7 @@
 #define SYS_socket      __NR_socket
 #define SYS_connect     __NR_connect
 
+#define SYS_futex       __NR_futex
+
 // SC7自定义，在qemu才有效
 #define SYS_shutdown 1000

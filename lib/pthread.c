@@ -98,7 +98,13 @@ int pthread_create(pthread_t *restrict res,
         __printf("映射失败!\n");
         return EAGAIN;
     }
+
+    printf("%d\n", new->tid);
+#if USING_MEMPOOL == 1
     register_thread_stack(new->tid, (long)map, size);
+#else
+    register_thread_stack(new->tid, (long)map, size);
+#endif
     //因为类型定义与musl不同，加上类型转换。让res指向线程栈底部的struct pthread
     *res = (pthread_t)new;
     return 0;
@@ -119,14 +125,14 @@ enum {
 int pthread_join(pthread_t t, void **res) //res不使用
 {
     // // __futex(tid_addr, FUTEX_WAIT_BITSET|FUTEX_CLOCK_REALTIME, tid, NULL, (void *)0 ,0); //glibc的pthread_join的futex调用类似这样
-    // struct pthread *thread = (struct pthread *)t;
-    // while(thread->tid != 0) //简单的等待。clone时CLONE_CHILD_CLEARTID标志，让内核在子线程退出时把tid设为0
-    // {
-    //     // __printf("从tls获取child thread tid: %d, detach_status: %d\n", thread->tid, thread->detach_state);
-    //     tlibc_msleep(100); //如果一直检查浪费CPU。之后考虑futex更好，为了简单先用睡眠替代
-    // }
-    // // __printf("从tls获取child thread tid: %d, detach_status: %d\n", thread->tid, thread->detach_state);
-    // // __printf("准备回收线程栈\n");
+#if USING_MEMPOOL == 1
+
+#else//传统的Glibc机制
+    struct pthread *thread = (struct pthread *)t;
+    futex((uint32_t*)&thread->tid, FUTEX_WAIT_BITSET|FUTEX_CLOCK_REALTIME, thread->tid, NULL, (void *)0 ,0);
+    mempool_clean_thread();
+    // clean_with_tid(tid);
+//< 一个疑难问题，我自定义的struct pthread没有与内核很好的协作。决定不采取这种方式来获取线程栈的位置
 	// if (thread->map_base) 
     // {
     //     //线程退出后，map_size被内核(推测是内核)修改为最高地址，+16字节(两个参数)就是整块mmap
@@ -138,7 +144,7 @@ int pthread_join(pthread_t t, void **res) //res不使用
     // }
     // else
     //     __printf("ERROR! thread->map_base = 0!\n");
-
+#endif
     //新的逻辑，或许根本不需要等待。只尝试检查一次join的线程是否退出，如果没退出就不管了，如果退出了就回收。
     //因为工作线程会自动回收退出的线程
 
@@ -148,8 +154,13 @@ int pthread_join(pthread_t t, void **res) //res不使用
 //如果是异步回收，返回值不好处理。总不能真的等待返回值。先忽略retval
 void pthread_exit(void *retval)
 {
+#if USING_MEMPOOL == 1 //异步回收
     //标识自身退出
     mempool_mark_thread_exit(__gettid());
+#else
+    //传统pthread逻辑，同步回收，但为了方便，我采用mempool来传递线程栈地址给pthread_join
+    mempool_mark_thread_exit(__gettid());
+#endif
     //exit系统调用，让内核销毁task_struct结构体
     __exit(0);
 }

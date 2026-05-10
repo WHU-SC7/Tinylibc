@@ -1,5 +1,7 @@
 #ifndef __TLIBC_H
 #define __TLIBC_H
+
+#define USING_MEMPOOL 0 //控制异步回收机制的开启，0表示不开启
 // 临时存放core.c和test.c都需要的宏定义
 
 //type.h

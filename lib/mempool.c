@@ -65,9 +65,14 @@ int mem_pool_init()
         global_mem_list->thread_mem_list[thread_idx]->state = MAIN_THREAD;
         whether_have_init = 1;
         global_mem_list->spinlock.lock = 0;
+#if USING_MEMPOOL == 1
         //创建工作线程，定期回收已经退出的线程资源
         pthread_t thread;
         pthread_create(&thread, NULL, mempool_work_thread_func, NULL);
+#else
+        //传统Glibc方式
+        printf("没有创建工作线程\n");
+#endif
         return 0;
     }
     else return 0;
@@ -268,20 +273,31 @@ int clean_with_tid(pid_t tid)
         DEBUG_PRINTF("找到线程%d开始清理, idx: %d\n", tid, thread_idx);
         struct thread_mem_list *t_mem_list = global_mem_list->thread_mem_list[thread_idx];
         struct mem_chunk *chunk = t_mem_list->first; 
-        for(int i=0; i<t_mem_list->chunk_num; i++){ //回收所有映射和struct mem_chunk
-            if(__munmap((void *)chunk->base, chunk->size) == -1){
-                DEBUG_PRINTF("ERROR! 回收内存失败, base: %ld, size: %ld\n", chunk->base, chunk->size);
+            //回收线程栈
+            int ret = __munmap((void *)t_mem_list->stack_base, t_mem_list->stack_size);
+            if(ret==0)
+                DEBUG_PRINTF("回收栈成功!base: %ld, size: %ld\n", t_mem_list->stack_base, t_mem_list->stack_size);
+            else{
+                DEBUG_PRINTF("ERROR!回收栈失败. 线程tid: %ld, state: %ld\n", t_mem_list->tid, t_mem_list->state);
+                goto clean;
+                // debug_print_global_mem_list();
             }
-            chunk = chunk->next;
-            __munmap((void *)chunk, sizeof(struct mem_chunk));
-        }
-        //线程内存全部释放，回收struct thread_mem_list;
-        __munmap((void *)t_mem_list, sizeof(struct thread_mem_list));
-        //前移填空，保持有序
-        for(int i= thread_idx; i<MAX_THREAD_OF_MEMPOOL; i++){
-            global_mem_list->thread_id_idx[i] = global_mem_list->thread_id_idx[i+1];
-            global_mem_list->thread_mem_list[i] = global_mem_list->thread_mem_list[i+1];
-        }
+            for(int i=0; i<t_mem_list->chunk_num; i++){ //回收所有映射和struct mem_chunk
+                if(__munmap((void *)chunk->base, chunk->size) == -1){
+                    DEBUG_PRINTF("ERROR! 回收内存失败, base: %ld, size: %ld\n", chunk->base, chunk->size);
+                }
+                DEBUG_PRINTF("成功回收内存, base: %ld, size: %ld\n", chunk->base, chunk->size);
+                chunk = chunk->next;
+                __munmap((void *)chunk, sizeof(struct mem_chunk));
+            }
+clean:
+            //线程内存全部释放，回收struct thread_mem_list;
+            __munmap((void *)t_mem_list, sizeof(struct thread_mem_list));
+            //前移填空，保持有序
+            for(int j= thread_idx; j<MAX_THREAD_OF_MEMPOOL; j++){
+                global_mem_list->thread_id_idx[j] = global_mem_list->thread_id_idx[j+1];
+                global_mem_list->thread_mem_list[j] = global_mem_list->thread_mem_list[j+1];
+            }
     }
     return 0;
 }

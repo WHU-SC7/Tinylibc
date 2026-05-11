@@ -5,6 +5,13 @@
 #define NULL ((void *)0)
 #define THREAD_STACK_SIZE 1024 * 4096
 
+struct tlibc_thread{
+	pid_t tid;
+	size_t stack_base;
+	size_t stack_size;
+	int state; //0表示在运行，1表示已经退出
+};
+
 struct start_args {
 	void *(*start_func)(void *);
 	void *start_arg;

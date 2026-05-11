@@ -8,12 +8,14 @@ void *malloc(unsigned long size);
 int clean_with_tid(pid_t tid);
 int scan_and_clean_global_mem_list();
 void debug_print_global_mem_list();
-int register_thread_stack(pid_t tid, long stack_base, long stack_size);
+int register_thread_stack(pid_t tid, long stack_base, long stack_size, uint64_t pthread_struct_addr);
 int find_or_alloc_thread_idx(pid_t tid);
 int mempool_mark_thread_exit(pid_t tid);
 void *mempool_work_thread_func(void* arg);
 void inform_work_thread_to_exit();
 int mempool_clean_thread();
+
+uint64_t pthread_self();
 
 enum Thread_state{
     UNKNOWN,

@@ -28,6 +28,7 @@ struct thread_mem_list{
     struct mem_chunk *first;
     long stack_base;
     long stack_size;
+    // uint64_t self;//指向自己的struct pthread结构体
     enum Thread_state state;
 };
 struct mem_chunk{
@@ -103,7 +104,7 @@ int find_or_alloc_thread_idx(pid_t tid)
         return thread_idx;
 }
 
-int register_thread_stack(pid_t tid, long stack_base, long stack_size)
+int register_thread_stack(pid_t tid, long stack_base, long stack_size, uint64_t pthread_struct_addr)
 {
     spinlock_lock(&global_mem_list->spinlock);
     int thread_idx = find_or_alloc_thread_idx(tid);
@@ -120,6 +121,7 @@ int register_thread_stack(pid_t tid, long stack_base, long stack_size)
     t_mem_list->stack_base = stack_base;
     t_mem_list->stack_size = stack_size;
     t_mem_list->state = ALIVE;
+    // t_mem_list->self = pthread_struct_addr;
     spinlock_unlock(&global_mem_list->spinlock);
     return thread_idx;
 }
@@ -254,6 +256,27 @@ void *malloc(unsigned long size)
     DEBUG_PRINTF("在idx为%d为线程%d分配内存\n", thread_idx, tid);
     
     return addr;
+}
+
+uint64_t pthread_self()
+{
+    // pid_t tid = __gettid();
+    // int thread_idx = -1; //请求malloc的线程对应的idex
+    // for(int i=0; i<MAX_THREAD_OF_MEMPOOL; i++)
+    // {
+    //     if(global_mem_list->thread_id_idx[i]==0){//没有找到
+    //         break;
+    //     }
+    //     if(tid == global_mem_list->thread_id_idx[i])
+    //     {
+    //         thread_idx = i;
+    //         break;
+    //     }
+    // }
+    // if(thread_idx == -1)
+    //     return (uint64_t)-1;
+    // return global_mem_list->thread_mem_list[thread_idx]->self;
+    return 0;
 }
 
 int clean_with_tid(pid_t tid)

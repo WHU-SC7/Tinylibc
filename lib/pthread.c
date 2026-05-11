@@ -69,8 +69,10 @@ int pthread_create(pthread_t *restrict res,
     remain_thread_stack_num --;
     // __printf("使用栈%ld, 剩余的栈数量: %d\n", (long)pre_alloc_stack, remain_thread_stack_num);
 
-    
+    //stack指向栈顶
     stack = map + size;
+    //栈底存放自定义信息，WARNING!栈溢出时会覆盖掉信息，影响Tinylibc的pthread运行
+    struct tlibc_thread *tt = (struct tlibc_thread*) map;
     
     /* 初始化线程结构 */
     new = (struct pthread *)(stack - sizeof(struct pthread));
@@ -99,19 +101,25 @@ int pthread_create(pthread_t *restrict res,
         return EAGAIN;
     }
 
-    printf("%d\n", new->tid);
+    tt->tid = new->tid;
+    tt->stack_base = (ssize_t)map;
+    tt->stack_size = size;
+    tt->state = 0;//存活
 #if USING_MEMPOOL == 1
-    register_thread_stack(new->tid, (long)map, size);
+    register_thread_stack(new->tid, (long)map, size, (uint64_t)new);
 #else
-    register_thread_stack(new->tid, (long)map, size);
+    register_thread_stack(new->tid, (long)map, size, (uint64_t)new);
 #endif
     //因为类型定义与musl不同，加上类型转换。让res指向线程栈底部的struct pthread
     *res = (pthread_t)new;
     return 0;
 }
 
-//下面的定义并没有使用
+
+#define FUTEX_WAIT         0
+#define FUTEX_WAKE         1
 #define FUTEX_WAIT_BITSET	9
+#define FUTEX_WAKE_BITSET  10
 #define FUTEX_CLOCK_REALTIME 256
 //pthread->detach_state字段的取值
 enum {
@@ -129,21 +137,24 @@ int pthread_join(pthread_t t, void **res) //res不使用
 
 #else//传统的Glibc机制
     struct pthread *thread = (struct pthread *)t;
-    futex((uint32_t*)&thread->tid, FUTEX_WAIT_BITSET|FUTEX_CLOCK_REALTIME, thread->tid, NULL, (void *)0 ,0);
-    mempool_clean_thread();
-    // clean_with_tid(tid);
-//< 一个疑难问题，我自定义的struct pthread没有与内核很好的协作。决定不采取这种方式来获取线程栈的位置
-	// if (thread->map_base) 
-    // {
-    //     //线程退出后，map_size被内核(推测是内核)修改为最高地址，+16字节(两个参数)就是整块mmap
-    //     //__printf("回收线程栈,%ld, %ld, 差值:%ld\n", thread->map_base, thread->map_size, thread->map_size-(size_t)thread->map_base);//thread->map_size-(size_t)thread->map_base+16
+    //tlibc自定义的结构
+    char *tlibc_ptr = (char *)thread + sizeof(struct pthread) - THREAD_STACK_SIZE;
+    struct tlibc_thread *tt = (struct tlibc_thread *)tlibc_ptr;
+    //自定义的Futex设计，将struct pthread的tid与我们保存的tt->tid对比。
+    //< 1.如果线程退出了，struct pthread的tid会被设置成0,而我们的tt->tid始终是该线程的tid。
+        //< 1.那么futex在比较后发现uaddr的值不是val,不会等待，直接返回-EAGAIN.然后就可以回收了
+    //< 2.如果线程还没退出，那么futex比较发现uaddr的值是val,等待
+    
+    if(tt->state == 1){//已经退出
 
-    //     int ret = __munmap(thread->map_base, THREAD_STACK_SIZE); //回收按照glibc的做法
-    //     if(ret != 0)
-    //         __printf("ret: %d\n", ret); //-22是参数错误
-    // }
-    // else
-    //     __printf("ERROR! thread->map_base = 0!\n");
+    }
+    else{ //没有退出
+        futex((uint32_t*)&thread->tid, FUTEX_WAIT_BITSET|FUTEX_CLOCK_REALTIME, tt->tid, NULL, (void *)0 , ~0);
+        // printf("pthread_join futex结束, %d\n", ret);
+    }
+    // printf("tlibc在栈底存储的信息: %d %ld %ld\n", tt->tid, tt->stack_base, tt->stack_size);
+    // __munmap((void *)tt->stack_base, tt->stack_size);
+    mempool_clean_thread();
 #endif
     //新的逻辑，或许根本不需要等待。只尝试检查一次join的线程是否退出，如果没退出就不管了，如果退出了就回收。
     //因为工作线程会自动回收退出的线程
@@ -160,6 +171,18 @@ void pthread_exit(void *retval)
 #else
     //传统pthread逻辑，同步回收，但为了方便，我采用mempool来传递线程栈地址给pthread_join
     mempool_mark_thread_exit(__gettid());
+    // struct pthread *thread = (struct pthread *)pthread_self();
+    // char *tlibc_ptr = (char *)thread + sizeof(struct pthread) - THREAD_STACK_SIZE;
+    // struct tlibc_thread *tt = (struct tlibc_thread *)tlibc_ptr;
+    // tt->state = 1;//退出
+    // futex((uint32_t *)&tt->tid, FUTEX_WAKE, ~0, NULL, NULL, 0);
+    // printf("已完成唤醒\n");
+    // while(1){
+    //     // tlibc_msleep(100);
+    //     // printf("循环中\n");
+    // }
+
+    // futex((uint32_t *)&thread_info, FUTEX_WAKE, ~0, NULL, NULL, 0);
 #endif
     //exit系统调用，让内核销毁task_struct结构体
     __exit(0);

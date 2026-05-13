@@ -353,3 +353,10 @@ memtest程序的兼容有问题，原因不明
 # 2026.5.2
 [feat] http程序，增加标准type定义
 getaddrinfo先放一放
+
+# 2026.5.13
+网络程序server和client
+增加setsockopt bind listen accept recvfrom调用；htons ntohs inet_ntoa inet_addr函数
+增加fprintf函数，虽然不使用File文件流
+增加tlibc_compat，用宏来兼容
+可使用client 127.0.0.1 8888在本机连接server程序，然后收发消息

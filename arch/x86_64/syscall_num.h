@@ -48,6 +48,11 @@
 //网络
 #define SYS_socket      __NR_socket
 #define SYS_connect     __NR_connect
+#define SYS_setsockopt  __NR_setsockopt
+#define SYS_bind        __NR_bind
+#define SYS_listen      __NR_listen
+#define SYS_accept      __NR_accept
+#define SYS_recvfrom    __NR_recvfrom
 
 // SC7自定义，在qemu才有效
 #define SYS_shutdown 1000

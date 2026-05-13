@@ -8,8 +8,7 @@ typedef __builtin_va_list my_va_list;
 #define my_va_arg(v, t)     __builtin_va_arg(v, t)
 #define my_va_end(v)        __builtin_va_end(v)
 
-//printf
-void print_int(int num)
+void fprint_long(int fd, long num)
 {
     
     char buf[32];
@@ -22,7 +21,7 @@ void print_int(int num)
     {
         num = -num;
         char *negative = "-";
-        __write(STDOUT,negative,1);
+        __write(fd,negative,1);
     }
     if(num == 0)
     {
@@ -44,45 +43,66 @@ void print_int(int num)
         buf[(count-1)-i] = tmp;
     }
     
-    __write(STDOUT,buf,count);
+    __write(fd,buf,count);
+}
+
+void fprint_string(int fd, const char *str)
+{
+    int count = 0;
+    char *str_calcu = (char *)str; //计算字符个数
+    while(*str_calcu++)
+        count++;
+    __write(fd,str,count);
+}
+
+void fprint_int(int fd, int num)
+{
+    
+    char buf[32];
+    char c;
+    int count=0;
+    __memset((void *)buf,0,32);
+
+    //处理负数
+    if(num < 0)
+    {
+        num = -num;
+        char *negative = "-";
+        __write(fd,negative,1);
+    }
+    if(num == 0)
+    {
+        count = 1;
+        buf[0] = '0';
+    }
+    while(num!=0)
+    {
+        c = num % 10; //从i最低位开始，计算每一位的数字
+        buf[count++] = c + 48; //向缓冲区写入对应字符，48表示字符0
+        num /= 10;
+    }
+
+    char tmp;
+    for(int i=0; i < count/2; i++) //反转，让字符串顺序正确
+    {
+        tmp = buf[i];
+        buf[i] = buf[(count-1)-i];
+        buf[(count-1)-i] = tmp;
+    }
+    
+    __write(fd,buf,count);
+}
+
+
+//printf
+void print_int(int num)
+{
+    fprint_int(STDOUT, num);
 }
 
 void print_long(long num)
 {
-    
-    char buf[32];
-    char c;
-    int count=0;
-    __memset((void *)buf,0,32);
-
-    //处理负数
-    if(num < 0)
-    {
-        num = -num;
-        char *negative = "-";
-        __write(STDOUT,negative,1);
-    }
-    if(num == 0)
-    {
-        count = 1;
-        buf[0] = '0';
-    }
-    while(num!=0)
-    {
-        c = num % 10; //从i最低位开始，计算每一位的数字
-        buf[count++] = c + 48; //向缓冲区写入对应字符，48表示字符0
-        num /= 10;
-    }
-
-    char tmp;
-    for(int i=0; i < count/2; i++) //反转，让字符串顺序正确
-    {
-        tmp = buf[i];
-        buf[i] = buf[(count-1)-i];
-        buf[(count-1)-i] = tmp;
-    }
-    
-    __write(STDOUT,buf,count);
+    fprint_long(STDOUT, num);
 }
 
 void print_string(const char *str)
@@ -154,6 +174,66 @@ static int double_to_str(double d, char *buf, int dec) {
     }
     
     return len;
+}
+
+
+void __fprintf(int fd, const char *fmt, ...) {
+    my_va_list args;
+    my_va_start(args, fmt);   // args 指向第一个可变参数
+
+    for (const char *p = fmt; *p; p++) {
+        if (*p != '%') {
+            char *str_end = (char *)p;
+            while(*str_end!='%' && *str_end)
+            {
+                str_end++;
+            }
+            int count = str_end-p; //计算输出字符的个数
+            __write(fd,p,count);
+            p = p+(count-1); //跳过已经输出的字符
+            continue;
+        }
+
+        switch (*++p) {
+            case 'd': {
+                long n = my_va_arg(args, long);  // %d 默认提升为 int，但为了简单用 long
+                fprint_int(fd, n);
+                break;
+            }
+            case 'l':
+                if (*++p == 'd') {
+                    long n = my_va_arg(args, long);
+                    fprint_long(fd, n);
+                } else {
+                    p--;  // 回退
+                    long n = my_va_arg(args, long); //原来大量使用了%ld
+                    fprint_int(fd, n);
+                    // 可扩展其他 %ld 格式
+                }
+                break;
+            case 's': {
+                char *s = my_va_arg(args, char*);
+                if (s) fprint_string(fd, s);
+                break;
+            }
+            case 'c': {
+                char c = (char)my_va_arg(args, int);
+                __write(fd, &c, 1);
+                break;
+            }
+            case 'f': {
+                double d = my_va_arg(args, double);   // float 会自动提升为 double
+                char buf[128];                         // 足够容纳浮点字符串
+                int len = double_to_str(d, buf, 6);    // 默认6位小数
+                __write(fd, buf, len);
+                break;
+            }
+            default:
+                __write(fd, p-1, 2);  // 输出 %x
+                break;
+        }
+    }
+    my_va_end(args);
 }
 
 void __printf(const char *fmt, ...) {

@@ -110,7 +110,7 @@ void exit_handler(int num)
     }
 }
 
-void exit()//主进程让读取输入进程退出
+void vim_exit()//主进程让读取输入进程退出
 {
     // __creat("进程受到信号退出", 0644);
     __exit_group(0);
@@ -224,7 +224,7 @@ int main(int argc, char *argv[])
     __printf(ALT_SCREEN_ON); //使用新的终端缓冲区输出
     __printf(CLEAR_SCREEN CURSOR_HOME); // 清屏并移动到左上角
     tlibc_sigaction(2,exit_handler);//SIGINT
-    tlibc_sigaction(40,exit);
+    tlibc_sigaction(40,vim_exit);
 
     //这一段应用设置之后，终端输入模式改变
     struct termios t;

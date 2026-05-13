@@ -46,7 +46,6 @@ ssize_t __getrandom(void *buf, size_t buflen, unsigned int flags);
 off_t __lseek(int fd, off_t offset, int whence);
 int __ftruncate(int fd, off_t length);
 long __readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);
-//clone待验证
 int __clone(int (*fn)(void *), void *stack, int flags, void *arg, pid_t *parent_tid, void *tls, pid_t *child_tid);
 pid_t __gettid(void);
 void *__mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset);
@@ -63,8 +62,13 @@ void *__memmove(void *dest, const void *src, size_t n);
 //printf
 void print_int(int num);
 void __printf(const char *fmt, ...);
+void __fprintf(int fd, const char *fmt, ...);
 
 #define TIME_UTC 1
 int timespec_get(struct timespec *ts, int base);
 #define printf(fmt, ...) __printf(fmt, ##__VA_ARGS__)
+#define fprintf(fd, fmt, ...) __fprintf(fd, fmt, ##__VA_ARGS__)
+
+#include "tlibc_compat.h"
+
 #endif

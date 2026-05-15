@@ -15,6 +15,41 @@
 #define SO_REUSEADDR  2
 #define INADDR_ANY   (0x00000000) //bind
 
+struct server_thread_arg {
+    int client_fd;
+    struct sockaddr_in client_addr;
+};
+
+void* server_thread_entry(void* arg) {
+    struct server_thread_arg *thread_arg = (struct server_thread_arg*)arg;
+    int client_fd = thread_arg->client_fd;
+    struct sockaddr_in client_addr = thread_arg->client_addr;
+    long bytes_received;
+    char buffer[BUFFER_SIZE];
+
+    while ((bytes_received = recv(client_fd, buffer, sizeof(buffer) - 1, 0)) > 0) {
+        buffer[bytes_received] = '\0';  // 添加字符串结束符
+        printf("[%s:%d] %s",
+               tlibc_inet_ntoa(client_addr.sin_addr),
+               tlibc_ntohs(client_addr.sin_port),
+               buffer);
+        fprintf(client_fd, "Server receive your message: %s", buffer); // 回显给客户端
+    }
+    
+    if (bytes_received == 0) {
+        printf("Client %s:%d disconnected\n",
+               tlibc_inet_ntoa(client_addr.sin_addr),
+               tlibc_ntohs(client_addr.sin_port));
+    } else if (bytes_received < 0) {
+        printf("recv() error");
+    }
+    close(client_fd);
+    printf("\n");
+    munmap(thread_arg, sizeof(struct server_thread_arg));
+        
+    return NULL;
+}
+
 int main(int argc, char *argv[]) {
     int port = PORT;
     
@@ -76,33 +111,14 @@ int main(int argc, char *argv[]) {
                tlibc_inet_ntoa(client_addr.sin_addr),
                tlibc_ntohs(client_addr.sin_port));
         
-        // 6. recv() 循环 - 接收数据并打印
-        char buffer[BUFFER_SIZE];
-        ssize_t bytes_received;
-        
-        while ((bytes_received = recv(client_fd, buffer, sizeof(buffer) - 1, 0)) > 0) {
-            buffer[bytes_received] = '\0';  // 添加字符串结束符
-            printf("[%s:%d] %s",
-                   tlibc_inet_ntoa(client_addr.sin_addr),
-                   tlibc_ntohs(client_addr.sin_port),
-                   buffer);
-            fprintf(client_fd, "Server receive your message: %s", buffer); // 回显给客户端
-        }
-        
-        if (bytes_received == 0) {
-            printf("Client %s:%d disconnected\n",
-                   tlibc_inet_ntoa(client_addr.sin_addr),
-                   tlibc_ntohs(client_addr.sin_port));
-        } else if (bytes_received < 0) {
-            printf("recv() error");
-        }
-        
-        // 7. close() - 关闭客户端套接字
-        close(client_fd);
-        printf("\n");
+        pthread_t server_thread;
+        struct server_thread_arg *thread_arg = (struct server_thread_arg*)mmap(0, sizeof(struct server_thread_arg), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+        thread_arg->client_fd = client_fd;
+        thread_arg->client_addr = client_addr;
+        pthread_create(&server_thread, NULL, server_thread_entry, (void *)thread_arg);
     }
     
-    // 8. close() - 关闭服务器套接字（永远不会执行到这里）
+    // never reach here!
     close(server_fd);
     return 0;
 }

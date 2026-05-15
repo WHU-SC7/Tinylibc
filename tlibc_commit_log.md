@@ -360,3 +360,10 @@ getaddrinfo先放一放
 增加fprintf函数，虽然不使用File文件流
 增加tlibc_compat，用宏来兼容
 可使用client 127.0.0.1 8888在本机连接server程序，然后收发消息
+
+# 2026.5.15
+把server改成多线程，可同时处理多个client连接
+[todo] 为shell增加检索elf程序路径的功能,还有自动补全?
+让项目在~/.tlibc/下安装程序
+增加时间功能
+增加日志功能

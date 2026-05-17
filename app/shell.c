@@ -364,55 +364,60 @@ int main(int argc, char *argv[])
     LOG("使用help查看支持的命令, 输入q退出shell\n");
     LOG("不要输入方向键好吗，这个版本不支持\n");
 
+    char *buf = mmap(0, SHELL_BUF_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     while(1)
     {
         tlibc_sigaction(2,sigint_handler);//SIGINT
         tlibc_set_term_raw_and_noecho(STDIN); //设置终端为raw模式，关闭回显
+        print_promt();
 
-        char *buf = mmap(0, SHELL_BUF_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
         memset(buf, 0, SHELL_BUF_SIZE); //每次都清空缓冲区，防止未定义行为
         int read_count = 0;
         while(1){
-            printf(CLEAR_LINE CURSOR_START_LINE); //清除当前行，移动光标到行首
-            print_promt();
-            printf("%s", buf);
             //可能要改变光标位置
-            int i= __read(0,&buf[read_count],1); //读取一次输入
+            char ch;
+            int i= __read(0,&ch,1); //读取一次输入
             if(i < 0)
             {
                 panic("读取错误!\n");
                 continue;
             }
             // __printf("接收到输入，字符的码值: %d\n",buf[read_count]);
-            if(buf[read_count] == '\n') //输入一行结束
+            if(ch == '\n') //输入一行结束
             {
                 buf[read_count] = 0; //把换行符改成0，构成字符串
                 write(STDOUT,"\n",1); //回显输入
                 break;
             }
-            if(buf[read_count] == '\t') //补全
+            else if(ch == '\t') //补全
             {
                 buf[read_count] = 0;
                 write(STDOUT,"\n",1);
                 tab_complete(buf);
                 write(STDOUT,"\n",1);
+                print_promt();
+                printf("%s", buf);
                 read_count = strlen(buf); //更新count
                 continue;
             }
-            if(buf[read_count] == 127) //退格
+            else if(ch == 127) //退格
             {
                 if(read_count>0)
                 {
                     read_count--;
                     buf[read_count] = 0;
+                    __write(1, "\b \b", 3);
                 }
                 continue;
+            }
+            else{//普通字符
+                buf[read_count++] = ch;
+                write(STDOUT,&ch,1); //回显输入
             }
             //右 27 91 67
             //左 27 91 68
             //上 27 91 65
             //下 27 91 66
-            read_count++;
         }
         
 

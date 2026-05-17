@@ -307,8 +307,6 @@ void tab_complete(char *buf)
         panic("getdents64失败, 错误码: %d\n", ret);
     }
     struct linux_dirent64 *data = (struct linux_dirent64 *)ls_buf;
-    data = (struct linux_dirent64 *)((char *)data + data->d_reclen);
-    data = (struct linux_dirent64 *)((char *)data + data->d_reclen);//跳过.和..这两个目录项
     while(data->d_off != 0){
         if(file_num < MAX_FILE_NUM)
         {

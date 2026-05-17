@@ -29,7 +29,7 @@ int main(int argc, char *argv[])
             __printf("文件%s不存在,删除失败\n", argv[1]);
             return -1;
         }
-        __printf("删除失败,错误码: %d\n", ret);
+        __printf("创建文件夹%s失败,错误码: %d\n", argv[1], ret);
         return -1;
     }
     return -1;

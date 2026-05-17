@@ -23,4 +23,8 @@
 #include "tlibc.h"
 #include "tty.h"
 
+//新函数，先放在这
+int tlibc_get_user_dir(char *buf, int buf_size);
+int tlibc_get_file_len(char *path);
+
 #endif // TLIBC_EVERYTHING_H

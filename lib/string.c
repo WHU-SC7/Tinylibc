@@ -32,6 +32,17 @@ char *strcat(char *restrict dst, const char *restrict src)
     return dst;
 }
 
+char *strncat(char *restrict dst, const char *restrict src, unsigned long n)
+{
+    unsigned long dst_len = strlen(dst);
+    unsigned long i;
+    for (i = 0; i < n && src[i] != '\0'; i++) {
+        dst[dst_len + i] = src[i];
+    }
+    dst[dst_len + i] = '\0';
+    return dst;
+}
+
 int strcmp(const char *s1, const char *s2)
 {
     while(*s1 && *s1==*s2)
@@ -53,6 +64,16 @@ int strncmp(const char *s1, const char *s2, unsigned long n)
         }
     }
     return 0;
+}
+
+char *strchr(const char *s, int c){
+    while(*s)
+    {
+        if(*s == c)
+            return (char *)s;
+        s++;
+    }
+    return (void *)-1;
 }
 
 //私有实现，把字符串转换成10进制unsigned long

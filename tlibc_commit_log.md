@@ -374,3 +374,5 @@ shell增加自动补全
 [fix]在云服务器上，getdent64的前两个目录项不一定是.和.. 所以shell的补全不能直接忽略前两个目录项
 
 [fix]修改shell
+
+增加tserver和tclient，可交互式从服务器下载文件

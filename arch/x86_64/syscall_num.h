@@ -54,5 +54,7 @@
 #define SYS_accept      __NR_accept
 #define SYS_recvfrom    __NR_recvfrom
 
+#define SYS_getuid       __NR_getuid
+
 // SC7自定义，在qemu才有效
 #define SYS_shutdown 1000

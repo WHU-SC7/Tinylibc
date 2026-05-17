@@ -60,5 +60,9 @@ enum __socket_type
 /* Address families.  */
 #define AF_INET		PF_INET
 
+#define SOL_SOCKET    1 //setsockopt的level参数
+#define SO_REUSEADDR  2
+#define INADDR_ANY   (0x00000000) //bind
+
 
 #endif

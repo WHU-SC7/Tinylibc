@@ -11,10 +11,6 @@
 #define PORT 8888
 #define BUFFER_SIZE 1024
 
-#define SOL_SOCKET    1 //setsockopt的level参数
-#define SO_REUSEADDR  2
-#define INADDR_ANY   (0x00000000) //bind
-
 struct server_thread_arg {
     int client_fd;
     struct sockaddr_in client_addr;

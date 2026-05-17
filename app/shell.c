@@ -218,6 +218,7 @@ void run_command(struct command *command)
     int pid = __fork();
     if(pid == 0) //子进程
     {
+        tlibc_restore_term(STDIN); //恢复规范模式
         ret = __execve(command->name, command->args, (void *)0);
         if(ret < 0)
         {

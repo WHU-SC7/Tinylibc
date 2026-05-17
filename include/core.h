@@ -54,6 +54,7 @@ long __futex(unsigned int *uaddr, int futex_op, unsigned int val, const struct t
 long tlibc_clone_thread(void *stack);
 int __madvise(void *addr, size_t length, int advice);
 void __exit_group(int status);
+uid_t getuid(void);
 
 //string操作
 void *__memset(void *dst, int value, unsigned int n);
@@ -68,6 +69,7 @@ void __fprintf(int fd, const char *fmt, ...);
 int timespec_get(struct timespec *ts, int base);
 #define printf(fmt, ...) __printf(fmt, ##__VA_ARGS__)
 #define fprintf(fd, fmt, ...) __fprintf(fd, fmt, ##__VA_ARGS__)
+#define fdprintf(fd, fmt, ...) __fprintf(fd, fmt, ##__VA_ARGS__)//像一个fd写入，Tinylibc没有File结构体，这样命名更合适
 
 #include "tlibc_compat.h"
 

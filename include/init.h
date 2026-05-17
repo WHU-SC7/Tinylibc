@@ -3,6 +3,6 @@
 
 extern void *pre_alloc_stack;
 extern int remain_thread_stack_num;
-#define PRE_ALLOC_SIZE (long)1000//每次预先分配的数量
+#define PRE_ALLOC_SIZE (long)100//每次预先分配的数量
 
 #endif

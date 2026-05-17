@@ -18,6 +18,7 @@
 #define CLEAR_LINE      CSI "2K"          // 清除整行
 #define ALT_SCREEN_ON   ESC "[?1049h"     // 启用替代屏幕缓冲区
 #define ALT_SCREEN_OFF  ESC "[?1049l"     // 禁用替代屏幕缓冲区
+#define CURSOR_START_LINE CSI "1G"   // 移动到当前行第1列
 
 #define NCCS 19
 struct termios {

@@ -2,6 +2,9 @@
 #include "tlibc_print.h"
 #include "tlibc.h"
 #include "errno.h"
+#include "tlibc_everything.h"
+
+#define SHELL_BUF_SIZE 1024*1024 //1M上下文！
 //这里现在只放shell
 int __internal_chdir(int argc, char *argv[])
 {
@@ -260,6 +263,100 @@ void print_promt()
     __printf(BLUE_COLOR_PRINT"%s$"COLOR_RESET,buf);
 }
 
+void sigint_handler(int num)
+{
+    tlibc_restore_term(STDIN); //恢复终端设置
+    exit_group(0);
+}
+
+void tab_complete(char *buf)
+{
+    if(buf[0]==0){
+        return;
+    }
+    int last_space_index = -1;
+    for(int i=0; buf[i]; i++)
+    {
+        if(buf[i] == ' ')
+        {
+            last_space_index = i;
+        }
+    }
+    char *str_to_match = &buf[last_space_index+1];
+    if(str_to_match[0] == 0) //最后一个空格后没有输入，现在不匹配
+    {
+        return;
+    }
+    // printf("要匹配的字符串: %s, 长度: %d", str_to_match, strlen(str_to_match));
+    if(str_to_match[0] == '\\')
+    {
+        PRINT_COLOR(RED_COLOR_PRINT, "不支持绝对路径!");
+        return;
+    }
+    #define MAX_FILE_NUM 1024
+    #define FILE_NAME_MAX_LEN 256
+    char file_name[MAX_FILE_NUM][FILE_NAME_MAX_LEN];//最多支持1024个文件，每个文件名最多255字符
+    int file_num = 0;
+    //获取当前目录下的文件列表
+    #define SHELL_LS_BUF_SIZE 1024*1024
+    char *ls_buf = (char *)mmap(0, SHELL_LS_BUF_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    memset(ls_buf, 0, SHELL_LS_BUF_SIZE);
+    int cwd_fd = openat(AT_FDCWD,".",O_RDONLY|O_DIRECTORY|O_CLOEXEC,0644);
+    int ret = __getdents64(cwd_fd, (struct linux_dirent64 *)ls_buf, SHELL_LS_BUF_SIZE);
+    if(ret < 0){
+        panic("getdents64失败, 错误码: %d\n", ret);
+    }
+    struct linux_dirent64 *data = (struct linux_dirent64 *)ls_buf;
+    data = (struct linux_dirent64 *)((char *)data + data->d_reclen);
+    data = (struct linux_dirent64 *)((char *)data + data->d_reclen);//跳过.和..这两个目录项
+    while(data->d_off != 0){
+        if(file_num < MAX_FILE_NUM)
+        {
+            strncpy(file_name[file_num], data->d_name, FILE_NAME_MAX_LEN-1);
+            file_name[file_num][FILE_NAME_MAX_LEN-1] = 0; //确保文件名是以0结尾的字符串
+            file_num++;
+        }
+        else
+        {
+            PRINT_COLOR(RED_COLOR_PRINT, "文件数量超过上限%d，只处理前%d个文件\n", MAX_FILE_NUM , MAX_FILE_NUM);
+            break;
+        }
+        data = (struct linux_dirent64 *)((char *)data + data->d_reclen); //< 遍历
+    }
+    int match_file_num = 0; //能匹配的文件名数量
+    int match_file_index[MAX_FILE_NUM]; //能匹配的文件在file_name数组中的索引
+    for(int i=0; i<file_num; i++){
+        if(strncmp(file_name[i], str_to_match, strlen(str_to_match)) == 0)
+        {
+            // PRINT_COLOR(GREEN_COLOR_PRINT, "%s\n", file_name[i]);
+            match_file_index[match_file_num] = i;
+            match_file_num++;
+        }
+    }
+    if(match_file_num == 1) //只有一个匹配，自动补全
+    {
+        char *match_file_name = file_name[match_file_index[0]];
+        // int len_to_add = strlen(match_file_name) - strlen(str_to_match);
+        strcat(buf, &match_file_name[strlen(str_to_match)]); //把匹配的文件名剩余部分添加到输入缓冲区
+        PRINT_COLOR(GREEN_COLOR_PRINT, "唯一候选项，补全为: %s", match_file_name);
+    }
+    else if(match_file_num > 1)
+    {
+        PRINT_COLOR(YELLOW_COLOR_PRINT, "有%d个匹配,将列出这些选项: ", match_file_num);
+        for(int i=0; i<match_file_num; i++)
+        {
+            char *match_file_name = file_name[match_file_index[i]];
+            printf("%s ", match_file_name);
+        }
+    }
+    else
+    {
+        PRINT_COLOR(RED_COLOR_PRINT, "没有匹配");
+    }
+    //释放内存
+    munmap(ls_buf, SHELL_LS_BUF_SIZE);
+}
+
 /**
  * @brief shell,现在只能接收输入
  */
@@ -271,38 +368,66 @@ int main(int argc, char *argv[])
 
     while(1)
     {
-        // 单字符输入，简单但是不标准。每个字符读取都要陷入内核，开销大
-        // char input_c;
-        // __read(0,&input_c,1);
-        // if(input_c == 'q')
-        //     break;
-        // __printf("接收到输入，字符的码值: %d\n",input_c);
+        tlibc_sigaction(2,sigint_handler);//SIGINT
+        tlibc_set_term_raw_and_noecho(STDIN); //设置终端为raw模式，关闭回显
 
-        // 一次读取完整的输入，以enter输入结尾
-        // 疑问，内核返回的缓冲区是否应该以enter的码值结尾。 现在SC7不会
-        print_promt();
-        char buf[256];
-        for(int i=0; i<256; i++) //每次都清空缓冲区，防止未定义行为
-            buf[i] = 0;
-        int read_count = __read(0,buf,256); //读取一次输入
-        if(read_count < 0)
-        {
-            __printf("读取错误!重新读取\n");
-            continue;
+        char *buf = mmap(0, SHELL_BUF_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+        memset(buf, 0, SHELL_BUF_SIZE); //每次都清空缓冲区，防止未定义行为
+        int read_count = 0;
+        while(1){
+            printf(CLEAR_LINE CURSOR_START_LINE); //清除当前行，移动光标到行首
+            print_promt();
+            printf("%s", buf);
+            //可能要改变光标位置
+            int i= __read(0,&buf[read_count],1); //读取一次输入
+            if(i < 0)
+            {
+                panic("读取错误!\n");
+                continue;
+            }
+            // __printf("接收到输入，字符的码值: %d\n",buf[read_count]);
+            if(buf[read_count] == '\n') //输入一行结束
+            {
+                buf[read_count] = 0; //把换行符改成0，构成字符串
+                write(STDOUT,"\n",1); //回显输入
+                break;
+            }
+            if(buf[read_count] == '\t') //补全
+            {
+                buf[read_count] = 0;
+                write(STDOUT,"\n",1);
+                tab_complete(buf);
+                write(STDOUT,"\n",1);
+                read_count = strlen(buf); //更新count
+                continue;
+            }
+            if(buf[read_count] == 127) //退格
+            {
+                if(read_count>0)
+                {
+                    read_count--;
+                    buf[read_count] = 0;
+                }
+                continue;
+            }
+            //右 27 91 67
+            //左 27 91 68
+            //上 27 91 65
+            //下 27 91 66
+            read_count++;
         }
-//发现在x86_64的ubuntu上，读取一行输出时，读取的enter键输入会当成10(LF)写入缓冲区
-//内核读取到entera键输入会自动换行
-#if X86_64_TLIBC == 1
-        // __printf("字面值: %d.",buf[read_count-1]);
-        buf[read_count-1] = 0;
-#endif
+        
+
         if(buf[0]=='q' && buf[1]==0)    //输入是单字符就退出
+        {
+            tlibc_restore_term(STDIN); //恢复终端设置
+            munmap(buf, SHELL_BUF_SIZE);
             break;
+        }
         if(buf[0]==0)
         {
             continue;
         }
-        // __printf("输入: %s, read返回值: %d\n",buf,read_count);
 
         //解析命令输入，获取命令名和参数
         struct command command;//在栈上分配空间给struct command

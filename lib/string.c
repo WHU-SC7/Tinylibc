@@ -6,6 +6,18 @@ char *strcpy(char *dest, const char *src)
     return (char *)src;
 }
 
+char *strncpy(char *dest, const char *src, unsigned long n)
+{
+    unsigned long i;
+    for (i = 0; i < n && src[i] != '\0'; i++) {
+        dest[i] = src[i];
+    }
+    for (; i < n; i++) {
+        dest[i] = '\0';
+    }
+    return dest;
+}
+
 int strlen(const char *s)
 {
     int len = 0;
@@ -28,6 +40,19 @@ int strcmp(const char *s1, const char *s2)
         s2++;
     }
     return *(const unsigned char *)s1 - *(const unsigned char *)s2;
+}
+
+int strncmp(const char *s1, const char *s2, unsigned long n)
+{
+    for (unsigned long i = 0; i < n; i++) {
+        if (s1[i] != s2[i]) {
+            return (unsigned char)s1[i] - (unsigned char)s2[i];
+        }
+        if (s1[i] == '\0') {
+            return 0;
+        }
+    }
+    return 0;
 }
 
 //私有实现，把字符串转换成10进制unsigned long

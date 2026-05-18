@@ -2,6 +2,10 @@
 
 #define BUFFER_SIZE 1024
 
+int min(int a, int b) {
+    return a < b ? a : b;
+}
+
 void* receive_thread(void* arg) {
     char buffer[1024];
     int sock = *(int*)arg;
@@ -23,17 +27,35 @@ void* receive_thread(void* arg) {
                 write(sock, "!readyforfilelen", 16); //告诉服务器准备好接收文件长度了
                 recv(sock, buffer, sizeof(buffer) - 1, 0); //接收文件长度
                 int file_len = tlibc_strtoul(buffer);
-                char *file_buf = (char *)mmap(0, file_len, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-                memset(file_buf, 0, file_len);
+                char recv_buf[4096];
+                memset(recv_buf, 0, sizeof(recv_buf));
+                int fd = openat(AT_FDCWD, file_name, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 
                 write(sock, "!readyforfilecontent", 20); //告诉服务器准备好接收文件内容了
-                recv(sock, file_buf, file_len, 0); //接收文件内容
+                int part_i=0;//分页传输
+                int remain_len = file_len;
+                while(remain_len > 0){
+                    memset(buffer, 0, sizeof(buffer));
+                    strcat(buffer, "!readyforfilepart");
+                    char part_i_str[16];
+                    memset(part_i_str, 0, sizeof(part_i_str));
+                    itoa(part_i, part_i_str, 10);
+                    strcat(buffer, part_i_str);
+                    write(sock, buffer, strlen(buffer)); //告诉服务器准备好接收第part_i个部分
+                    int recv_len = recv(sock, recv_buf, min(remain_len, (int)sizeof(recv_buf)), 0); //接收文件内容
+                    if(recv_len < min(remain_len, (int)sizeof(recv_buf))){
+                        fdprintf(sock, "!readyforfilepart%d", part_i); //重发
+                        continue; //重发
+                    }
 
-                int fd = openat(AT_FDCWD, file_name, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                write(fd, file_buf, file_len);
+                    write(fd, recv_buf, recv_len);
+                    remain_len -= sizeof(recv_buf);
+                    part_i++;
+                }
+                fdprintf(sock, "!filetransfercomplete"); //告诉服务器文件接收完成了
+
                 close(fd);
-                // printf("文件内容:\n%s\n", file_buf);
-                munmap(file_buf, file_len);
+                // printf("文件内容:\n%s\n", recv_buf);
                 PRINT_COLOR(GREEN_COLOR_PRINT, "从服务器接收文件'%s'，大小: %d bytes，保存在当前目录下!\n", file_name, file_len);
                 continue;
             }

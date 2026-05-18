@@ -379,3 +379,6 @@ shell增加自动补全
 
 # 2026.5.18
 [fix] 修复tserver的bug，tlibc_get_file_len不该close fd
+
+[fix] 修改tserver tclient为文件分片发送，每片4096字节。
+fdprintf有潜在问题，会分几次write调用。之后应该改成一次write的

@@ -23,6 +23,13 @@ struct server_thread_arg {
     struct sockaddr_in client_addr;
 };
 
+char *help_info = "Available commands:\n"
+                  "  !help - Show this help message\n"
+                  "  !time - Show server time\n"
+                  "  !exit - Close the connection\n"
+                  "  !ls - List files in server directory\n"
+                  "  或输入文件名以下载文件)\n";
+
 void* server_thread_entry(void* arg) {
     struct server_thread_arg *thread_arg = (struct server_thread_arg*)arg;
     int client_fd = thread_arg->client_fd;
@@ -40,17 +47,13 @@ void* server_thread_entry(void* arg) {
     char *ls_buf = (char *)mmap(0, LS_BUF_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 
     fdprintf(client_fd, "Welcome to Tinylibc TCP Server! \n");
+    fdprintf(client_fd, "%s", help_info);
 
     while ((bytes_received = recv(client_fd, buffer, sizeof(buffer) - 1, 0)) > 0) {
         buffer[bytes_received] = '\0';  // 添加字符串结束符
         if(buffer[0] == '!'){ //命令以!开头
             if(strcmp(buffer, "!help\n") == 0){
-                fdprintf(client_fd, "Available commands:\n");
-                fdprintf(client_fd, "  !help - Show this help message\n");
-                fdprintf(client_fd, "  !time - Show server time\n");
-                fdprintf(client_fd, "  !exit - Close the connection\n");
-                fdprintf(client_fd, "  !ls - List files in server directory\n");
-                fdprintf(client_fd, "  或输入不以'!'开头的字符串以下载文件)\n");
+                fdprintf(client_fd, "%s", help_info);
             }
             else if(strcmp(buffer, "!time\n") == 0){
                 struct timespec tp;
@@ -87,6 +90,10 @@ void* server_thread_entry(void* arg) {
                    tlibc_inet_ntoa(client_addr.sin_addr),
                    tlibc_ntohs(client_addr.sin_port),
                    buffer);
+            if(strcmp(buffer, "tserver_log.txt") == 0){
+                fdprintf(client_fd, "Access denied. 禁止下载tserver日志\n");
+                continue;
+            }
             memset(ls_buf, 0, LS_BUF_SIZE);
             lseek(srv_fd, 0, SEEK_SET);
             int ret = getdents64(srv_fd, (struct linux_dirent64 *)ls_buf, LS_BUF_SIZE);
@@ -111,27 +118,43 @@ void* server_thread_entry(void* arg) {
                         break;
                     }
                     int file_len = tlibc_get_file_len(file_path);
-                    char *file_buf = (char *)mmap(0, file_len, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-                    read(file_fd, file_buf, file_len);
-                    
-                    SERVER_LOG("文件内容:\n%s\n", file_buf);
-                    close(file_fd);
+                    char file_buf[4096];
 
                     char ready_buf[32]; //用来接收client的回应
                     fdprintf(client_fd, "!sendfile");
+                    memset(ready_buf, 0, sizeof(ready_buf));
                     recv(client_fd, ready_buf, sizeof(ready_buf) - 1, 0); //等待client准备好接收文件名
                     SERVER_LOG_COLOR(GREEN_COLOR_PRINT, "client said: %s\n", ready_buf);
 
                     fdprintf(client_fd, "%s", buffer);// 告知client文件名
+                    memset(ready_buf, 0, sizeof(ready_buf));
                     recv(client_fd, ready_buf, sizeof(ready_buf) - 1, 0); //等待client准备好接收文件长度
                     SERVER_LOG_COLOR(GREEN_COLOR_PRINT, "client said: %s\n", ready_buf);
 
                     fdprintf(client_fd, "%d", file_len);// 告知client文件长度
+                    memset(ready_buf, 0, sizeof(ready_buf));
                     recv(client_fd, ready_buf, sizeof(ready_buf) - 1, 0); //等待client准备好接收文件内容
                     SERVER_LOG_COLOR(GREEN_COLOR_PRINT, "client said: %s\n", ready_buf);
 
-                    write(client_fd, file_buf, file_len);
-                    munmap(file_buf, file_len);
+                    while(1){
+                        memset(ready_buf, 0, sizeof(ready_buf));
+                        recv(client_fd, ready_buf, sizeof(ready_buf) - 1, 0);
+                        SERVER_LOG_COLOR(GREEN_COLOR_PRINT, "client said: %s\n", ready_buf);
+                        if(strcmp(ready_buf, "!filetransfercomplete") == 0){
+                            break;
+                        }
+                        else{
+                            int part_i = tlibc_strtoul(&ready_buf[strlen("!readyforfilepart")]);
+                            
+                            lseek(file_fd, part_i * sizeof(file_buf), SEEK_SET);
+                            memset(file_buf, 0, sizeof(file_buf));
+                            int read_len = read(file_fd, file_buf, sizeof(file_buf));
+                            SERVER_LOG_COLOR(GREEN_COLOR_PRINT, "Sending file part %d, size: %d bytes\n", part_i, read_len);
+                            write(client_fd, file_buf, read_len);
+                        }
+                    }
+                    close(file_fd);
+
                     SERVER_LOG_COLOR(GREEN_COLOR_PRINT, "Sent file '%s' to client %s:%d, size: %d bytes\n", file_path,
                                 tlibc_inet_ntoa(client_addr.sin_addr),
                                 tlibc_ntohs(client_addr.sin_port),

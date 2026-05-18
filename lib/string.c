@@ -105,3 +105,50 @@ void* memcpy(void* dest, const void* src, unsigned long n)
     
     return dest;
 }
+
+/**
+ * 将整数转换为字符串
+ * @param num 要转换的整数
+ * @param str 存储结果的字符串缓冲区
+ * @param radix 进制（2-36）
+ * @return 返回 str 指针
+ */
+char* itoa(int num, char* str, int radix) {
+    char* ptr = str;
+    int is_negative = 0;
+    char digits[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    char temp[33];  // 32位整数最多32位+符号+结束符
+    int i = 0;
+    
+    // 处理0的特殊情况
+    if (num == 0) {
+        *ptr++ = '0';
+        *ptr = '\0';
+        return str;
+    }
+    
+    // 处理负数（仅十进制）
+    if (num < 0 && radix == 10) {
+        is_negative = 1;
+        num = -num;
+    }
+    
+    // 转换数字
+    while (num != 0) {
+        temp[i++] = digits[num % radix];
+        num /= radix;
+    }
+    
+    // 添加负号
+    if (is_negative) {
+        temp[i++] = '-';
+    }
+    
+    // 反转字符串
+    while (i > 0) {
+        *ptr++ = temp[--i];
+    }
+    *ptr = '\0';
+    
+    return str;
+}

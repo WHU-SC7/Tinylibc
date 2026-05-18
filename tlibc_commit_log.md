@@ -376,3 +376,6 @@ shell增加自动补全
 [fix]修改shell
 
 增加tserver和tclient，可交互式从服务器下载文件
+
+# 2026.5.18
+[fix] 修复tserver的bug，tlibc_get_file_len不该close fd

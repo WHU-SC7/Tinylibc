@@ -16,17 +16,23 @@ void* receive_thread(void* arg) {
                 write(sock, "!readyforfilename", 17); //告诉服务器准备好接收文件名了
                 int name_len =recv(sock, buffer, sizeof(buffer) - 1, 0); //接收文件名
                 char file_name[256];
+                memset(file_name, 0, sizeof(file_name));
                 strncpy(file_name, buffer, name_len);
                 memset(buffer, 0, sizeof(buffer));
+
                 write(sock, "!readyforfilelen", 16); //告诉服务器准备好接收文件长度了
                 recv(sock, buffer, sizeof(buffer) - 1, 0); //接收文件长度
                 int file_len = tlibc_strtoul(buffer);
                 char *file_buf = (char *)mmap(0, file_len, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+                memset(file_buf, 0, file_len);
+
                 write(sock, "!readyforfilecontent", 20); //告诉服务器准备好接收文件内容了
                 recv(sock, file_buf, file_len, 0); //接收文件内容
+
                 int fd = openat(AT_FDCWD, file_name, O_WRONLY | O_CREAT | O_TRUNC, 0644);
                 write(fd, file_buf, file_len);
                 close(fd);
+                // printf("文件内容:\n%s\n", file_buf);
                 munmap(file_buf, file_len);
                 PRINT_COLOR(GREEN_COLOR_PRINT, "从服务器接收文件'%s'，大小: %d bytes，保存在当前目录下!\n", file_name, file_len);
                 continue;

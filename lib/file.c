@@ -12,9 +12,7 @@ int tlibc_get_file_len(char *path)
     int ret = fstat(fd, &statbuf);
     if(ret != 0)
     {
-        close(fd);
         return -1;
     }
-    close(fd);
     return statbuf.st_size;
 }

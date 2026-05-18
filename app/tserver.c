@@ -100,10 +100,12 @@ void* server_thread_entry(void* arg) {
                     // fdprintf(client_fd, "File %s exists in server directory.\n", buffer);
                     //发送文件内容
                     char file_path[512];
+                    memset(file_path, 0, 512);
                     strncpy(file_path, server_dir, 511);
                     strncat(file_path, "/", 511 - strlen(file_path));
                     strncat(file_path, buffer, 511 - strlen(file_path));
                     int file_fd = openat(AT_FDCWD, file_path, O_RDONLY, 0644);
+                    printf("打开文件%s, fd: %d\n", file_path, file_fd);
                     if(file_fd < 0){
                         fdprintf(client_fd, "无法打开文件%s, 错误码: %d\n", buffer, file_fd);
                         break;
@@ -111,6 +113,9 @@ void* server_thread_entry(void* arg) {
                     int file_len = tlibc_get_file_len(file_path);
                     char *file_buf = (char *)mmap(0, file_len, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
                     read(file_fd, file_buf, file_len);
+                    
+                    SERVER_LOG("文件内容:\n%s\n", file_buf);
+                    close(file_fd);
 
                     char ready_buf[32]; //用来接收client的回应
                     fdprintf(client_fd, "!sendfile");
@@ -125,7 +130,6 @@ void* server_thread_entry(void* arg) {
                     recv(client_fd, ready_buf, sizeof(ready_buf) - 1, 0); //等待client准备好接收文件内容
                     SERVER_LOG_COLOR(GREEN_COLOR_PRINT, "client said: %s\n", ready_buf);
 
-                    SERVER_LOG("文件内容:\n%s\n", file_buf);
                     write(client_fd, file_buf, file_len);
                     munmap(file_buf, file_len);
                     SERVER_LOG_COLOR(GREEN_COLOR_PRINT, "Sent file '%s' to client %s:%d, size: %d bytes\n", file_path,

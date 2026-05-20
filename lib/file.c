@@ -7,13 +7,17 @@ int tlibc_get_file_len(char *path)
     {
         return -1;
     }
+    int save_fd = fd;
+    
     struct stat statbuf;
     memset(&statbuf, 0, sizeof(struct stat));
     int ret = fstat(fd, &statbuf);
     if(ret != 0)
     {
+        close(save_fd);
         return -1;
     }
+    close(save_fd);
     return statbuf.st_size;
 }
 
@@ -96,4 +100,36 @@ int tlibc_get_file_name_list(const char *dir_path, uint64_t file_name_list, int 
     munmap(buf, NAME_LIST_BUF_SIZE);
     close(dir_fd);
     return current_count;
+}
+
+int tlibc_is_path_dir(const char *path){
+    int fd = openat(AT_FDCWD, path, O_RDWR, 0644);
+    if(fd < 0){
+        return -1;
+    }
+    struct stat statbuf;
+    memset(&statbuf, 0, sizeof(struct stat));
+    int ret = fstat(fd, &statbuf);
+    if (ret < 0) {
+        close(fd);
+        return -1;  // 获取文件状态失败
+    }
+    close(fd);
+    return S_ISDIR(statbuf.st_mode);  // 判断是否为目录
+}
+
+int tlibc_is_path_file(const char *path){
+    int fd = openat(AT_FDCWD, path, O_RDWR, 0644);
+    if(fd < 0){
+        return -1;
+    }
+    struct stat statbuf;
+    memset(&statbuf, 0, sizeof(struct stat));
+    int ret = fstat(fd, &statbuf);
+    if (ret < 0) {
+        close(fd);
+        return -1;  // 获取文件状态失败
+    }
+    close(fd);
+    return S_ISREG(statbuf.st_mode);  // 判断是否为普通文件
 }

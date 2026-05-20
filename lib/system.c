@@ -19,6 +19,7 @@ int tlibc_get_user_dir(char *user_dir_buf, int buf_size)
         close(fd);
         return -1;
     }
+    close(fd);
     buf[n] = 0; //确保是字符串
     // printf("/etc/passwd内容:\n%s\n", buf);
 

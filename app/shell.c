@@ -270,8 +270,123 @@ void sigint_handler(int num)
     exit_group(0);
 }
 
+#define SHELL_CONFIG_FILE_NAME "tlibc_shell_config"
+#define CONFIG_PATH_KEY "PATH="
+#define CONFIG_PATH_KEY_LEN 5
+//如果没有配置文件,初始化配置文件
+void shell_init_config()
+{
+    char tlibc_path[1024]; ///home/$(username)/tlibc
+    memset(tlibc_path, 0, 1024);
+    tlibc_get_user_dir(tlibc_path, 1024);
+    strcat(tlibc_path, "/tlibc");
+    if(tlibc_is_path_dir(tlibc_path) <= 0){ //tlibc目录不存在
+        mkdirat(AT_FDCWD, tlibc_path, 0755);
+    }
+
+    char tlibc_shell_config_file_path[1024];
+    snprintf(tlibc_shell_config_file_path, 1024, "%s/%s", tlibc_path, SHELL_CONFIG_FILE_NAME);
+    if(tlibc_is_path_file(tlibc_shell_config_file_path) < 0){ //配置文件不存在
+        int config_fd = creat(tlibc_shell_config_file_path, 0644);
+        //写入默认配置, PATH设置为/home/$(username)/tlibc/bin
+        char path[1024];
+        snprintf(path, 1024, "PATH=%s/bin", tlibc_path);
+        write(config_fd, path, strlen(path));
+        close(config_fd); //只是创建
+printf("已创建默认配置文件，路径: %s\n", tlibc_shell_config_file_path);
+    }
+}
+
+int read_config_path(char *path_buf, int buf_size){
+    char tlibc_path[1024];
+    memset(tlibc_path, 0, 1024);
+    tlibc_get_user_dir(tlibc_path, 1024);
+    strcat(tlibc_path, "/tlibc");
+
+    char config_file_path[1024];
+    snprintf(config_file_path, 1024, "%s/%s", tlibc_path, SHELL_CONFIG_FILE_NAME);
+    int config_fd = __openat(AT_FDCWD, config_file_path, O_RDONLY, 0644);
+    if(config_fd < 0){
+        shell_init_config(); //初始化配置文件
+        config_fd = __openat(AT_FDCWD, config_file_path, O_RDONLY, 0644);
+    }
+// printf("打开配置文件%s, fd: %d\n", config_file_path, config_fd);
+    int config_len = tlibc_get_file_len(config_file_path);
+    char *buf = (char *)mmap(0, config_len + 1, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    if(buf == MAP_FAILED){
+        printf("内存映射失败, 错误码: %d\n", -ENOMEM);
+        return -1;
+    }
+    int n = __read(config_fd, buf, config_len);
+    if(n < 0){
+        printf("读取配置文件%s失败, 错误码: %d\n", config_file_path, n);
+        close(config_fd);
+        return -1;
+    }
+    buf[config_len] = 0; //确保是字符串
+    close(config_fd);
+    //处理配置文件
+    // 解析配置文件中的所有 PATH 设置
+    char *current = buf;
+    int offset = 0;
+    int path_count = 0;
+    
+    while(*current && offset < buf_size){
+        // 查找当前行的结束位置
+        char *line_end = strchr(current, '\n');
+        if(!line_end){
+            line_end = current + strlen(current);
+        }
+        
+        int line_len = line_end - current;
+        
+        // 检查是否以 "PATH=" 开头
+        if(line_len > 5 && strncmp(current, "PATH=", 5) == 0){
+            char *value_start = current + 5;
+            char *value_end = line_end;
+            
+            // 去除末尾的换行符和回车符
+            while(value_end > value_start && 
+                  (*(value_end - 1) == '\n' || *(value_end - 1) == '\r')){
+                value_end--;
+            }
+            
+            int path_len = value_end - value_start;
+            
+            // 确保有足够空间（路径字符串 + 结尾的 '\0'）
+            if(offset + path_len + 1 <= buf_size){
+                memcpy(path_buf + offset, value_start, path_len);
+                offset += path_len;
+                path_buf[offset++] = '\0';  // 用 '\0' 分隔
+                path_count++;
+            } else {
+                // 缓冲区不足，提前结束
+                printf("缓冲区不足，已存储 %d 个路径\n", path_count);
+                break;
+            }
+        }
+        
+        // 移动到下一行
+        current = (*line_end == '\n') ? line_end + 1 : line_end;
+    }
+    
+    // 添加一个额外的结束标记（两个连续的 '\0'）
+    if(offset + 1 <= buf_size){
+        path_buf[offset] = '\0';
+    }
+    
+    munmap(buf, config_len + 1);
+    
+    if(path_count == 0){
+        printf("WARNING: 配置文件中未找到 PATH 设置\n");
+        return -1;
+    }
+    return 0;
+}
+
 void tab_complete(char *buf)
 {
+    int find_in_path = 1;//是否需要匹配PATH的命令，1表示需要，0表示不需要
     if(buf[0]==0){
         return;
     }
@@ -280,20 +395,36 @@ void tab_complete(char *buf)
     {
         if(buf[i] == ' ')
         {
+            find_in_path = 0; //有空格隔开，不在PATH下匹配
             last_space_index = i;
         }
     }
     char *str_to_match = &buf[last_space_index+1];
+
+    if(str_to_match[0] == '/') //最后一个空格后没有输入，现在不匹配
+    {
+        find_in_path = 0;
+    }
+    char *final_string = NULL; //要匹配的部分，是路径最后一部分，后面不带'/'
+    for(int i=strlen(str_to_match)-1; i>=0; i--)
+    {
+        if(str_to_match[i] == '/')
+        {
+            final_string = &str_to_match[i+1];
+            break;
+        }
+    }
+    if(final_string == NULL)
+    {
+        final_string = str_to_match;
+    }
+// printf("给定路径: %s, 要匹配的字符串: %s\n", str_to_match, final_string);
+
     if(str_to_match[0] == 0) //最后一个空格后没有输入，现在不匹配
     {
         return;
     }
     // printf("要匹配的字符串: %s, 长度: %d", str_to_match, strlen(str_to_match));
-    if(str_to_match[0] == '\\')
-    {
-        PRINT_COLOR(RED_COLOR_PRINT, "不支持绝对路径!");
-        return;
-    }
     #define MAX_FILE_NUM 1024
     #define FILE_NAME_MAX_LEN 256
     char file_name[MAX_FILE_NUM][FILE_NAME_MAX_LEN];//最多支持1024个文件，每个文件名最多255字符
@@ -302,8 +433,57 @@ void tab_complete(char *buf)
     #define SHELL_LS_BUF_SIZE 1024*1024
     char *ls_buf = (char *)mmap(0, SHELL_LS_BUF_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     memset(ls_buf, 0, SHELL_LS_BUF_SIZE);
-    int cwd_fd = openat(AT_FDCWD,".",O_RDONLY|O_DIRECTORY|O_CLOEXEC,0644);
-    int ret = __getdents64(cwd_fd, (struct linux_dirent64 *)ls_buf, SHELL_LS_BUF_SIZE);
+    //路径处理
+    char cwd[1024];
+    getcwd(cwd, sizeof(cwd));
+    char path_delete_slash[1024];//路径部分，去掉最后的'/'
+    memset(path_delete_slash, 0, 1024);
+    strcpy(path_delete_slash, str_to_match);
+    if(path_delete_slash[0] == '/'){ //绝对路径
+        for(int i=strlen(path_delete_slash)-1; i>=0; i--){
+            if(path_delete_slash[i] == '/')
+            {
+                if(i == 0){ //第一个'/'不要删除
+                    path_delete_slash[1] = 0;
+                    break;
+                }
+                else{
+                    path_delete_slash[i] = 0;
+                    break;
+                }
+            }
+        }
+    }
+    else{ //相对路径
+        //去掉最后一个'/'
+        int tmp = 0;
+        for(int i=strlen(path_delete_slash)-1; i>=0; i--){
+            if(path_delete_slash[i] == '/')
+            {
+                tmp = 1;
+                path_delete_slash[i] = 0;
+                break;
+            }
+        }
+        if(tmp == 0){ //没有'/'，说明路径部分是当前目录
+            strcpy(path_delete_slash, ".");
+        }
+    }
+    
+
+    //把buf中的路径和当前目录拼接成要列出的目录路径
+    char absolute_path[1024];
+    cal_absolute_path(path_delete_slash, cwd, absolute_path);
+// printf("buf: %s, path_delete_slash: %s, cwd: %s, 计算得到的绝对路径: %s\n", buf, path_delete_slash, cwd, absolute_path);
+    int compare_dir_fd = openat(AT_FDCWD, absolute_path, O_RDONLY|O_DIRECTORY|O_CLOEXEC, 0644);
+    if(compare_dir_fd < 0){
+        PRINT_COLOR(RED_COLOR_PRINT, "匹配失败，目录%s不存在, 错误码: %d\n", absolute_path, compare_dir_fd);
+        munmap(ls_buf, SHELL_LS_BUF_SIZE);
+        return;
+    }
+    
+    int ret = __getdents64(compare_dir_fd, (struct linux_dirent64 *)ls_buf, SHELL_LS_BUF_SIZE);
+    close(compare_dir_fd);
     if(ret < 0){
         panic("getdents64失败, 错误码: %d\n", ret);
     }
@@ -314,6 +494,7 @@ void tab_complete(char *buf)
             strncpy(file_name[file_num], data->d_name, FILE_NAME_MAX_LEN-1);
             file_name[file_num][FILE_NAME_MAX_LEN-1] = 0; //确保文件名是以0结尾的字符串
             file_num++;
+            // printf("找到文件: %s\n", data->d_name);
         }
         else
         {
@@ -322,10 +503,47 @@ void tab_complete(char *buf)
         }
         data = (struct linux_dirent64 *)((char *)data + data->d_reclen); //< 遍历
     }
+    if(find_in_path == 1){
+        //添加PATH路径的文件
+        char path_buf[4096];
+        memset(path_buf, 0, 4096);
+        if(read_config_path(path_buf, sizeof(path_buf)) == 0){
+            char *path = path_buf;
+            while(*path){
+                memset(ls_buf, 0, SHELL_LS_BUF_SIZE);
+                int fd = openat(AT_FDCWD, path, O_RDONLY|O_DIRECTORY|O_CLOEXEC, 0644);
+                if(fd < 0){
+// PRINT_COLOR(RED_COLOR_PRINT, "在补全匹配时，打开PATH路径%s失败, 错误码: %d\n", path, fd);
+                    path += strlen(path) + 1; //跳过这个路径，继续下一个路径
+                    continue;
+                }
+                __getdents64(fd, (struct linux_dirent64 *)ls_buf, SHELL_LS_BUF_SIZE);
+                //遍历PATH路径下的文件
+                struct linux_dirent64 *data = (struct linux_dirent64 *)ls_buf;
+                while(data->d_off != 0){
+                    if(file_num < MAX_FILE_NUM)
+                    {
+                        strncpy(file_name[file_num], data->d_name, FILE_NAME_MAX_LEN-1);
+                        file_name[file_num][FILE_NAME_MAX_LEN-1] = 0; //确保文件名是以0结尾的字符串
+                        file_num++;
+                        printf("找到文件: %s\n", data->d_name);
+                    }
+                    else
+                    {
+                        PRINT_COLOR(RED_COLOR_PRINT, "文件数量超过上限%d，只处理前%d个文件\n", MAX_FILE_NUM , MAX_FILE_NUM);
+                        break;
+                    }
+                    data = (struct linux_dirent64 *)((char *)data + data->d_reclen); //< 遍历
+                }
+                close(fd);
+                path += strlen(path) + 1; //跳过这个路径，继续下一个路径
+            }
+        }
+    }
     int match_file_num = 0; //能匹配的文件名数量
     int match_file_index[MAX_FILE_NUM]; //能匹配的文件在file_name数组中的索引
     for(int i=0; i<file_num; i++){
-        if(strncmp(file_name[i], str_to_match, strlen(str_to_match)) == 0)
+        if(strncmp(file_name[i], final_string, strlen(final_string)) == 0)
         {
             // PRINT_COLOR(GREEN_COLOR_PRINT, "%s\n", file_name[i]);
             match_file_index[match_file_num] = i;
@@ -335,9 +553,11 @@ void tab_complete(char *buf)
     if(match_file_num == 1) //只有一个匹配，自动补全
     {
         char *match_file_name = file_name[match_file_index[0]];
-        // int len_to_add = strlen(match_file_name) - strlen(str_to_match);
-        strcat(buf, &match_file_name[strlen(str_to_match)]); //把匹配的文件名剩余部分添加到输入缓冲区
+        // int len_to_add = strlen(match_file_name) - strlen(final_string);
+        strcat(buf, &match_file_name[strlen(final_string)]); //把匹配的文件名剩余部分添加到输入缓冲区
         PRINT_COLOR(GREEN_COLOR_PRINT, "唯一候选项，补全为: %s", match_file_name);
+// printf("补全后buf: %s, str_to_match: %s\n", buf, str_to_match); 
+        //应该使用str_to_match和cwd计算出绝对路径，然后判断是否是目录要加'/
     }
     else if(match_file_num > 1)
     {
@@ -364,6 +584,20 @@ int main(int argc, char *argv[])
     LOG("欢迎使用Tlibc Shell!\n");
     LOG("使用help查看支持的命令, 输入q退出shell\n");
     LOG("不要输入方向键好吗，这个版本不支持\n");
+
+    //加载配置文件
+    char path_buf[4096];
+    memset(path_buf, 0, 4096);
+    if(read_config_path(path_buf, sizeof(path_buf)) == 0){
+        char *ptr = path_buf;
+        int index = 0;
+        
+        printf("加载的 PATH 路径:\n");
+        while(*ptr){
+            printf("  [%d] %s\n", index++, ptr);
+            ptr += strlen(ptr) + 1;
+        }
+    }
 
     char *buf = mmap(0, SHELL_BUF_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     while(1)
@@ -392,7 +626,8 @@ int main(int argc, char *argv[])
             }
             else if(ch == '\t') //补全
             {
-                buf[read_count] = 0;
+                
+
                 write(STDOUT,"\n",1);
                 tab_complete(buf);
                 write(STDOUT,"\n",1);

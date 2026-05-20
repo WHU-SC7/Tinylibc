@@ -385,3 +385,7 @@ fdprintf有潜在问题，会分几次write调用。之后应该改成一次writ
 
 # 2026.5.20
 增加获取目录下文件数量和所有文件名的函数，fcount示例
+
+shell完整的补全功能，支持PATH和配置文件。增加snprintf。修复fd的错误
+默认配置文件是tlibc_shell_config，在用户目录的tlibc目录下
+默认PATH配置是用户目录的tlibc/bin

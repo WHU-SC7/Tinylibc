@@ -28,5 +28,13 @@ int tlibc_get_user_dir(char *buf, int buf_size);
 int tlibc_get_file_len(char *path);
 int tlibc_get_file_count(const char *dir_path);
 int tlibc_get_file_name_list(const char *dir_path, uint64_t file_name_list, int file_count);
+int tlibc_is_path_dir(const char *path);
+int tlibc_is_path_file(const char *path);
+
+// 在 snprintf.h 中声明
+int snprintf(char *str, size_t size, const char *format, ...);
+
+//path.c
+void cal_absolute_path(const char *path, const char *cwd, char *absolute_path); //计算绝对路径
 
 #endif // TLIBC_EVERYTHING_H

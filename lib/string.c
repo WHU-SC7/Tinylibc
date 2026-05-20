@@ -66,14 +66,41 @@ int strncmp(const char *s1, const char *s2, unsigned long n)
     return 0;
 }
 
-char *strchr(const char *s, int c){
-    while(*s)
-    {
-        if(*s == c)
+char *strchr(const char *s, int c) {
+    // 转换为 char，标准要求比较字符
+    char target = (char)c;
+    
+    while (*s) {
+        if (*s == target)
             return (char *)s;
         s++;
     }
-    return (void *)-1;
+    
+    // 检查结束符 '\0'
+    if (target == '\0')
+        return (char *)s;  // 指向末尾的 '\0'
+    
+    return (void *)0;
+}
+
+char *strstr(const char *haystack, const char *needle) {
+    if (!*needle)  // 空字符串直接返回原字符串
+        return (char *)haystack;
+    
+    while (*haystack) {
+        if (*haystack == *needle) {
+            const char *h = haystack + 1;
+            const char *n = needle + 1;
+            while (*n && *h && *h == *n) {
+                h++;
+                n++;
+            }
+            if (!*n)  // 完全匹配
+                return (char *)haystack;
+        }
+        haystack++;
+    }
+    return (void *)0;  // 未找到
 }
 
 //私有实现，把字符串转换成10进制unsigned long

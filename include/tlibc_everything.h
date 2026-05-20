@@ -26,5 +26,7 @@
 //新函数，先放在这
 int tlibc_get_user_dir(char *buf, int buf_size);
 int tlibc_get_file_len(char *path);
+int tlibc_get_file_count(const char *dir_path);
+int tlibc_get_file_name_list(const char *dir_path, uint64_t file_name_list, int file_count);
 
 #endif // TLIBC_EVERYTHING_H

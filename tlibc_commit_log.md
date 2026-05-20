@@ -382,3 +382,6 @@ shell增加自动补全
 
 [fix] 修改tserver tclient为文件分片发送，每片4096字节。
 fdprintf有潜在问题，会分几次write调用。之后应该改成一次write的
+
+# 2026.5.20
+增加获取目录下文件数量和所有文件名的函数，fcount示例

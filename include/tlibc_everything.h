@@ -30,6 +30,8 @@ int tlibc_get_file_count(const char *dir_path);
 int tlibc_get_file_name_list(const char *dir_path, uint64_t file_name_list, int file_count);
 int tlibc_is_path_dir(const char *path);
 int tlibc_is_path_file(const char *path);
+int tlibc_rm_file(const char *path);
+int tlibc_recursive_rm_dir(const char *path);
 
 // 在 snprintf.h 中声明
 int snprintf(char *str, size_t size, const char *format, ...);

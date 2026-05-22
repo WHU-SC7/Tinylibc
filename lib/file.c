@@ -103,7 +103,7 @@ int tlibc_get_file_name_list(const char *dir_path, uint64_t file_name_list, int 
 }
 
 int tlibc_is_path_dir(const char *path){
-    int fd = openat(AT_FDCWD, path, O_RDWR, 0644);
+    int fd = openat(AT_FDCWD, path, O_DIRECTORY | O_RDONLY, 0644);
     if(fd < 0){
         return -1;
     }
@@ -118,6 +118,7 @@ int tlibc_is_path_dir(const char *path){
     return S_ISDIR(statbuf.st_mode);  // 判断是否为目录
 }
 
+//不存在返回-1，存在且是文件返回1，存在但不是文件返回0
 int tlibc_is_path_file(const char *path){
     int fd = openat(AT_FDCWD, path, O_RDWR, 0644);
     if(fd < 0){
@@ -132,4 +133,70 @@ int tlibc_is_path_file(const char *path){
     }
     close(fd);
     return S_ISREG(statbuf.st_mode);  // 判断是否为普通文件
+}
+
+int tlibc_rm_file(const char *path){
+    return unlinkat(AT_FDCWD, path, 0);
+}
+
+//递归删除一个目录，期望path是目录
+int tlibc_recursive_rm_dir(const char *path){
+    printf("正在删除路径: %s\n", path);
+    int ret = tlibc_is_path_dir(path);
+    if(ret < 0){
+        printf("路径%s不存在, 无法删除, ret: %d\n", path, ret);
+        return -1; //路径不存在
+    }
+
+    if(ret == 1){ //可能要递归删除目录
+        #define RM_BUF_SIZE 1024*1024
+        char *buf = (char *)tlibc_malloc(RM_BUF_SIZE);
+        if (buf == MAP_FAILED) {
+            return -1;
+        }
+        int dir_fd = openat(AT_FDCWD, path, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0644);
+        if (dir_fd < 0) {
+            munmap(buf, RM_BUF_SIZE);
+            return -1;  // 打开目录失败
+        }
+        int ret;
+        while ((ret = getdents64(dir_fd, (struct linux_dirent64 *)buf, RM_BUF_SIZE)) > 0) {
+            struct linux_dirent64 *data = (struct linux_dirent64 *)buf;
+            while ((char *)data < buf + ret) {
+                // 排除 . 和 .. 目录
+                if (strcmp(data->d_name, ".") != 0 && strcmp(data->d_name, "..") != 0) {
+                    char sub_path[512];
+                    memset(sub_path, 0, sizeof(sub_path));
+                    strncpy(sub_path, path, 511);
+                    strncat(sub_path, "/", 511 - strlen(sub_path));
+                    strncat(sub_path, data->d_name, 511 - strlen(sub_path));
+                    printf("递归删除子路径: %s\n", sub_path);
+                    //判断子路径是文件还是目录，如果是目录就递归删除，如果是文件直接删除
+                    if(tlibc_is_path_file(sub_path) == 1){
+                        int rm_ret = tlibc_rm_file(sub_path);
+                        if(rm_ret < 0){
+                            printf("删除文件%s失败, 返回值: %d\n", sub_path, rm_ret);
+                        }
+                        else{
+                            printf("删除文件%s成功\n", sub_path);
+                        }
+                    }
+                    else{
+                        int rm_ret = tlibc_recursive_rm_dir(sub_path); //递归删除子路径
+                        if(rm_ret < 0){
+                            printf("删除子路径%s失败, 返回值: %d\n", sub_path, rm_ret);
+                        }
+                        printf("删除子路径%s成功\n", sub_path);
+                    }
+                }
+                data = (struct linux_dirent64 *)((char *)data + data->d_reclen);
+            }
+        }
+        munmap(buf, RM_BUF_SIZE);
+        close(dir_fd);
+        printf("删除已空目录: %s\n", path);
+        return unlinkat(AT_FDCWD, path, AT_REMOVEDIR); //删除空目录
+    }
+    PRINT_COLOR(RED_COLOR_PRINT, "对path: %s的类型判断异常!", path);
+    return 0;
 }

@@ -63,10 +63,12 @@ all: __x86_64
 #先建立目录，再多线程编译。否则可能出错
 __x86_64: clean init_dir 
 	make app -j
+	cp build/bin/tmake tmp
 
 init_dir:
 	mkdir -p build
 	mkdir -p build/app build/lib build/bin
+	mkdir -p tmp
 	@echo $(x64_c_srcs)
 	@echo $(x64_c_objs)
 	@echo $(x64_s_srcs)

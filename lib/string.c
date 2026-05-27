@@ -83,6 +83,27 @@ char *strchr(const char *s, int c) {
     return (void *)0;
 }
 
+char *strrchr(const char *s, int c) {
+    char target = (char)c;
+    const char *last_occurrence = (void *)0;  // 使用 NULL 而不是 (void*)0
+    
+    // 先处理查找 '\0' 的情况
+    if (target == '\0') {
+        while (*s)  // 找到字符串末尾
+            s++;
+        return (char *)s;  // 此时 s 指向 '\0'
+    }
+    
+    // 查找普通字符
+    while (*s) {
+        if (*s == target)
+            last_occurrence = s;
+        s++;
+    }
+    
+    return (char *)last_occurrence;
+}
+
 char *strstr(const char *haystack, const char *needle) {
     if (!*needle)  // 空字符串直接返回原字符串
         return (char *)haystack;

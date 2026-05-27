@@ -11,6 +11,7 @@ int strcmp(const char *s1, const char *s2);
 int strncmp(const char *s1, const char *s2, unsigned long n);
 
 char *strchr(const char *s, int c);
+char *strrchr(const char *s, int c);
 
 unsigned long tlibc_strtoul(char *str);
 void* memcpy(void* dest, const void* src, unsigned long n);

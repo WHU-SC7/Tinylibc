@@ -39,4 +39,11 @@ int snprintf(char *str, size_t size, const char *format, ...);
 //path.c
 void cal_absolute_path(const char *path, const char *cwd, char *absolute_path); //计算绝对路径
 
+//envp.c
+extern char **global_envp;
+int envp_count(char *envp[]);
+void print_all_env_vars(char *envp[]);
+char *get_env_var(char *envp[], const char *name);
+
+
 #endif // TLIBC_EVERYTHING_H

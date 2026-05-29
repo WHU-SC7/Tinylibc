@@ -17,4 +17,6 @@ unsigned long tlibc_strtoul(char *str);
 void* memcpy(void* dest, const void* src, unsigned long n);
 char* itoa(int num, char* str, int radix);
 
+char *strerror(int errnum);
+
 #endif

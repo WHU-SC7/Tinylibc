@@ -200,3 +200,64 @@ char* itoa(int num, char* str, int radix) {
     
     return str;
 }
+
+char *strerror(int errnum) {
+    // 静态字符串数组，存储错误信息
+    static const char *error_strings[] = {
+        "Success",                    // 0
+        "Operation not permitted",    // 1
+        "No such file or directory",  // 2
+        "No such process",            // 3
+        "Interrupted system call",    // 4
+        "Input/output error",         // 5
+        "No such device or address",  // 6
+        "Argument list too long",     // 7
+        "Exec format error",          // 8
+        "Bad file descriptor",        // 9
+        "No child processes",         // 10
+        "Resource temporarily unavailable", // 11
+        "Cannot allocate memory",     // 12
+        "Permission denied",          // 13
+        "Bad address",                // 14
+        "Block device required",      // 15
+        "Device or resource busy",    // 16
+        "File exists",                // 17
+        "Invalid cross-device link",  // 18
+        "No such device",             // 19
+        "Not a directory",            // 20
+        "Is a directory",             // 21
+        "Invalid argument",           // 22
+        "Too many open files in system", // 23
+        "Too many open files",        // 24
+        "Inappropriate ioctl for device", // 25
+        "Text file busy",             // 26
+        "File too large",             // 27
+        "No space left on device",    // 28
+        "Illegal seek",               // 29
+        "Read-only file system",      // 30
+        "Too many links",             // 31
+        "Broken pipe",                // 32
+        "Numerical argument out of domain", // 33
+        "Numerical result out of range",    // 34
+        "Resource deadlock avoided",  // 35
+        "File name too long",         // 36
+        "No locks available",         // 37
+        "Function not implemented",   // 38
+        "Directory not empty",        // 39
+        "Too many levels of symbolic links", // 40
+        "Unknown error"               // 默认（未知错误）
+    };
+    
+    int num_errors = sizeof(error_strings) / sizeof(error_strings[0]) - 1;
+    
+    // 根据错误码返回对应的错误信息
+    if (errnum >= 0 && errnum < num_errors) {
+        return (char *)error_strings[errnum];
+    } else {
+        // 返回未知错误，静态缓冲区可以存储更长的信息
+        static char unknown_error[64];
+int snprintf(char *str, unsigned long size, const char *format, ...);
+        snprintf(unknown_error, sizeof(unknown_error), "Unknown error %d", errnum);
+        return unknown_error;
+    }
+}

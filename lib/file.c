@@ -55,7 +55,7 @@ int tlibc_get_file_count(const char *dir_path) {
 }
 
 //获取目录下的文件名列表，由调用者获取文件个数并分配字符串的内存，约定每个字符串长度不超过255
-//返回获取到的文件名个数
+//返回获取到的文件名个数，不包含.和..目录
 int tlibc_get_file_name_list(const char *dir_path, uint64_t file_name_list, int file_count) {
     if(file_count <= 0){
         return -1; //文件个数必须大于0
@@ -198,5 +198,98 @@ int tlibc_recursive_rm_dir(const char *path){
         return unlinkat(AT_FDCWD, path, AT_REMOVEDIR); //删除空目录
     }
     PRINT_COLOR(RED_COLOR_PRINT, "对path: %s的类型判断异常!", path);
+    return 0;
+}
+
+int tlibc_recursive_mkdir(const char *path){
+    char temp_path[512];
+    memset(temp_path, 0, sizeof(temp_path));
+    strncpy(temp_path, path, 511);
+    char *p = temp_path;
+    while(*p != '\0'){
+        if(*p == '/'){
+            *p = '\0';
+            if(strlen(temp_path) > 0){ //避免路径以/开头时创建空目录
+                int ret = mkdirat(AT_FDCWD, temp_path, 0755);
+                if(ret < 0 && ret != -EEXIST){ //如果目录已存在也继续创建后续目录
+                    printf("创建目录%s失败, 返回值: %d, 错误信息: %s\n", temp_path, ret, strerror(ret));
+                    return -1;
+                }
+            }
+            *p = '/';
+        }
+        p++;
+    }
+    //创建最后一级目录
+    int ret = mkdirat(AT_FDCWD, temp_path, 0755);
+    if(ret < 0 && ret != -EEXIST){
+        printf("创建目录%s失败, 返回值: %d, 错误信息: %s\n", temp_path, ret, strerror(ret));
+        return -1;
+    }
+    return 0;
+}
+
+//获取目录下的文件数量，路径不存在或不是目录返回-1
+int tlibc_get_file_num(const char *dir_path){
+    int dir_fd = openat(AT_FDCWD, dir_path, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0644);
+    if (dir_fd < 0) {
+        return -1;  // 打开目录失败
+    }
+    
+    char *buf = (char *)tlibc_malloc(DEFAULT_LS_BUF_SIZE);
+    if (buf == NULL) {
+        close(dir_fd);
+        return -1;
+    }
+    
+    int file_count = 0;
+    int ret;
+    
+    while ((ret = getdents64(dir_fd, (struct linux_dirent64 *)buf, DEFAULT_LS_BUF_SIZE)) > 0) {
+        struct linux_dirent64 *data = (struct linux_dirent64 *)buf;
+        while ((char *)data < buf + ret) {
+            // 排除 . 和 .. 目录
+            if (strcmp(data->d_name, ".") != 0 && strcmp(data->d_name, "..") != 0) {
+                file_count++;
+            }
+            data = (struct linux_dirent64 *)((char *)data + data->d_reclen);
+        }
+    }
+    
+    munmap(buf, DEFAULT_LS_BUF_SIZE);
+    close(dir_fd);
+    return file_count;
+}
+
+int copy_file(char *src_path, char *dest_path){
+    int src_fd = openat(AT_FDCWD, src_path, O_RDONLY, 0644);
+    if(src_fd < 0){
+        printf("打开源文件%s失败, 错误码: %d\n", src_path, src_fd);
+        return -1;
+    }
+    int dest_fd = openat(AT_FDCWD, dest_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if(dest_fd < 0){
+        printf("打开目标文件%s失败, 错误码: %d\n", dest_path, dest_fd);
+        close(src_fd);
+        return -1;
+    }
+    char buf[4096];
+    int n;
+    while((n = read(src_fd, buf, sizeof(buf))) > 0){
+        if(write(dest_fd, buf, n) != n){
+            printf("写入文件%s失败, 错误码: %d\n", dest_path, -EIO);
+            close(src_fd);
+            close(dest_fd);
+            return -1;
+        }
+    }
+    if(n < 0){
+        printf("读取文件%s失败, 错误码: %d\n", src_path, n);
+        close(src_fd);
+        close(dest_fd);
+        return -1;
+    }
+    close(src_fd);
+    close(dest_fd);
     return 0;
 }

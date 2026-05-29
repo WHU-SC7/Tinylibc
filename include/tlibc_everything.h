@@ -23,6 +23,8 @@
 #include "tlibc.h"
 #include "tty.h"
 
+#define DEFAULT_LS_BUF_SIZE 1024*1024
+
 //新函数，先放在这
 int tlibc_get_user_dir(char *buf, int buf_size);
 int tlibc_get_file_len(char *path);
@@ -32,6 +34,9 @@ int tlibc_is_path_dir(const char *path);
 int tlibc_is_path_file(const char *path);
 int tlibc_rm_file(const char *path);
 int tlibc_recursive_rm_dir(const char *path);
+int tlibc_recursive_mkdir(const char *path);
+int tlibc_get_file_num(const char *dir_path);
+int copy_file(char *src_path, char *dest_path);
 
 // 在 snprintf.h 中声明
 int snprintf(char *str, size_t size, const char *format, ...);

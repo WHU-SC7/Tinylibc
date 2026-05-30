@@ -5,6 +5,9 @@
 #include "tlibc_everything.h"
 
 #define SHELL_BUF_SIZE 1024*1024 //1M上下文！
+
+    #define MAX_FILE_NUM 1024
+    #define FILE_NAME_MAX_LEN 256
 //这里现在只放shell
 int __internal_chdir(int argc, char *argv[])
 {
@@ -87,6 +90,9 @@ int (*internal_command_func_table[MAX_COMMANDS])(int argc, char *argv[]) = {
     __internal_chdir,
     __internal_help,
 };
+
+int exe_in_path = 0; //是否是PATH路径下的可执行文件，0表示不是，1表示是
+char current_PATH[1024]; //PATH路径缓冲区
 
 #define COMMAND_MAX_LEN 16 //命令的最大长度
 //这个宏写的不好
@@ -218,10 +224,19 @@ void run_command(struct command *command)
     int pid = __fork();
     if(pid == 0) //子进程
     {
+        if(exe_in_path == 1){ //按tab匹配后能正确执行
+            exe_in_path = 0; //重置状态，防止影响下一次命令执行
+            char command_path[1024];
+            snprintf(command_path, 1024, "%s/%s", current_PATH, command->name);
+            command->name = command_path; //把命令路径传给execve
+        }
         tlibc_restore_term(STDIN); //恢复规范模式
         ret = __execve(command->name, command->args, (void *)0);
         if(ret < 0)
         {
+            if(ret == -2){//命令不存在，则在PATH
+
+            }
             __printf("execve调用失败, 路径: %s, 错误码: %d\n", command->name, ret);
             __exit_group(-1); //执行失败，退出
         }
@@ -425,8 +440,6 @@ void tab_complete(char *buf)
         return;
     }
     // printf("要匹配的字符串: %s, 长度: %d", str_to_match, strlen(str_to_match));
-    #define MAX_FILE_NUM 1024
-    #define FILE_NAME_MAX_LEN 256
     char file_name[MAX_FILE_NUM][FILE_NAME_MAX_LEN];//最多支持1024个文件，每个文件名最多255字符
     int file_num = 0;
     //获取当前目录下的文件列表
@@ -503,6 +516,42 @@ void tab_complete(char *buf)
         }
         data = (struct linux_dirent64 *)((char *)data + data->d_reclen); //< 遍历
     }
+    //不考虑PATH匹配
+    int match_file_num = 0; //能匹配的文件名数量
+    int match_file_index[MAX_FILE_NUM]; //能匹配的文件在file_name数组中的索引
+    for(int i=0; i<file_num; i++){
+        if(strncmp(file_name[i], final_string, strlen(final_string)) == 0)
+        {
+            // PRINT_COLOR(GREEN_COLOR_PRINT, "%s\n", file_name[i]);
+            match_file_index[match_file_num] = i;
+            match_file_num++;
+        }
+    }
+    if(match_file_num == 1) //只有一个匹配，自动补全
+    {
+        char *match_file_name = file_name[match_file_index[0]];
+        // int len_to_add = strlen(match_file_name) - strlen(final_string);
+        strcat(buf, &match_file_name[strlen(final_string)]); //把匹配的文件名剩余部分添加到输入缓冲区
+        PRINT_COLOR(GREEN_COLOR_PRINT, "唯一候选项，补全为: %s", match_file_name);
+// printf("补全后buf: %s, str_to_match: %s\n", buf, str_to_match); 
+        //应该使用str_to_match和cwd计算出绝对路径，然后判断是否是目录要加'/
+        find_in_path = 0; //已经找到唯一匹配了，不需要在PATH路径下匹配了
+    }
+    else if(match_file_num > 1)
+    {
+        PRINT_COLOR(YELLOW_COLOR_PRINT, "有%d个匹配,将列出这些选项: ", match_file_num);
+        for(int i=0; i<match_file_num; i++)
+        {
+            char *match_file_name = file_name[match_file_index[i]];
+            printf("%s ", match_file_name);
+        }
+        find_in_path = 0;//有多个匹配了，不需要在PATH路径下匹配了
+    }
+    else
+    {
+        PRINT_COLOR(RED_COLOR_PRINT, "没有匹配，在PATH路径中继续查找");//没有匹配才考虑PATH路径下的匹配
+    }
+
     if(find_in_path == 1){
         //添加PATH路径的文件
         char path_buf[4096];
@@ -526,7 +575,7 @@ void tab_complete(char *buf)
                         strncpy(file_name[file_num], data->d_name, FILE_NAME_MAX_LEN-1);
                         file_name[file_num][FILE_NAME_MAX_LEN-1] = 0; //确保文件名是以0结尾的字符串
                         file_num++;
-                        printf("找到文件: %s\n", data->d_name);
+                        // printf("找到文件: %s\n", data->d_name);
                     }
                     else
                     {
@@ -536,41 +585,43 @@ void tab_complete(char *buf)
                     data = (struct linux_dirent64 *)((char *)data + data->d_reclen); //< 遍历
                 }
                 close(fd);
+                //清零一些变量？
+                match_file_num = 0; //能匹配的文件名数量
+                for(int i=0; i<file_num; i++){
+                    if(strncmp(file_name[i], final_string, strlen(final_string)) == 0)
+                    {
+                        // PRINT_COLOR(GREEN_COLOR_PRINT, "%s\n", file_name[i]);
+                        match_file_index[match_file_num] = i;
+                        match_file_num++;
+                    }
+                }
+                if(match_file_num == 1) //只有一个匹配，自动补全
+                {
+                    char *match_file_name = file_name[match_file_index[0]];
+                    // int len_to_add = strlen(match_file_name) - strlen(final_string);
+                    strcat(buf, &match_file_name[strlen(final_string)]); //把匹配的文件名剩余部分添加到输入缓冲区
+                    PRINT_COLOR(GREEN_COLOR_PRINT, "在PATH路径%s中找到唯一候选项，补全为: %s", path, match_file_name);
+                    exe_in_path = 1; //匹配到PATH路径下的文件了
+                    strcat(current_PATH, path); //保存PATH
+                    // printf("补全后buf: %s, str_to_match: %s\n", buf, str_to_match); 
+                    //应该使用str_to_match和cwd计算出绝对路径，然后判断是否是目录要加'/'
+                }
+                else if(match_file_num > 1)
+                {
+                    PRINT_COLOR(YELLOW_COLOR_PRINT, "在PATH路径%s中有%d个匹配,将停止进一步匹配并列出这些选项: ", path, match_file_num);
+                    for(int i=0; i<match_file_num; i++)
+                    {
+                        char *match_file_name = file_name[match_file_index[i]];
+                        printf("%s ", match_file_name);
+                    }
+                }
+                else
+                {
+                    PRINT_COLOR(RED_COLOR_PRINT, "在PATH路径%s中没有匹配", path);
+                }
                 path += strlen(path) + 1; //跳过这个路径，继续下一个路径
             }
         }
-    }
-    int match_file_num = 0; //能匹配的文件名数量
-    int match_file_index[MAX_FILE_NUM]; //能匹配的文件在file_name数组中的索引
-    for(int i=0; i<file_num; i++){
-        if(strncmp(file_name[i], final_string, strlen(final_string)) == 0)
-        {
-            // PRINT_COLOR(GREEN_COLOR_PRINT, "%s\n", file_name[i]);
-            match_file_index[match_file_num] = i;
-            match_file_num++;
-        }
-    }
-    if(match_file_num == 1) //只有一个匹配，自动补全
-    {
-        char *match_file_name = file_name[match_file_index[0]];
-        // int len_to_add = strlen(match_file_name) - strlen(final_string);
-        strcat(buf, &match_file_name[strlen(final_string)]); //把匹配的文件名剩余部分添加到输入缓冲区
-        PRINT_COLOR(GREEN_COLOR_PRINT, "唯一候选项，补全为: %s", match_file_name);
-// printf("补全后buf: %s, str_to_match: %s\n", buf, str_to_match); 
-        //应该使用str_to_match和cwd计算出绝对路径，然后判断是否是目录要加'/
-    }
-    else if(match_file_num > 1)
-    {
-        PRINT_COLOR(YELLOW_COLOR_PRINT, "有%d个匹配,将列出这些选项: ", match_file_num);
-        for(int i=0; i<match_file_num; i++)
-        {
-            char *match_file_name = file_name[match_file_index[i]];
-            printf("%s ", match_file_name);
-        }
-    }
-    else
-    {
-        PRINT_COLOR(RED_COLOR_PRINT, "没有匹配");
     }
     //释放内存
     munmap(ls_buf, SHELL_LS_BUF_SIZE);

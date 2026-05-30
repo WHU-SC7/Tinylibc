@@ -334,6 +334,10 @@ uid_t getuid(void){
     return syscall(SYS_getuid);
 }
 
+int chmod(const char *pathname, mode_t mode){
+    return syscall(SYS_chmod, pathname, mode);
+}
+
 //string.h
 /**
  * @brief 应为string.h的标准库函数，为了避免同名冲突，命名加上下划线

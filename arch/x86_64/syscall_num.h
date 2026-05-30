@@ -56,5 +56,7 @@
 
 #define SYS_getuid       __NR_getuid
 
+#define SYS_chmod       __NR_chmod
+
 // SC7自定义，在qemu才有效
 #define SYS_shutdown 1000

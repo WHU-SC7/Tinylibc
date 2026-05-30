@@ -174,9 +174,9 @@ int ar_library(char *build_path){
     }
     ar_flags[flag_num] = NULL;
     //打印参数
-    for(int i=0; ar_flags[i] != NULL; i++){
-        printf("ar参数%d: %s\n", i, ar_flags[i]);
-    }
+    // for(int i=0; ar_flags[i] != NULL; i++){
+    //     printf("ar参数%d: %s\n", i, ar_flags[i]);
+    // }
     int pid = fork();
     if(pid == 0){
         chdir(build_path); //切换到构建目录下执行ar命令
@@ -233,9 +233,9 @@ int link_app(char *app_path, char *output_path){
 
     ld_flags[flag_num] = NULL;
     //打印参数
-    for(int i=0; ld_flags[i] != NULL; i++){
-        printf("ld参数%d: %s\n", i, ld_flags[i]);
-    }
+    // for(int i=0; ld_flags[i] != NULL; i++){
+    //     printf("ld参数%d: %s\n", i, ld_flags[i]);
+    // }
     int pid = fork();
     if(pid == 0){
         printf("执行命令: %s", default_ld_path);
@@ -281,6 +281,33 @@ int link_task(char *all_app_path, char *output_path){
     return 0;
 }
 
+//把app_path下的文件复制到install_path下，默认应该安装到~/tlibc/bin
+int install(char *app_path){
+    int files_count = tlibc_get_file_count(app_path);
+    printf("要安装的文件数量: %d\n", files_count);
+    char **file_name_list = (char **)tlibc_malloc(files_count * sizeof(char *));
+    char *file_name_buf = (char *)tlibc_malloc(files_count * 256);
+    for(int i = 0; i < files_count; i++) {
+        file_name_list[i] = file_name_buf + i * 256;
+    }
+    files_count = tlibc_get_file_name_list(app_path, (uint64_t)file_name_list, files_count);
+    char install_path[1024];
+    tlibc_get_user_dir(install_path, 1024);
+    strncat(install_path, "/tlibc/bin", 1024 - strlen(install_path) - 1);
+    tlibc_recursive_mkdir(install_path); //以防安装目录不存在
+    for(int i=0; i<files_count; i++){
+        char file_path[512];
+        snprintf(file_path, 512, "%s/%s", app_path, file_name_list[i]);
+        char install_file_path[512];
+        snprintf(install_file_path, 512, "%s/%s", install_path, file_name_list[i]);
+        printf("安装文件%d: %s 到 %s\n", i, file_path, install_file_path);
+        copy_exe_file(file_path, install_file_path);
+    }
+    munmap(file_name_list, files_count * sizeof(char *));
+    munmap(file_name_buf, files_count * 256);
+    return 0;
+}
+
 int main(int argc, char *argv[]){
     
     //检查工作目录是否是Tinylibc项目，以tlibc_everything.h为标志
@@ -305,6 +332,7 @@ int main(int argc, char *argv[]){
     }
     printf("创建build目录成功\n");
 
+    char *exe_path = "build/output";
     
     compile_task(LIB_DIR);
     ar_library(build_lib_path);
@@ -312,7 +340,9 @@ int main(int argc, char *argv[]){
 
     compile_task("app");
     tlibc_recursive_mkdir("build/output");
-    link_task("build/app", "build/output");
+    link_task("build/app", exe_path);
+
+    install(exe_path);
 
     //处理参数，可生成不同的目标
     return 0;

@@ -141,7 +141,6 @@ int tlibc_rm_file(const char *path){
 
 //递归删除一个目录，期望path是目录
 int tlibc_recursive_rm_dir(const char *path){
-    printf("正在删除路径: %s\n", path);
     int ret = tlibc_is_path_dir(path);
     if(ret < 0){
         printf("路径%s不存在, 无法删除, ret: %d\n", path, ret);
@@ -170,23 +169,23 @@ int tlibc_recursive_rm_dir(const char *path){
                     strncpy(sub_path, path, 511);
                     strncat(sub_path, "/", 511 - strlen(sub_path));
                     strncat(sub_path, data->d_name, 511 - strlen(sub_path));
-                    printf("递归删除子路径: %s\n", sub_path);
+                    // printf("递归删除子路径: %s\n", sub_path);
                     //判断子路径是文件还是目录，如果是目录就递归删除，如果是文件直接删除
                     if(tlibc_is_path_file(sub_path) == 1){
                         int rm_ret = tlibc_rm_file(sub_path);
                         if(rm_ret < 0){
-                            printf("删除文件%s失败, 返回值: %d\n", sub_path, rm_ret);
+                            // printf("删除文件%s失败, 返回值: %d\n", sub_path, rm_ret);
                         }
                         else{
-                            printf("删除文件%s成功\n", sub_path);
+                            // printf("删除文件%s成功\n", sub_path);
                         }
                     }
                     else{
                         int rm_ret = tlibc_recursive_rm_dir(sub_path); //递归删除子路径
                         if(rm_ret < 0){
-                            printf("删除子路径%s失败, 返回值: %d\n", sub_path, rm_ret);
+                            // printf("删除子路径%s失败, 返回值: %d\n", sub_path, rm_ret);
                         }
-                        printf("删除子路径%s成功\n", sub_path);
+                        // printf("删除子路径%s成功\n", sub_path);
                     }
                 }
                 data = (struct linux_dirent64 *)((char *)data + data->d_reclen);
@@ -194,7 +193,7 @@ int tlibc_recursive_rm_dir(const char *path){
         }
         munmap(buf, RM_BUF_SIZE);
         close(dir_fd);
-        printf("删除已空目录: %s\n", path);
+        // printf("删除已空目录: %s\n", path);
         return unlinkat(AT_FDCWD, path, AT_REMOVEDIR); //删除空目录
     }
     PRINT_COLOR(RED_COLOR_PRINT, "对path: %s的类型判断异常!", path);
@@ -291,5 +290,11 @@ int copy_file(char *src_path, char *dest_path){
     }
     close(src_fd);
     close(dest_fd);
+    return 0;
+}
+
+int copy_exe_file(char *src_path, char *dest_path){
+    copy_file(src_path, dest_path);
+    chmod(dest_path, 0755); //设置可执行权限
     return 0;
 }

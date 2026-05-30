@@ -55,6 +55,7 @@ long tlibc_clone_thread(void *stack);
 int __madvise(void *addr, size_t length, int advice);
 void __exit_group(int status);
 uid_t getuid(void);
+int chmod(const char *pathname, mode_t mode);
 
 //string操作
 void *__memset(void *dst, int value, unsigned int n);

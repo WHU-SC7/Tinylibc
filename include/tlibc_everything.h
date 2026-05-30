@@ -37,6 +37,7 @@ int tlibc_recursive_rm_dir(const char *path);
 int tlibc_recursive_mkdir(const char *path);
 int tlibc_get_file_num(const char *dir_path);
 int copy_file(char *src_path, char *dest_path);
+int copy_exe_file(char *src_path, char *dest_path);
 
 // 在 snprintf.h 中声明
 int snprintf(char *str, size_t size, const char *format, ...);

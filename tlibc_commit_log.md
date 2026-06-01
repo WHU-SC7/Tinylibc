@@ -404,3 +404,7 @@ tmake可以编译并链接所有程序!
 
 [todo] 
 1. 实现不tab补全也在PATH下查找 
+
+# 2026.6.1
+shell支持在配置的PATH下查找程序执行。改正了有问题的tlibc_is_path_file系列函数
+删除之前tab补全时的权益之计，去除了exe_in_path的逻辑

@@ -103,35 +103,23 @@ int tlibc_get_file_name_list(const char *dir_path, uint64_t file_name_list, int 
 }
 
 int tlibc_is_path_dir(const char *path){
-    int fd = openat(AT_FDCWD, path, O_DIRECTORY | O_RDONLY, 0644);
-    if(fd < 0){
-        return -1;
-    }
     struct stat statbuf;
     memset(&statbuf, 0, sizeof(struct stat));
-    int ret = fstat(fd, &statbuf);
+    int ret = stat(path, &statbuf);
     if (ret < 0) {
-        close(fd);
         return -1;  // 获取文件状态失败
     }
-    close(fd);
     return S_ISDIR(statbuf.st_mode);  // 判断是否为目录
 }
 
 //不存在返回-1，存在且是文件返回1，存在但不是文件返回0
 int tlibc_is_path_file(const char *path){
-    int fd = openat(AT_FDCWD, path, O_RDWR, 0644);
-    if(fd < 0){
-        return -1;
-    }
     struct stat statbuf;
     memset(&statbuf, 0, sizeof(struct stat));
-    int ret = fstat(fd, &statbuf);
+    int ret = stat(path, &statbuf);
     if (ret < 0) {
-        close(fd);
         return -1;  // 获取文件状态失败
     }
-    close(fd);
     return S_ISREG(statbuf.st_mode);  // 判断是否为普通文件
 }
 

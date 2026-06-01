@@ -91,9 +91,6 @@ int (*internal_command_func_table[MAX_COMMANDS])(int argc, char *argv[]) = {
     __internal_help,
 };
 
-int exe_in_path = 0; //是否是PATH路径下的可执行文件，0表示不是，1表示是
-char current_PATH[1024]; //PATH路径缓冲区
-
 #define COMMAND_MAX_LEN 16 //命令的最大长度
 //这个宏写的不好
 #define COMMAND_NUM sizeof(command_table) / sizeof(command_table[0])                            //命令的个数
@@ -224,19 +221,44 @@ void run_command(struct command *command)
     int pid = __fork();
     if(pid == 0) //子进程
     {
-        if(exe_in_path == 1){ //按tab匹配后能正确执行
-            exe_in_path = 0; //重置状态，防止影响下一次命令执行
-            char command_path[1024];
-            snprintf(command_path, 1024, "%s/%s", current_PATH, command->name);
-            command->name = command_path; //把命令路径传给execve
-        }
         tlibc_restore_term(STDIN); //恢复规范模式
+        if(tlibc_is_path_file(command->name) < 0){ //命令不存在，执行失败
+            if(command->name[0] == '/' || command->name[0] == '.'){ //如果命令以/或.开头，直接报错
+                __printf("错误: 可执行文件%s不存在\n", command->name);
+                __exit_group(-2);
+            }
+            else{ //如果命令不以/或.开头，可能是PATH路径下的命令，尝试在PATH路径下寻找
+                char command_path[1024];
+                char path_buf[1024];
+                char *path_ptr = path_buf;
+                int find = 0;
+                int read_config_path(char *path_buf, int buf_size);
+                read_config_path(path_buf, 1024); //从配置文件读取PATH路径
+                if(path_buf[0] == 0){ //如果配置文件里没有PATH路径，报错
+                    __printf("读取配置文件中的PATH路径失败\n");
+                    __exit_group(-4);
+                }
+                while(*path_ptr){
+                    snprintf(command_path, 1024, "%s/%s", path_ptr, command->name); 
+                    if(tlibc_is_path_file(command_path) == 1){ //在PATH路径下找到了这个命令，准备执行
+                        printf("在PATH路径%s下找到了命令%s, 即将执行\n", path_ptr, command->name);
+                        strcpy(command->name, command_path); //把命令路径传给execve
+                        find = 1;
+                        break;
+                    }
+                    printf("在PATH路径%s下没有找到命令%s\n", path_ptr, command->name);
+                    path_ptr += strlen(path_ptr) + 1; //移动到下一个路径，路径之间以0分隔
+                }
+
+                if(find == 0){ //PATH路径下也没有这个命令，执行失败
+                    __printf("在PATH下也没有找到命令%s, 错误!\n", command->name);
+                    __exit_group(-3);
+                }//如果找到了，就继续往下执行execve
+            }
+        }
         ret = __execve(command->name, command->args, (void *)0);
         if(ret < 0)
         {
-            if(ret == -2){//命令不存在，则在PATH
-
-            }
             __printf("execve调用失败, 路径: %s, 错误码: %d\n", command->name, ret);
             __exit_group(-1); //执行失败，退出
         }
@@ -601,8 +623,6 @@ void tab_complete(char *buf)
                     // int len_to_add = strlen(match_file_name) - strlen(final_string);
                     strcat(buf, &match_file_name[strlen(final_string)]); //把匹配的文件名剩余部分添加到输入缓冲区
                     PRINT_COLOR(GREEN_COLOR_PRINT, "在PATH路径%s中找到唯一候选项，补全为: %s", path, match_file_name);
-                    exe_in_path = 1; //匹配到PATH路径下的文件了
-                    strcat(current_PATH, path); //保存PATH
                     // printf("补全后buf: %s, str_to_match: %s\n", buf, str_to_match); 
                     //应该使用str_to_match和cwd计算出绝对路径，然后判断是否是目录要加'/'
                 }

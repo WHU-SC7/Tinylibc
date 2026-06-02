@@ -6,8 +6,8 @@
 #define LIB_DIR "lib"
 #define LIB_OUTPUT "tlibc.a"//静态库的文件名
 
+char pwd[512];
 char *build_path = "./build";
-char *build_lib_path = "./build/lib";
 char *default_gcc_path = "/usr/bin/x86_64-linux-gnu-gcc";
 char *default_ar_path = "/usr/bin/x86_64-linux-gnu-ar";
 char *default_ld_path = "/usr/bin/x86_64-linux-gnu-ld";
@@ -105,18 +105,18 @@ int compile_file(const char *file_path, char *output_path){
     gcc_flags[flag_num] = NULL;
     if(pid == 0){
         //打印出命令
-        printf("执行命令: %s", default_gcc_path);
-        for(int i = 0; gcc_flags[i] != NULL; i++){
-            printf(" %s", gcc_flags[i]);
-        }
-        printf("\n");
+        // printf("执行命令: %s", default_gcc_path);
+        // for(int i = 0; gcc_flags[i] != NULL; i++){
+        //     printf(" %s", gcc_flags[i]);
+        // }
+        // printf("\n");
         execve(default_gcc_path, gcc_flags, default_envp);
     }
     else{
         int status;
         waitpid(-1,&status,0);
         if(status == 0){
-            printf("编译成功\n");
+            // printf("编译成功\n");
             return 0;
         }
         else{
@@ -138,6 +138,10 @@ int compile_path_file(char *path, char *file_name, char *output_path){
 int compile_task(char *path){
     int files_count = tlibc_get_file_count(path);
     printf("要编译的文件数量: %d\n", files_count);
+    if(files_count <= 0){
+        printf("没有要编译的文件，或者获取文件数量失败, 跳过路径%s的编译: %d\n", path, files_count);
+        return -1;
+    }
     char **file_name_list = (char **)tlibc_malloc(files_count * sizeof(char *));
     char *file_name_buf = (char *)tlibc_malloc(files_count * 256);
     for(int i = 0; i < files_count; i++) {
@@ -159,6 +163,10 @@ int compile_task(char *path){
 //需要知道目标文件所在路径
 int ar_library(char *build_path){
     int files_count = tlibc_get_file_count(build_path);
+    if(files_count < 0){
+        printf("获取文件数量失败, 路径%s, 跳过库的链接\n", build_path, files_count);
+        return -1;
+    }
     char **file_name_list = (char **)tlibc_malloc(files_count * sizeof(char *));
     char *file_name_buf = (char *)tlibc_malloc(files_count * 256);
     for(int i = 0; i < files_count; i++) {
@@ -238,18 +246,18 @@ int link_app(char *app_path, char *output_path){
     // }
     int pid = fork();
     if(pid == 0){
-        printf("执行命令: %s", default_ld_path);
-        for(int i = 0; ld_flags[i] != NULL; i++){
-            printf(" %s", ld_flags[i]);
-        }
-        printf("\n");
+        // printf("执行命令: %s", default_ld_path);
+        // for(int i = 0; ld_flags[i] != NULL; i++){
+        //     printf(" %s", ld_flags[i]);
+        // }
+        // printf("\n");
         execve(default_ld_path, ld_flags, default_envp);
     }
     else{
         int status;
         waitpid(-1,&status,0);
         if(status == 0){
-            printf("链接应用程序成功\n");
+            // printf("链接应用程序成功\n");
             return 0;
         }
         else{
@@ -263,6 +271,10 @@ int link_app(char *app_path, char *output_path){
 //链接指定all_app_path下的所有.o文件，输出到output_path中
 int link_task(char *all_app_path, char *output_path){
     int files_count = tlibc_get_file_count(all_app_path);
+    if(files_count < 0){
+        printf("获取文件数量失败, 路径%s, 跳过app链接\n", all_app_path, files_count);
+        return -1;
+    }
     printf("要链接的文件数量: %d\n", files_count);
     char **file_name_list = (char **)tlibc_malloc(files_count * sizeof(char *));
     char *file_name_buf = (char *)tlibc_malloc(files_count * 256);
@@ -284,6 +296,10 @@ int link_task(char *all_app_path, char *output_path){
 //把app_path下的文件复制到install_path下，默认应该安装到~/tlibc/bin
 int install(char *app_path){
     int files_count = tlibc_get_file_count(app_path);
+    if(files_count < 0){
+        printf("获取文件数量失败, 路径%s, 跳过安装\n", app_path);
+        return -1;
+    }
     printf("要安装的文件数量: %d\n", files_count);
     char **file_name_list = (char **)tlibc_malloc(files_count * sizeof(char *));
     char *file_name_buf = (char *)tlibc_malloc(files_count * 256);
@@ -294,6 +310,8 @@ int install(char *app_path){
     char install_path[1024];
     tlibc_get_user_dir(install_path, 1024);
     strncat(install_path, "/tlibc/bin", 1024 - strlen(install_path) - 1);
+    //删除，安装全新的
+    tlibc_recursive_rm_dir(install_path);
     tlibc_recursive_mkdir(install_path); //以防安装目录不存在
     for(int i=0; i<files_count; i++){
         char file_path[512];
@@ -308,9 +326,77 @@ int install(char *app_path){
     return 0;
 }
 
+//递归编译指定路径下的所有文件和子目录下的所有文件和子目录的子目录等等
+int compile_recursive_task(char *path){
+    //获取目录下的所有目录
+    int dir_count = tlibc_get_dir_count(path);
+    if(dir_count < 0){
+        printf("compile_recursive_task获取目录数量失败, 路径%s, 跳过路径的编译: %d\n", path, dir_count);
+        return -1;
+    }
+    if(dir_count == 0){//只需要编译这个目录下的文件就行了
+        printf("目录%s下没有子目录，直接编译这个目录下的文件\n", path);
+        compile_task(path);
+        return 0;
+    }
+    printf("目录%s下有%d个子目录，需要递归编译\n", path, dir_count);
+    //有子目录，需要递归编译
+    char **dir_name_list = (char **)tlibc_malloc(dir_count * sizeof(char *));
+    char *dir_name_buf = (char *)tlibc_malloc(dir_count * 256);
+    for(int i = 0; i < dir_count; i++) {
+        dir_name_list[i] = dir_name_buf + i * 256;
+    }
+    tlibc_get_dir_name_list(path, (uint64_t)dir_name_list, dir_count);
+    for(int i=0; i<dir_count; i++){
+        char sub_path[512];
+        snprintf(sub_path, 512, "%s/%s", path, dir_name_list[i]);
+        compile_recursive_task(sub_path);
+    }
+    //再编译可能存在的文件
+    compile_task(path);
+    munmap(dir_name_list, dir_count * sizeof(char *));
+    munmap(dir_name_buf, dir_count * 256);
+    return 0;
+}
+
+//递归链接指定路径下的所有文件到output_path中
+int link_recursive_task(char *path, char *output_path){
+    //获取目录下的所有目录
+    int dir_count = tlibc_get_dir_count(path);
+    if(dir_count < 0){
+        printf("link_recursive_task获取目录数量失败, 路径%s, 跳过路径的链接: %d\n", path, dir_count);
+        return -1;
+    }
+    if(dir_count == 0){//只需要链接这个目录下的文件就行了
+        printf("目录%s下没有子目录，直接链接这个目录下的文件\n", path);
+        link_task(path, output_path);
+        return 0;
+    }
+    printf("目录%s下有%d个子目录，需要递归链接\n", path, dir_count);
+    //有子目录，需要递归链接
+    char **dir_name_list = (char **)tlibc_malloc(dir_count * sizeof(char *));
+    char *dir_name_buf = (char *)tlibc_malloc(dir_count * 256);
+    for(int i = 0; i < dir_count; i++) {
+        dir_name_list[i] = dir_name_buf + i * 256;
+    }
+    tlibc_get_dir_name_list(path, (uint64_t)dir_name_list, dir_count);
+    for(int i=0; i<dir_count; i++){
+        char sub_path[512];
+        snprintf(sub_path, 512, "%s/%s", path, dir_name_list[i]);
+        link_recursive_task(sub_path, output_path);
+    }
+    //再链接可能存在的文件
+    link_task(path, output_path);
+    munmap(dir_name_list, dir_count * sizeof(char *));
+    munmap(dir_name_buf, dir_count * 256);
+    return 0;
+}
+
 int main(int argc, char *argv[]){
     
     //检查工作目录是否是Tinylibc项目，以tlibc_everything.h为标志
+    memset(pwd, 0, sizeof(pwd));
+    getcwd(pwd, 512);
     int ret = tlibc_is_path_file("tlibc_commit_log.md");
     if(ret != 1){
         printf("当前目录不是Tinylibc项目! 切换到Tinylibc项目目录再尝试tmake生成!\n");
@@ -319,10 +405,6 @@ int main(int argc, char *argv[]){
     
     //删除build然后重新创建
     ret = tlibc_recursive_rm_dir("build");
-    if(ret < 0){
-        printf("无法删除build目录, 错误码: %d\n", ret);
-        return 1;
-    }
     printf("删除build目录成功\n");
     //创建build目录
     ret = tlibc_recursive_mkdir(build_path); //如果build目录的父目录不存在就创建父目录
@@ -334,16 +416,24 @@ int main(int argc, char *argv[]){
 
     char *exe_path = "build/output";
     
-    compile_task(LIB_DIR);
-    ar_library(build_lib_path);
+    printf("当前目录: %s\n", pwd);
+    char absolute_lib_path[1024];
+    snprintf(absolute_lib_path, 1024, "%s/lib", pwd);
+    compile_task("lib");
+    ar_library("./build/lib");
     copy_file("./build/lib/tlibc.a", "./build/tlibc.a");
 
-    compile_task("app");
+    // compile_task("app");
+    // compile_task("app/coreutils");
+    // tlibc_recursive_mkdir("build/output");
+    // link_task("build/app", exe_path);
+    // link_task("build/app/coreutils", exe_path);
+
     tlibc_recursive_mkdir("build/output");
-    link_task("build/app", exe_path);
+    compile_recursive_task("app");
+    link_recursive_task("build/app", "build/output");
 
     install(exe_path);
-
     //处理参数，可生成不同的目标
     return 0;
 }

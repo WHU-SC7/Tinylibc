@@ -64,6 +64,7 @@ all: __x86_64
 __x86_64: clean init_dir 
 	make app -j
 	cp build/bin/tmake tmp
+	cp build/bin/shell tmp
 
 init_dir:
 	mkdir -p build

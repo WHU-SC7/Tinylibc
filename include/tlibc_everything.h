@@ -30,12 +30,15 @@ int tlibc_get_user_dir(char *buf, int buf_size);
 int tlibc_get_file_len(char *path);
 int tlibc_get_file_count(const char *dir_path);
 int tlibc_get_file_name_list(const char *dir_path, uint64_t file_name_list, int file_count);
+int tlibc_get_dir_count(const char *dir_path);
+int tlibc_get_dir_name_list(const char *dir_path, uint64_t dir_name_list, int dir_count);
 int tlibc_is_path_dir(const char *path);
 int tlibc_is_path_file(const char *path);
 int tlibc_rm_file(const char *path);
 int tlibc_recursive_rm_dir(const char *path);
 int tlibc_recursive_mkdir(const char *path);
 int tlibc_get_file_num(const char *dir_path);
+int tlibc_recursive_count_file(const char *path);
 int copy_file(char *src_path, char *dest_path);
 int copy_exe_file(char *src_path, char *dest_path);
 

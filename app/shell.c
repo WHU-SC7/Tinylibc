@@ -221,6 +221,7 @@ void run_command(struct command *command)
     int pid = __fork();
     if(pid == 0) //子进程
     {
+        char command_path[1024];
         tlibc_restore_term(STDIN); //恢复规范模式
         if(tlibc_is_path_file(command->name) < 0){ //命令不存在，执行失败
             if(command->name[0] == '/' || command->name[0] == '.'){ //如果命令以/或.开头，直接报错
@@ -228,7 +229,6 @@ void run_command(struct command *command)
                 __exit_group(-2);
             }
             else{ //如果命令不以/或.开头，可能是PATH路径下的命令，尝试在PATH路径下寻找
-                char command_path[1024];
                 char path_buf[1024];
                 char *path_ptr = path_buf;
                 int find = 0;
@@ -242,7 +242,7 @@ void run_command(struct command *command)
                     snprintf(command_path, 1024, "%s/%s", path_ptr, command->name); 
                     if(tlibc_is_path_file(command_path) == 1){ //在PATH路径下找到了这个命令，准备执行
                         printf("在PATH路径%s下找到了命令%s, 即将执行\n", path_ptr, command->name);
-                        strcpy(command->name, command_path); //把命令路径传给execve
+                        // strcpy(command->name, command_path); //不可以传，传了就破坏了
                         find = 1;
                         break;
                     }
@@ -256,7 +256,11 @@ void run_command(struct command *command)
                 }//如果找到了，就继续往下执行execve
             }
         }
-        ret = __execve(command->name, command->args, (void *)0);
+        else{
+            strcpy(command_path, command->name);
+        }
+        // show_cmd_info(command);
+        ret = __execve(command_path, command->args, (void *)0);
         if(ret < 0)
         {
             __printf("execve调用失败, 路径: %s, 错误码: %d\n", command->name, ret);
@@ -741,9 +745,7 @@ int main(int argc, char *argv[])
 
         //解析命令输入，获取命令名和参数
         struct command command;//在栈上分配空间给struct command
-        char *ptr = (char *)&command; //清零，否则会异常
-        for(int i=0; i<sizeof(struct command); i++)
-            ptr[i]=0;
+        memset(&command, 0, sizeof(struct command)); //初始化为0，防止未定义行为
         int ret = parse_cmd(buf,&command);
         if(ret == 0) //解析成功，开始执行
         {

@@ -121,6 +121,9 @@ int compile_file(const char *file_path, char *output_path){
         }
         else{
             printf("编译失败, 状态码: %d\n", status);
+            if(status == 256){
+                exit_group(-1); //编译失败，退出
+            }
             return -1;
         }
     }

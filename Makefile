@@ -65,6 +65,7 @@ __x86_64: clean init_dir
 	make app -j
 	cp build/bin/tmake tmp
 	cp build/bin/shell tmp
+	./tmp/tmake
 
 init_dir:
 	mkdir -p build
@@ -82,7 +83,7 @@ $(x64_s_objs): $(WORKPATH)/build/%.o: %.S
 	$(CC) -c $(CFLAGS) -MF $(WORKPATH)/build/$*.d -o $@ $<
 
 run: __x86_64
-	cd build/bin && ./shell
+	./tmp/shell
 
 clean:
 	rm -rf build

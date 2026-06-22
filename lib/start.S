@@ -9,7 +9,7 @@ __tlibc_start:
     
     call    tlibc_init
     
-    # 退出系统调用
+    # 退出系统调用 —— 用 main() 的返回值作退出码
+    mov     %rax, %rdi          # status = tlibc_init 的返回值（即 main 的返回值）
     mov     $60, %rax           # sys_exit
-    xor     %rdi, %rdi          # status = 0
     syscall

@@ -1,9 +1,10 @@
 
 char *strcpy(char *dest, const char *src)
 {
+    char *save = dest;
     while((*dest++ = *src++) != '\0')
         ;
-    return (char *)src;
+    return save;
 }
 
 char *strncpy(char *dest, const char *src, unsigned long n)

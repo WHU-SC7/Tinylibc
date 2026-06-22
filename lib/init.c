@@ -32,7 +32,7 @@ int tlibc_init(int argc, char *argv[], char *envp[])
 
     int ret = main(argc, argv);
     if(__gettid() == main_tid)
-        __exit_group(0);
+        __exit_group(ret);
     tlibc_mempool_stop_worker();
     return ret;
 }

@@ -1,0 +1,36 @@
+# Claude Code 提交记录
+
+本文件记录通过 Claude Code 进行的项目变更。每次提交在 `git log` 中通过 `Co-Authored-By` 标识识别。
+
+## 2026-06-22
+
+### 第一阶段：函数命名规范化
+
+**范围：** 重构非标准 C 函数的命名，统一使用 `tlibc_` 前缀，避免未来与标准库或第三方库链接时的符号冲突。
+
+**A 组 — POSIX 接口封装：**
+- `getuid()` → `tlibc_getuid()`
+- `chmod()` → `tlibc_chmod()`
+- `stat()` → `tlibc_stat()`
+- `usleep()` → `tlibc_usleep()`
+- `timespec_get()` → `tlibc_timespec_get()`
+- 通过 `tlibc_compat.h` 添加兼容宏，应用代码无需修改
+
+**B 组 — 自定义工具函数：**
+- `copy_file/copy_exe_file` → `tlibc_copy_file/tlibc_copy_exe_file`
+- `cal_absolute_path` → `tlibc_cal_absolute_path`
+- `envp_count/print_all_env_vars` → `tlibc_envp_count/tlibc_print_all_env_vars`
+- `general_input_process` → `tlibc_general_input_process`
+- `print_int` → `tlibc_print_int`
+
+**C 组 — 内存池函数和枚举：**
+- `mem_pool_init` → `tlibc_mem_pool_init`
+- 所有 mempool 函数统一 `tlibc_` 前缀
+- `enum Thread_state` → `enum tlibc_thread_state_t`
+- 枚举值加 `TLIBC_TS_` 前缀
+
+**其他：**
+- 移除 `tlibc_test.h` 中的 7 个死声明（未实现、未使用）
+- `printf.c` 中 5 个内部函数改为 `static` 避免符号泄漏
+- 新建 `CLAUDE.md` 项目手册
+- 为重命名函数添加英文注释

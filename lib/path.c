@@ -2,7 +2,7 @@
 
 //SC7内核的路径处理函数，输入一个路径和当前工作目录，计算出绝对路径
 //czx写的...借用
-void cal_absolute_path(const char *path, const char *cwd, char *absolute_path) {
+void tlibc_cal_absolute_path(const char *path, const char *cwd, char *absolute_path) {
     // 强烈建议：函数应该接受 absolute_path 的大小作为参数，例如:
     // void get_absolute_path(const char *path, const char *cwd, char *absolute_path, size_t max_len)
 

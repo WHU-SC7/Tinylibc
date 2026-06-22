@@ -81,7 +81,9 @@ int tlibc_restore_term(int fd)
  *          每读取到一次就会写入给定的管道的写入端
  *          支持方向键的转义序列，会转换成KEY_UP等自定义键值
  */
-int general_input_process(int pipe_write_fd)
+/* Reads terminal input in a loop and forwards arrow-key sequences to a pipe.
+   Intended to run in a child process for terminal-mode apps (vim, top, etc.) */
+int tlibc_general_input_process(int pipe_write_fd)
 {
     while(1)
     {

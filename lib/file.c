@@ -347,7 +347,8 @@ int tlibc_get_file_num(const char *dir_path){
     return file_count;
 }
 
-int copy_file(char *src_path, char *dest_path){
+/* Copies a regular file from src_path to dest_path (overwrites if exists). Returns 0 on success, or -1 on error */
+int tlibc_copy_file(char *src_path, char *dest_path){
     int src_fd = openat(AT_FDCWD, src_path, O_RDONLY, 0644);
     if(src_fd < 0){
         printf("打开源文件%s失败, 错误码: %d\n", src_path, src_fd);
@@ -380,8 +381,9 @@ int copy_file(char *src_path, char *dest_path){
     return 0;
 }
 
-int copy_exe_file(char *src_path, char *dest_path){
-    copy_file(src_path, dest_path);
+/* Copies a file and sets the executable bit on the destination */
+int tlibc_copy_exe_file(char *src_path, char *dest_path){
+    tlibc_copy_file(src_path, dest_path);
     chmod(dest_path, 0755); //设置可执行权限
     return 0;
 }

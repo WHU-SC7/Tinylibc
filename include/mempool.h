@@ -3,22 +3,22 @@
 
 #include "tlibc.h"
 
-int mem_pool_init();
+int tlibc_mem_pool_init();
 void *malloc(unsigned long size);
-int clean_with_tid(pid_t tid);
-int scan_and_clean_global_mem_list();
-void debug_print_global_mem_list();
-int register_thread_stack(pid_t tid, long stack_base, long stack_size);
-int find_or_alloc_thread_idx(pid_t tid);
-int mempool_mark_thread_exit(pid_t tid);
-void *mempool_work_thread_func(void* arg);
-void inform_work_thread_to_exit();
+int tlibc_clean_thread_mem(pid_t tid);
+int tlibc_scan_global_mem_list();
+void tlibc_debug_print_mem_list();
+int tlibc_register_thread_stack(pid_t tid, long stack_base, long stack_size);
+int tlibc_find_or_alloc_thread_idx(pid_t tid);
+int tlibc_mempool_mark_exit(pid_t tid);
+void *tlibc_mempool_worker(void* arg);
+void tlibc_mempool_stop_worker();
 
-enum Thread_state{
-    UNKNOWN,
-    MAIN_THREAD, //初始的主线程
-    ALIVE,
-    EXIT,
+enum tlibc_thread_state_t{
+    TLIBC_TS_UNKNOWN,
+    TLIBC_TS_MAIN,
+    TLIBC_TS_ALIVE,
+    TLIBC_TS_EXIT,
 };
 
 #endif

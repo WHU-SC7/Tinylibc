@@ -33,7 +33,7 @@ int main(int argc, char *argv[])
     if(fork_ret == 0)
     {
         //子进程开始读取
-        general_input_process(pipefd[PIPE_WRITE]); //pipefd[1]是写
+        tlibc_general_input_process(pipefd[PIPE_WRITE]); //pipefd[1]是写
     }
     else
     {

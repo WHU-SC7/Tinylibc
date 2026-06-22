@@ -322,7 +322,7 @@ int install(char *app_path){
         char install_file_path[512];
         snprintf(install_file_path, 512, "%s/%s", install_path, file_name_list[i]);
         printf("安装文件%d: %s 到 %s\n", i, file_path, install_file_path);
-        copy_exe_file(file_path, install_file_path);
+        tlibc_copy_exe_file(file_path, install_file_path);
     }
     munmap(file_name_list, files_count * sizeof(char *));
     munmap(file_name_buf, files_count * 256);
@@ -424,7 +424,7 @@ int main(int argc, char *argv[]){
     snprintf(absolute_lib_path, 1024, "%s/lib", pwd);
     compile_task("lib");
     ar_library("./build/lib");
-    copy_file("./build/lib/tlibc.a", "./build/tlibc.a");
+    tlibc_copy_file("./build/lib/tlibc.a", "./build/tlibc.a");
 
     // compile_task("app");
     // compile_task("app/coreutils");

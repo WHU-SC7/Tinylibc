@@ -39,19 +39,19 @@ int tlibc_recursive_rm_dir(const char *path);
 int tlibc_recursive_mkdir(const char *path);
 int tlibc_get_file_num(const char *dir_path);
 int tlibc_recursive_count_file(const char *path);
-int copy_file(char *src_path, char *dest_path);
-int copy_exe_file(char *src_path, char *dest_path);
+int tlibc_copy_file(char *src_path, char *dest_path);
+int tlibc_copy_exe_file(char *src_path, char *dest_path);
 
 // 在 snprintf.h 中声明
 int snprintf(char *str, size_t size, const char *format, ...);
 
 //path.c
-void cal_absolute_path(const char *path, const char *cwd, char *absolute_path); //计算绝对路径
+void tlibc_cal_absolute_path(const char *path, const char *cwd, char *absolute_path); //计算绝对路径
 
 //envp.c
 extern char **global_envp;
-int envp_count(char *envp[]);
-void print_all_env_vars(char *envp[]);
+int tlibc_envp_count(char *envp[]);
+void tlibc_print_all_env_vars(char *envp[]);
 char *get_env_var(char *envp[], const char *name);
 
 

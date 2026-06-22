@@ -22,7 +22,7 @@ int tlibc_restore_term(int fd);
 #define KEY_LEFT   0x13    // DC3 - 设备控制3
 #define KEY_RIGHT  0x14    // DC4 - 设备控制4
 
-int general_input_process(int pipe_write_fd);
+int tlibc_general_input_process(int pipe_write_fd);
 
 
 #endif

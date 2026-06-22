@@ -8,7 +8,8 @@ typedef __builtin_va_list my_va_list;
 #define my_va_arg(v, t)     __builtin_va_arg(v, t)
 #define my_va_end(v)        __builtin_va_end(v)
 
-void fprint_long(int fd, long num)
+/* Writes a long decimal integer to a file descriptor. Internal helper for printf */
+static void fprint_long(int fd, long num)
 {
     
     char buf[32];
@@ -46,7 +47,8 @@ void fprint_long(int fd, long num)
     __write(fd,buf,count);
 }
 
-void fprint_string(int fd, const char *str)
+/* Writes a string to a file descriptor. Internal helper for printf */
+static void fprint_string(int fd, const char *str)
 {
     int count = 0;
     char *str_calcu = (char *)str; //计算字符个数
@@ -55,7 +57,8 @@ void fprint_string(int fd, const char *str)
     __write(fd,str,count);
 }
 
-void fprint_int(int fd, int num)
+/* Writes a decimal integer to a file descriptor. Internal helper for printf */
+static void fprint_int(int fd, int num)
 {
     
     char buf[32];
@@ -95,17 +98,13 @@ void fprint_int(int fd, int num)
 
 
 //printf
-void print_int(int num)
+void tlibc_print_int(int num)
 {
     fprint_int(STDOUT, num);
 }
 
-void print_long(long num)
-{
-    fprint_long(STDOUT, num);
-}
-
-void print_string(const char *str)
+/* Prints a string to stdout. Internal helper for __printf */
+static void print_string(const char *str)
 {
     int count = 0;
     char *str_calcu = (char *)str; //计算字符个数
@@ -256,17 +255,17 @@ void __printf(const char *fmt, ...) {
         switch (*++p) {
             case 'd': {
                 long n = my_va_arg(args, long);  // %d 默认提升为 int，但为了简单用 long
-                print_int(n);
+                tlibc_print_int(n);
                 break;
             }
             case 'l':
                 if (*++p == 'd') {
                     long n = my_va_arg(args, long);
-                    print_int(n);
+                    tlibc_print_int(n);
                 } else {
                     p--;  // 回退
                     long n = my_va_arg(args, long); //原来大量使用了%ld
-                    print_int(n);
+                    tlibc_print_int(n);
                     // 可扩展其他 %ld 格式
                 }
                 break;

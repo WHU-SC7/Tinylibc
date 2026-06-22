@@ -3,7 +3,8 @@
 char **global_envp = NULL;
 
 // 统计环境变量数量
-int envp_count(char *envp[])
+/* Returns the number of entries in a NULL-terminated envp array */
+int tlibc_envp_count(char *envp[])
 {
     int count = 0;
     if (envp) {
@@ -13,7 +14,8 @@ int envp_count(char *envp[])
     return count;
 }
 
-void print_all_env_vars(char *envp[])
+/* Prints all environment variables to stdout for debugging */
+void tlibc_print_all_env_vars(char *envp[])
 {
     if (!envp) {
         __printf("环境变量数组为空\n");
@@ -24,8 +26,8 @@ void print_all_env_vars(char *envp[])
     for (int i = 0; envp[i] != NULL; i++) {
         __printf("[%d] %s\n", i, envp[i]);
     }
-    __printf("========== 总共 %d 个环境变量 ==========\n\n", 
-             envp_count(envp));
+    __printf("========== 总共 %d 个环境变量 ==========\n\n",
+             tlibc_envp_count(envp));
 }
 
 // 根据名称查找环境变量（例如 "PATH=..."）

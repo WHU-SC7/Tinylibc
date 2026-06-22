@@ -19,7 +19,7 @@ void* thread_func(void* arg) {
 
 int main(int argc, char *argv[])
 {
-    mem_pool_init();
+    tlibc_mem_pool_init();
     __printf("mempool test\n");
     pthread_t thread;
     pthread_create(&thread, NULL, thread_func, NULL);
@@ -29,7 +29,7 @@ int main(int argc, char *argv[])
     pthread_join(thread, NULL);
 
     malloc(4096);
-    debug_print_global_mem_list();
+    tlibc_debug_print_mem_list();
 
     tlibc_msleep(2000);//等待一会。如果马上退出，工作线程来不及回收
     

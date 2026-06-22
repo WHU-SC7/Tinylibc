@@ -512,7 +512,7 @@ void tab_complete(char *buf)
 
     //把buf中的路径和当前目录拼接成要列出的目录路径
     char absolute_path[1024];
-    cal_absolute_path(path_delete_slash, cwd, absolute_path);
+    tlibc_cal_absolute_path(path_delete_slash, cwd, absolute_path);
 // printf("buf: %s, path_delete_slash: %s, cwd: %s, 计算得到的绝对路径: %s\n", buf, path_delete_slash, cwd, absolute_path);
     int compare_dir_fd = openat(AT_FDCWD, absolute_path, O_RDONLY|O_DIRECTORY|O_CLOEXEC, 0644);
     if(compare_dir_fd < 0){

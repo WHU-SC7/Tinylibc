@@ -98,7 +98,7 @@ int pthread_create(pthread_t *restrict res,
         __printf("映射失败!\n");
         return EAGAIN;
     }
-    register_thread_stack(new->tid, (long)map, size);
+    tlibc_register_thread_stack(new->tid, (long)map, size);
     //因为类型定义与musl不同，加上类型转换。让res指向线程栈底部的struct pthread
     *res = (pthread_t)new;
     return 0;
@@ -149,7 +149,7 @@ int pthread_join(pthread_t t, void **res) //res不使用
 void pthread_exit(void *retval)
 {
     //标识自身退出
-    mempool_mark_thread_exit(__gettid());
+    tlibc_mempool_mark_exit(__gettid());
     //exit系统调用，让内核销毁task_struct结构体
     __exit(0);
 }

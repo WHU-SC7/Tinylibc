@@ -14,7 +14,7 @@ int main(int argc, char *argv[]);
 int tlibc_init(int argc, char *argv[], char *envp[])
 {
     global_envp = envp;
-    print_all_env_vars(envp);
+    tlibc_print_all_env_vars(envp);
     main_tid = __gettid();
     //预先分配1000个线程的栈
     pre_alloc_stack = __mmap(0, PRE_ALLOC_SIZE*THREAD_STACK_SIZE, PROT_READ|PROT_WRITE, 
@@ -27,12 +27,12 @@ int tlibc_init(int argc, char *argv[], char *envp[])
     remain_thread_stack_num = PRE_ALLOC_SIZE;
 
     //初始化mempool
-    mem_pool_init();
+    tlibc_mem_pool_init();
 
     int ret = main(argc, argv);
     if(__gettid() == main_tid)
         __exit_group(0);
-    inform_work_thread_to_exit();//先让工作线程退出
+    tlibc_mempool_stop_worker();
     return ret;
 }
 

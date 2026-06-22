@@ -185,7 +185,8 @@ int tlibc_msleep(unsigned int msecond)
     return 0;
 }
 
-int usleep(unsigned int usecond)
+/* Sleeps for the given number of microseconds. Returns 0 on success, or -errno on error */
+int tlibc_usleep(unsigned int usecond)
 {
     struct timespec time;
     if(usecond < 1000)
@@ -330,15 +331,18 @@ void __exit_group(int status)
     syscall(__NR_exit_group, status);
 }
 
-uid_t getuid(void){
+/* Returns the real user ID of the calling process, or -1 on error */
+uid_t tlibc_getuid(void){
     return syscall(SYS_getuid);
 }
 
-int chmod(const char *pathname, mode_t mode){
+/* Changes permissions of a file. Returns 0 on success, or -errno on error */
+int tlibc_chmod(const char *pathname, mode_t mode){
     return syscall(SYS_chmod, pathname, mode);
 }
 
-int stat(const char *pathname, struct stat *statbuf){
+/* Retrieves file status via stat syscall. Returns 0 on success, or -errno on error */
+int tlibc_stat(const char *pathname, struct stat *statbuf){
     return syscall(SYS_stat, pathname, statbuf);
 }
 
@@ -374,8 +378,7 @@ void *__memmove(void *dest, const void *src, size_t n) //简单的memmove, 不�
     return dest;
 }
 
-//为了兼容
-
-int timespec_get(struct timespec *ts, int base){
+/* Gets the current calendar time. Wraps clock_gettime(CLOCK_REALTIME). Returns 0 on success, or -errno on error */
+int tlibc_timespec_get(struct timespec *ts, int base){
     return __clock_gettime(CLOCK_REALTIME, ts);
 }

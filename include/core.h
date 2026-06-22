@@ -31,7 +31,7 @@ long __brk(void *addr);
 void *tlibc_malloc(unsigned long size);
 int __nanosleep(const struct timespec *req, struct timespec *rem);
 int tlibc_msleep(unsigned int msecond);
-int usleep(unsigned int usecond);
+int tlibc_usleep(unsigned int usecond);
 time_t __time(time_t *tloc);
 int __clock_gettime(clockid_t clockid, struct timespec *tp);
 int __sigaction(int signum, const struct sigaction *act, struct sigaction *oldact);
@@ -54,21 +54,21 @@ long __futex(unsigned int *uaddr, int futex_op, unsigned int val, const struct t
 long tlibc_clone_thread(void *stack);
 int __madvise(void *addr, size_t length, int advice);
 void __exit_group(int status);
-uid_t getuid(void);
-int chmod(const char *pathname, mode_t mode);
-int stat(const char *pathname, struct stat *statbuf);
+uid_t tlibc_getuid(void);
+int tlibc_chmod(const char *pathname, mode_t mode);
+int tlibc_stat(const char *pathname, struct stat *statbuf);
 
 //string操作
 void *__memset(void *dst, int value, unsigned int n);
 void *__memmove(void *dest, const void *src, size_t n);
 
 //printf
-void print_int(int num);
+void tlibc_print_int(int num);
 void __printf(const char *fmt, ...);
 void __fprintf(int fd, const char *fmt, ...);
 
 #define TIME_UTC 1
-int timespec_get(struct timespec *ts, int base);
+int tlibc_timespec_get(struct timespec *ts, int base);
 #define printf(fmt, ...) __printf(fmt, ##__VA_ARGS__)
 #define fprintf(fd, fmt, ...) __fprintf(fd, fmt, ##__VA_ARGS__)
 #define fdprintf(fd, fmt, ...) __fprintf(fd, fmt, ##__VA_ARGS__)//像一个fd写入，Tinylibc没有File结构体，这样命名更合适

@@ -38,9 +38,10 @@
 // 时间相关
 #define nanosleep(req, rem) __nanosleep(req, rem)
 #define msleep(msecond) tlibc_msleep(msecond)
-#define usleep(usecond) usleep(usecond)
+#define usleep(usecond) tlibc_usleep(usecond)
 #define time(tloc) __time(tloc)
 #define clock_gettime(clockid, tp) __clock_gettime(clockid, tp)
+#define timespec_get(ts, base) tlibc_timespec_get(ts, base)
 
 // 信号处理
 #define sigaction(signum, act, oldact) __sigaction(signum, act, oldact)
@@ -70,5 +71,10 @@
 // 字符串操作
 #define memset(dst, value, n) __memset(dst, value, n)
 #define memmove(dest, src, n) __memmove(dest, src, n)
+
+// 系统接口
+#define getuid() tlibc_getuid()
+#define chmod(pathname, mode) tlibc_chmod(pathname, mode)
+#define stat(pathname, statbuf) tlibc_stat(pathname, statbuf)
 
 #endif

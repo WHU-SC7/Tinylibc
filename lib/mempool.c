@@ -28,7 +28,7 @@ struct thread_mem_list{
     struct mem_chunk *first;
     long stack_base;
     long stack_size;
-    enum Thread_state state;
+    enum tlibc_thread_state_t state;
 };
 struct mem_chunk{
     struct mem_chunk *next;
@@ -57,23 +57,24 @@ static inline void spinlock_lock(spinlock_t *lock) {
 static inline void spinlock_unlock(spinlock_t *lock) {
     lock->lock = 0;
 }
-int mem_pool_init()
+/* Initializes the global memory pool and starts the background cleanup worker thread */
+int tlibc_mem_pool_init()
 {
     if(whether_have_init != 1){
         global_mem_list = tlibc_malloc(sizeof(struct global_mem_list));
-        int thread_idx = find_or_alloc_thread_idx(__gettid()); //记录主线程
-        global_mem_list->thread_mem_list[thread_idx]->state = MAIN_THREAD;
+        int thread_idx = tlibc_find_or_alloc_thread_idx(__gettid()); //记录主线程
+        global_mem_list->thread_mem_list[thread_idx]->state = TLIBC_TS_MAIN;
         whether_have_init = 1;
         global_mem_list->spinlock.lock = 0;
         //创建工作线程，定期回收已经退出的线程资源
         pthread_t thread;
-        pthread_create(&thread, NULL, mempool_work_thread_func, NULL);
+        pthread_create(&thread, NULL, tlibc_mempool_worker, NULL);
         return 0;
     }
     else return 0;
 }
 
-int find_or_alloc_thread_idx(pid_t tid)
+int tlibc_find_or_alloc_thread_idx(pid_t tid)
 {
     int thread_idx = -1; //请求malloc的线程对应的idex
     for(int i=0; i<MAX_THREAD_OF_MEMPOOL; i++)
@@ -98,10 +99,11 @@ int find_or_alloc_thread_idx(pid_t tid)
         return thread_idx;
 }
 
-int register_thread_stack(pid_t tid, long stack_base, long stack_size)
+/* Registers a thread's stack so it can be reclaimed when the thread exits */
+int tlibc_register_thread_stack(pid_t tid, long stack_base, long stack_size)
 {
     spinlock_lock(&global_mem_list->spinlock);
-    int thread_idx = find_or_alloc_thread_idx(tid);
+    int thread_idx = tlibc_find_or_alloc_thread_idx(tid);
     if(thread_idx == -1){
         DEBUG_PRINTF("ERROR!列表已满\n");
         spinlock_unlock(&global_mem_list->spinlock);
@@ -114,25 +116,26 @@ int register_thread_stack(pid_t tid, long stack_base, long stack_size)
     }
     t_mem_list->stack_base = stack_base;
     t_mem_list->stack_size = stack_size;
-    t_mem_list->state = ALIVE;
+    t_mem_list->state = TLIBC_TS_ALIVE;
     spinlock_unlock(&global_mem_list->spinlock);
     return thread_idx;
 }
 
 //标识一个线程的退出，pthread_exit调用
-int mempool_mark_thread_exit(pid_t tid)
+/* Marks a thread as EXIT so the worker can reclaim its resources */
+int tlibc_mempool_mark_exit(pid_t tid)
 {
     spinlock_lock(&global_mem_list->spinlock);
-    int thread_idx = find_or_alloc_thread_idx(tid);
+    int thread_idx = tlibc_find_or_alloc_thread_idx(tid);
     if(thread_idx == -1){
         ERROR_DEBUG_PRINTF("ERROR!没有找到指定线程\n");
         spinlock_unlock(&global_mem_list->spinlock);
         return -1;
     }
     struct thread_mem_list *t_mem_list = global_mem_list->thread_mem_list[thread_idx];
-    if(t_mem_list->state == MAIN_THREAD)
+    if(t_mem_list->state == TLIBC_TS_MAIN)
         return -1;//禁止让主线程退出
-    t_mem_list->state = EXIT;
+    t_mem_list->state = TLIBC_TS_EXIT;
     DEBUG_PRINTF("线程%d标记为EXIT\n", tid);
     spinlock_unlock(&global_mem_list->spinlock);
     return 0;
@@ -140,13 +143,14 @@ int mempool_mark_thread_exit(pid_t tid)
 
 
 //扫描一遍，清理已经退出的线程
-int mempool_clean_thread()
+/* Scans the global thread list and reclaims resources from exited threads */
+static int tlibc_mempool_clean_thread()
 {
     spinlock_lock(&global_mem_list->spinlock);
     for(int i=0; i<MAX_THREAD_OF_MEMPOOL; i++){
         if(global_mem_list->thread_id_idx[i] == 0)//扫描完了
             break;
-        if(global_mem_list->thread_mem_list[i]->state == EXIT){
+        if(global_mem_list->thread_mem_list[i]->state == TLIBC_TS_EXIT){
             DEBUG_PRINTF("回收线程%d的资源\n", global_mem_list->thread_id_idx[i]);
             struct thread_mem_list *t_mem_list = global_mem_list->thread_mem_list[i];
             struct mem_chunk *chunk = t_mem_list->first; 
@@ -157,7 +161,7 @@ int mempool_clean_thread()
             else{
                 DEBUG_PRINTF("ERROR!回收栈失败. 线程tid: %ld, state: %ld\n", t_mem_list->tid, t_mem_list->state);
                 goto clean;
-                // debug_print_global_mem_list();
+                // tlibc_debug_print_mem_list();
             }
             for(int i=0; i<t_mem_list->chunk_num; i++){ //回收所有映射和struct mem_chunk
                 if(__munmap((void *)chunk->base, chunk->size) == -1){
@@ -183,17 +187,19 @@ clean:
 }
 
 //负责清理的线程
-void *mempool_work_thread_func(void* arg)
+/* Background worker: periodically scans and reclaims resources from exited threads */
+void *tlibc_mempool_worker(void* arg)
 {
     while(1){
         if(work_thread_exit == 1)
             __exit(0);
-        tlibc_msleep(1000); //每次睡眠1秒
-        mempool_clean_thread();
+        tlibc_msleep(1000);
+        tlibc_mempool_clean_thread();
     }
 }
 
-void inform_work_thread_to_exit()
+/* Signals the background worker to exit on next iteration */
+void tlibc_mempool_stop_worker()
 {
     work_thread_exit = 1;
 }
@@ -251,7 +257,8 @@ void *malloc(unsigned long size)
     return addr;
 }
 
-int clean_with_tid(pid_t tid)
+/* Frees all memory allocated by a given thread (identified by tid) */
+int tlibc_clean_thread_mem(pid_t tid)
 {
     int thread_idx = -1;
     for(int i=0; i<MAX_THREAD_OF_MEMPOOL; i++){
@@ -287,12 +294,14 @@ int clean_with_tid(pid_t tid)
 }
 
 //扫描/proc, 回收本进程中已经退出的线程
-int scan_and_clean_global_mem_list()
+/* Placeholder: scans /proc and reclaims resources from exited threads (not yet implemented) */
+int tlibc_scan_global_mem_list()
 {
     return 0;
 }
 
-void debug_print_global_mem_list()
+/* Debug: prints the entire global memory pool state to stdout */
+void tlibc_debug_print_mem_list()
 {
     if(whether_have_init == 0)
     {

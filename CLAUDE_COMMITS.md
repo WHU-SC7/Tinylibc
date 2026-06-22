@@ -45,3 +45,10 @@
 - `lib/core.c`：清理"!!!"、中文 Doxygen 为英文 NOTE
 - `lib/init.c`：将竞态条件中文警告转为英文 NOTE
 - `include/pthread.h`：清理过期中文注释
+
+### 第三阶段：死代码与结构清理
+
+**范围：** 消除重复类型定义、标注竞态变量。
+
+- `include/atomic.h`：移除重复的 `uint64_t`/`uint32_t` 类型定义，改为 `#include "tlibc_types.h"`
+- `include/init.h` + `lib/init.c`：`pre_alloc_stack` 和 `remain_thread_stack_num` 添加 `volatile` 限定

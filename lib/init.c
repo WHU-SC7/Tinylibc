@@ -7,8 +7,8 @@
 #include "tlibc_everything.h"
 
 /* NOTE: pre_alloc_stack access is not synchronized. Race-prone in concurrent scenarios. */
-void *pre_alloc_stack;
-int remain_thread_stack_num;
+void * volatile pre_alloc_stack;
+volatile int remain_thread_stack_num;
 pid_t main_tid;
 
 int main(int argc, char *argv[]);

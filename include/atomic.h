@@ -1,8 +1,10 @@
 #ifndef __ATOMIC_H
 #define __ATOMIC_H
-typedef unsigned long uint64_t;
-typedef unsigned int uint32_t;
-// 原子获取并相加 (fetch-and-add)
+
+#include "tlibc_types.h"
+
+// Atomic fetch-and-add (x86_64 lock xadd)
+
 static inline uint64_t atomic_fetch_add_u64(volatile uint64_t *ptr, uint64_t val) {
     uint64_t result;
     __asm__ volatile(
@@ -25,7 +27,7 @@ static inline uint32_t atomic_fetch_add_u32(volatile uint32_t *ptr, uint32_t val
     return result;
 }
 
-// 原子比较并交换 (compare-and-swap)
+// Atomic compare-and-swap (x86_64 lock cmpxchg)
 static inline uint64_t atomic_compare_exchange_u64(volatile uint64_t *ptr, 
                                                    uint64_t expected, 
                                                    uint64_t desired) {

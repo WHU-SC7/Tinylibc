@@ -6,7 +6,8 @@
 #include "mempool.h"
 #include "tlibc_everything.h"
 
-void *pre_alloc_stack; //没有考虑多线程对全局变量的竞争
+/* NOTE: pre_alloc_stack access is not synchronized. Race-prone in concurrent scenarios. */
+void *pre_alloc_stack;
 int remain_thread_stack_num;
 pid_t main_tid;
 

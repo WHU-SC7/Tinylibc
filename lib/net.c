@@ -92,11 +92,11 @@ char* tlibc_inet_ntoa(struct in_addr in) {
 }
 
 uint16_t tlibc_ntohs(uint16_t netshort) {
-    /* x86_64 小端序：网络是大端，需要交换字节 */
+    /* x86_64 is little-endian, network is big-endian: swap bytes */
     return (netshort << 8) | (netshort >> 8);
 }
 
-//莫名其妙的问题,等待审阅
+// TODO: verify correctness, known issues
 unsigned int tlibc_inet_addr(const char *cp){
         unsigned int bytes[4] = {0};
     int part = 0;

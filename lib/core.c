@@ -117,7 +117,7 @@ void __exit(int status)
     syscall(SYS_exit, status);
 }
 
-// !!!只有wait4是系统调用，调用号是260. wait,waitpid是wait4的包装
+// NOTE: only wait4 is the raw syscall (nr 260). wait/waitpid are wrappers.
 // sys_wait4(pid_t pid, int __user *stat_addr, int options, struct rusage __user *ru)
 pid_t __waitpid(int pid, int *wstatus, int options)
 {
@@ -361,7 +361,8 @@ void *__memset(void *dst, int value, unsigned int n)
     return dst;
 }
 
-void *__memmove(void *dest, const void *src, size_t n) //简单的memmove, 不考虑重叠情况
+/* Simple memmove. Does NOT handle overlapping regions correctly (uses temp buf). */
+void *__memmove(void *dest, const void *src, size_t n)
 {
     char *cdest = (char *)dest;
     char *csrc = (char *)src;

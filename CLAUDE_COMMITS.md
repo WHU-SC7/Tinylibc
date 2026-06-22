@@ -34,3 +34,14 @@
 - `printf.c` 中 5 个内部函数改为 `static` 避免符号泄漏
 - 新建 `CLAUDE.md` 项目手册
 - 为重命名函数添加英文注释
+
+### 第二阶段：注释清理
+
+**范围：** 清理中文分析注释、死代码块、未解决备注，标准化为英文 TODO/NOTE 格式。
+
+- `lib/path.c`：精简 150+ 行中文自省分析注释为英文 TODO，保留已知边界条件标注
+- `lib/pthread.c`：移除 pthread_join 中 30+ 行注释掉的旧实现，用英文说明异步回收设计
+- `lib/net.c`：将"莫名其妙的问题,等待审阅"转为 TODO
+- `lib/core.c`：清理"!!!"、中文 Doxygen 为英文 NOTE
+- `lib/init.c`：将竞态条件中文警告转为英文 NOTE
+- `include/pthread.h`：清理过期中文注释

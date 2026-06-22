@@ -78,7 +78,7 @@ typedef union pthread_attr_t pthread_attr_t;
 
 // #define pthread __pthread
 
-struct __ptcb { //上次commit没有补上，不过无所谓，没有用到
+struct __ptcb { // NOTE: unused, kept for reference
 	void (*__f)(void *);
 	void *__x;
 	struct __ptcb *__next;

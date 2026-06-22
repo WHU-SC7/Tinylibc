@@ -5,6 +5,11 @@
 
 > 查看 diff：`git show <hash>` 或 `git log <hash>~1..<hash> -p`
 
+## 2026-06-23
+
+### `eb80186` 00:04 — feat: 扩展系统调用包装、printf格式化、hexdump工具，修复pthread_join
+
+
 ## 2026-06-22
 
 ### `764d14a` 23:16 — feat: 添加 post-commit hook，自动写入 CLAUDE_COMMITS.md

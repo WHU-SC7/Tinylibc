@@ -7,6 +7,33 @@
 
 ## 2026-06-22
 
+### `764d14a` 23:16 — feat: 添加 post-commit hook，自动写入 CLAUDE_COMMITS.md
+
+每次 git commit 成功后自动将提交信息写入 CLAUDE_COMMITS.md，
+新条目插入在同一天的最前面（时间倒序）。
+跳过对 CLAUDE_COMMITS.md 本身的更新提交以避免递归。
+
+---
+
+### `1c0d071` 23:09 — docs: 建立 git 提交规范，添加 commit-msg hook
+
+CLAUDE.md — 精简为快速参考手册，新增类型标签表
+CLAUDE_DETAILS.md — 完整文档（测试框架 + git 提交规范）
+CLAUDE_COMMITS.md — Claude 提交记录（hash+时间格式）
+Makefile — 添加 init-hooks / check-hooks 目标，修复 CRLF 行尾
+.githooks/commit-msg — 提交时校验格式: `<type>: <中文标题>`
+
+---
+
+### `4d07e4c` 23:09 — test: 完善测试框架 tlibc_test.h，新增字符串测试 35 用例
+
+用完整的宏定义测试框架（TEST_START / TEST_ASSERT / TEST_PASS 等）
+替换原来的 tlibc_test 占位声明，支持计数、颜色输出、断言失败
+提前 return 退出用例。新增 app/test/test_string.c 覆盖 strlen、
+strcpy/strncpy/strcmp/memcpy/strchr/itoa/strerror 共 35 个用例。
+
+---
+
 ### `a479ed6` 15:38 — build: tmake 支持 -j N 并行编译+链接+计时报告
 
 **编译与链接并行化：**

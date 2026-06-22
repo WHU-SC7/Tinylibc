@@ -4,7 +4,7 @@
 #include "errno.h"
 #include "tlibc_everything.h"
 
-#define SHELL_BUF_SIZE 1024*1024 //1M上下文！
+#define SHELL_BUF_SIZE TLIBC_BUF_SIZE
 
     #define MAX_FILE_NUM 1024
     #define FILE_NAME_MAX_LEN 256
@@ -469,7 +469,7 @@ void tab_complete(char *buf)
     char file_name[MAX_FILE_NUM][FILE_NAME_MAX_LEN];//最多支持1024个文件，每个文件名最多255字符
     int file_num = 0;
     //获取当前目录下的文件列表
-    #define SHELL_LS_BUF_SIZE 1024*1024
+    #define SHELL_LS_BUF_SIZE TLIBC_BUF_SIZE
     char *ls_buf = (char *)mmap(0, SHELL_LS_BUF_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     memset(ls_buf, 0, SHELL_LS_BUF_SIZE);
     //路径处理
@@ -512,7 +512,7 @@ void tab_complete(char *buf)
 
     //把buf中的路径和当前目录拼接成要列出的目录路径
     char absolute_path[1024];
-    tlibc_cal_absolute_path(path_delete_slash, cwd, absolute_path);
+    tlibc_cal_absolute_path(path_delete_slash, cwd, absolute_path, sizeof(absolute_path));
 // printf("buf: %s, path_delete_slash: %s, cwd: %s, 计算得到的绝对路径: %s\n", buf, path_delete_slash, cwd, absolute_path);
     int compare_dir_fd = openat(AT_FDCWD, absolute_path, O_RDONLY|O_DIRECTORY|O_CLOEXEC, 0644);
     if(compare_dir_fd < 0){

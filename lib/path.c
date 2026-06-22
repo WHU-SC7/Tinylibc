@@ -1,30 +1,24 @@
 #include "tlibc_everything.h"
 
 /* Normalizes a path relative to cwd into an absolute path, resolving ./ and ../ components.
-   NOTE: absolute_path buffer must be large enough. No size parameter (known issue). */
-void tlibc_cal_absolute_path(const char *path, const char *cwd, char *absolute_path) {
+   Writes at most max_len bytes into absolute_path (including null terminator). */
+void tlibc_cal_absolute_path(const char *path, const char *cwd, char *absolute_path, size_t max_len) {
+    if (max_len == 0) return;
+
     // Empty path -> use cwd
     if (path == NULL || path[0] == '\0')
     {
-        /* TODO: buffer overflow risk - strlen(cwd) may exceed buffer capacity */
-        strcpy(absolute_path, cwd);
+        snprintf(absolute_path, max_len, "%s", cwd ? cwd : "");
     }
     // Absolute path -> use as-is
     else if (path[0] == '/')
     {
-        /* TODO: buffer overflow risk */
-        strcpy(absolute_path, path);
+        snprintf(absolute_path, max_len, "%s", path);
     }
     // Relative path -> prepend cwd
     else
     {
-        /* TODO: buffer overflow risk - combined path may exceed capacity */
-        strcpy(absolute_path, cwd);
-        size_t cwd_len = strlen(cwd);
-        if (cwd_len > 0 && cwd[cwd_len - 1] != '/') {
-             strcat(absolute_path, "/");
-        }
-        strcat(absolute_path, path);
+        snprintf(absolute_path, max_len, "%s/%s", cwd ? cwd : "", path);
     }
 
     // Resolve ./ and ../ components in-place

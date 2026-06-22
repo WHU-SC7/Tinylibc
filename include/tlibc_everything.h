@@ -23,7 +23,8 @@
 #include "tlibc.h"
 #include "tty.h"
 
-#define DEFAULT_LS_BUF_SIZE 1024*1024
+#define TLIBC_BUF_SIZE (1024*1024)
+#define DEFAULT_LS_BUF_SIZE TLIBC_BUF_SIZE
 
 //新函数，先放在这
 int tlibc_get_user_dir(char *buf, int buf_size);
@@ -46,7 +47,7 @@ int tlibc_copy_exe_file(char *src_path, char *dest_path);
 int snprintf(char *str, size_t size, const char *format, ...);
 
 //path.c
-void tlibc_cal_absolute_path(const char *path, const char *cwd, char *absolute_path); //计算绝对路径
+void tlibc_cal_absolute_path(const char *path, const char *cwd, char *absolute_path, size_t max_len);
 
 //envp.c
 extern char **global_envp;

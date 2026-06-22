@@ -43,7 +43,7 @@ void* server_thread_entry(void* arg) {
     if(srv_fd < 0) {
         mkdirat(AT_FDCWD, server_dir, 0777);
     }
-    #define LS_BUF_SIZE 1024*1024
+    #define LS_BUF_SIZE TLIBC_BUF_SIZE
     char *ls_buf = (char *)mmap(0, LS_BUF_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 
     fdprintf(client_fd, "Welcome to Tinylibc TCP Server! \n");

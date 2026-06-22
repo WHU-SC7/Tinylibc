@@ -27,7 +27,7 @@ int tlibc_get_dir_count(const char *dir_path) {
         return -1;  // 打开目录失败
     }
     
-    #define COUNT_BUF_SIZE 1024*1024
+    #define COUNT_BUF_SIZE TLIBC_BUF_SIZE
     char *buf = (char *)mmap(0, COUNT_BUF_SIZE, PROT_READ | PROT_WRITE, 
                               MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (buf == MAP_FAILED) {
@@ -65,7 +65,7 @@ int tlibc_get_file_count(const char *dir_path) {
         return -1;  // 打开目录失败
     }
     
-    #define COUNT_BUF_SIZE 1024*1024
+    #define COUNT_BUF_SIZE TLIBC_BUF_SIZE
     char *buf = (char *)mmap(0, COUNT_BUF_SIZE, PROT_READ | PROT_WRITE, 
                               MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (buf == MAP_FAILED) {
@@ -107,7 +107,7 @@ int tlibc_get_dir_name_list(const char *dir_path, uint64_t dir_name_list, int di
         return -1;  // 打开目录失败
     }
     
-    #define NAME_LIST_BUF_SIZE 1024*1024
+    #define NAME_LIST_BUF_SIZE TLIBC_BUF_SIZE
     char *buf = (char *)mmap(0, NAME_LIST_BUF_SIZE, PROT_READ | PROT_WRITE, 
                               MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (buf == MAP_FAILED) {
@@ -160,7 +160,7 @@ int tlibc_get_file_name_list(const char *dir_path, uint64_t file_name_list, int 
         return -1;  // 打开目录失败
     }
     
-    #define NAME_LIST_BUF_SIZE 1024*1024
+    #define NAME_LIST_BUF_SIZE TLIBC_BUF_SIZE
     char *buf = (char *)mmap(0, NAME_LIST_BUF_SIZE, PROT_READ | PROT_WRITE, 
                               MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (buf == MAP_FAILED) {
@@ -235,7 +235,7 @@ int tlibc_recursive_rm_dir(const char *path){
     }
 
     if(ret == 1){ //可能要递归删除目录
-        #define RM_BUF_SIZE 1024*1024
+        #define RM_BUF_SIZE TLIBC_BUF_SIZE
         char *buf = (char *)tlibc_malloc(RM_BUF_SIZE);
         if (buf == MAP_FAILED) {
             return -1;

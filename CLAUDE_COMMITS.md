@@ -52,3 +52,11 @@
 
 - `include/atomic.h`：移除重复的 `uint64_t`/`uint32_t` 类型定义，改为 `#include "tlibc_types.h"`
 - `include/init.h` + `lib/init.c`：`pre_alloc_stack` 和 `remain_thread_stack_num` 添加 `volatile` 限定
+
+### 第四阶段：边界安全加固
+
+**范围：** 修复缓冲区溢出风险、消除魔数常量重复定义。
+
+- `lib/path.c`：为 `tlibc_cal_absolute_path` 添加 `max_len` 参数，用 `snprintf` 替代无长度检查的 `strcpy`
+- `include/tlibc_everything.h`：新增 `TLIBC_BUF_SIZE (1024*1024)` 统一宏
+- `lib/file.c` + `app/shell.c`：将重复的 `1024*1024` 本地常量替换为 `TLIBC_BUF_SIZE`

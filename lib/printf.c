@@ -60,7 +60,7 @@ static void fprint_string(int fd, const char *str)
 /* Writes a decimal integer to a file descriptor. Internal helper for printf */
 static void fprint_int(int fd, int num)
 {
-    
+
     char buf[32];
     char c;
     int count=0;
@@ -92,8 +92,37 @@ static void fprint_int(int fd, int num)
         buf[i] = buf[(count-1)-i];
         buf[(count-1)-i] = tmp;
     }
-    
+
     __write(fd,buf,count);
+}
+
+/* Writes an unsigned long as hex to fd. prefix=1 adds "0x" prefix */
+static void fprint_hex(int fd, unsigned long val, int prefix)
+{
+    const char *hex = "0123456789abcdef";
+    char buf[18];  /* "0x" + 16 hex digits */
+    int pos = 0;
+
+    if (prefix) {
+        buf[pos++] = '0';
+        buf[pos++] = 'x';
+    }
+
+    if (val == 0) {
+        buf[pos++] = '0';
+    } else {
+        /* Compute hex digits from most significant nibble */
+        int started = 0;
+        for (int i = (sizeof(unsigned long) * 2) - 1; i >= 0; i--) {
+            unsigned char nibble = (val >> (i * 4)) & 0xf;
+            if (nibble || started) {
+                buf[pos++] = hex[nibble];
+                started = 1;
+            }
+        }
+    }
+
+    __write(fd, buf, pos);
 }
 
 
@@ -227,6 +256,21 @@ void __fprintf(int fd, const char *fmt, ...) {
                 __write(fd, buf, len);
                 break;
             }
+            case 'x': {
+                unsigned long n = my_va_arg(args, unsigned long);
+                fprint_hex(fd, n, 0);
+                break;
+            }
+            case 'p': {
+                void *ptr = my_va_arg(args, void *);
+                fprint_hex(fd, (unsigned long)ptr, 1);
+                break;
+            }
+            case 'u': {
+                unsigned long n = my_va_arg(args, unsigned long);
+                fprint_long(fd, n);
+                break;
+            }
             default:
                 __write(fd, p-1, 2);  // 输出 %x
                 break;
@@ -284,6 +328,21 @@ void __printf(const char *fmt, ...) {
                 char buf[128];                         // 足够容纳浮点字符串
                 int len = double_to_str(d, buf, 6);    // 默认6位小数
                 __write(STDOUT, buf, len);
+                break;
+            }
+            case 'x': {
+                unsigned long n = my_va_arg(args, unsigned long);
+                fprint_hex(STDOUT, n, 0);
+                break;
+            }
+            case 'p': {
+                void *ptr = my_va_arg(args, void *);
+                fprint_hex(STDOUT, (unsigned long)ptr, 1);
+                break;
+            }
+            case 'u': {
+                unsigned long n = my_va_arg(args, unsigned long);
+                fprint_long(STDOUT, n);
                 break;
             }
             default:

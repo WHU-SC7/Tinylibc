@@ -57,6 +57,10 @@ void __exit_group(int status);
 uid_t tlibc_getuid(void);
 int tlibc_chmod(const char *pathname, mode_t mode);
 int tlibc_stat(const char *pathname, struct stat *statbuf);
+int __fcntl(int fd, int cmd, unsigned long arg);
+int __dup(int oldfd);
+int __dup2(int oldfd, int newfd);
+int __dup3(int oldfd, int newfd, int flags);
 
 //string操作
 void *__memset(void *dst, int value, unsigned int n);

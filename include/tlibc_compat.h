@@ -52,6 +52,12 @@
 // 进程间通信
 #define pipe2(pipefd, flags) __pipe2(pipefd, flags)
 
+// 文件控制
+#define fcntl(fd, cmd, arg) __fcntl(fd, cmd, (unsigned long)(arg))
+#define dup(oldfd) __dup(oldfd)
+#define dup2(oldfd, newfd) __dup2(oldfd, newfd)
+#define dup3(oldfd, newfd, flags) __dup3(oldfd, newfd, flags)
+
 // 系统调用
 #define yield() __yield()
 #define setsid() __setsid()

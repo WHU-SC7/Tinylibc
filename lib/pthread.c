@@ -11,9 +11,15 @@ static int start(void *p)
     struct start_args {
         void *(*start_func)(void *);
         void *start_arg;
+        void **result_ptr;   /* points to struct pthread.result */
     } *args = p;
 
     void *ret = args->start_func(args->start_arg);
+
+    /* Store return value so pthread_join can retrieve it */
+    if (args->result_ptr) {
+        *args->result_ptr = ret;
+    }
 
     pthread_exit(ret);
     return 0;
@@ -63,13 +69,18 @@ int pthread_create(pthread_t *restrict res,
     new->map_size = size;
     new->tid = -1;
     new->self = new;
+    new->result = NULL;
 
-    // Place args below the pthread struct
-    stack -= sizeof(void *) * 2;
-    struct { void *(*func)(void *); void *arg; } *args =
-        (void *)stack;
+    // Place args below the pthread struct (3 pointers: func, arg, result_ptr)
+    stack -= sizeof(void *) * 3;
+    struct {
+        void *(*func)(void *);
+        void *arg;
+        void **result_ptr;
+    } *args = (void *)stack;
     args->func = entry;
     args->arg = arg;
+    args->result_ptr = &new->result;
 
     int ret = __clone(start, stack, flags, args, &new->tid,
                       new, &new->tid);
@@ -85,25 +96,25 @@ int pthread_create(pthread_t *restrict res,
     return 0;
 }
 
-// Unused futex/detach-state definitions kept for reference
-#define FUTEX_WAIT_BITSET   9
-#define FUTEX_CLOCK_REALTIME 256
-enum {
-    DT_EXITED = 0,
-    DT_EXITING,
-    DT_JOINABLE,
-    DT_DETACHED,
-};
+/* Futex operations */
+#define FUTEX_WAIT          0
+#define FUTEX_WAKE          1
 
-/*
-   pthread_join is intentionally a no-op in this implementation.
-   Thread resource reclamation is handled asynchronously by a background
-   worker thread (see mempool.c). The worker scans for exited threads and
-   reclaims their stacks and heap allocations.
-   NOTE: retval is ignored since we never synchronously wait.
-*/
 int pthread_join(pthread_t t, void **res)
 {
+    struct pthread *p = (struct pthread *)t;
+
+    /* Wait until the target thread exits.  The kernel clears ->tid and
+       wakes futex waiters when the thread exits via CLONE_CHILD_CLEARTID. */
+    while (p->tid != 0) {
+        __futex((unsigned int *)&p->tid, FUTEX_WAIT, p->tid, NULL, NULL, 0);
+    }
+
+    /* Return the thread's result if requested */
+    if (res) {
+        *res = p->result;
+    }
+
     return 0;
 }
 

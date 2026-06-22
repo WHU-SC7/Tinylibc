@@ -336,6 +336,32 @@ uid_t tlibc_getuid(void){
     return syscall(SYS_getuid);
 }
 
+/* Manipulates file descriptor behavior (e.g., F_DUPFD, F_GETFD, F_SETFD, F_GETFL, F_SETFL).
+   The third argument is command-dependent; pass 0 when unused. Returns result or -errno. */
+int __fcntl(int fd, int cmd, unsigned long arg)
+{
+    return syscall(SYS_fcntl, fd, cmd, arg);
+}
+
+/* Duplicates a file descriptor; the new fd is guaranteed to be the lowest available. */
+int __dup(int oldfd)
+{
+    return syscall(SYS_dup, oldfd);
+}
+
+/* Duplicates a file descriptor to a specific target fd.
+   If newfd is already open, it is silently closed first. */
+int __dup2(int oldfd, int newfd)
+{
+    return syscall(SYS_dup2, oldfd, newfd);
+}
+
+/* Like dup2, but with flags (e.g., O_CLOEXEC). */
+int __dup3(int oldfd, int newfd, int flags)
+{
+    return syscall(SYS_dup3, oldfd, newfd, flags);
+}
+
 /* Changes permissions of a file. Returns 0 on success, or -errno on error */
 int tlibc_chmod(const char *pathname, mode_t mode){
     return syscall(SYS_chmod, pathname, mode);

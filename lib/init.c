@@ -15,7 +15,6 @@ int main(int argc, char *argv[]);
 int tlibc_init(int argc, char *argv[], char *envp[])
 {
     global_envp = envp;
-    tlibc_print_all_env_vars(envp);
     main_tid = __gettid();
     //预先分配1000个线程的栈
     pre_alloc_stack = __mmap(0, PRE_ALLOC_SIZE*THREAD_STACK_SIZE, PROT_READ|PROT_WRITE, 

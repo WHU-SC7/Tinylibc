@@ -315,6 +315,53 @@ int tlibc_recursive_mkdir(const char *path){
     return 0;
 }
 
+/* Recursively counts all files under a directory (including files in subdirectories).
+   Returns the total count, or -1 on error. Path must be a directory. */
+int tlibc_recursive_count_file(const char *path)
+{
+    int ret = tlibc_is_path_dir(path);
+    if (ret < 0) {
+        return -1;  // Not found
+    }
+    if (ret == 0) {
+        return 1;   // It's a file, count it
+    }
+
+    /* It's a directory — open and iterate */
+    int dir_fd = openat(AT_FDCWD, path, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0644);
+    if (dir_fd < 0) {
+        return -1;
+    }
+
+    char *buf = (char *)mmap(0, TLIBC_BUF_SIZE, PROT_READ | PROT_WRITE,
+                              MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    if (buf == MAP_FAILED) {
+        close(dir_fd);
+        return -1;
+    }
+
+    int total = 0;
+    ssize_t n;
+    while ((n = getdents64(dir_fd, (struct linux_dirent64 *)buf, TLIBC_BUF_SIZE)) > 0) {
+        struct linux_dirent64 *data = (struct linux_dirent64 *)buf;
+        while ((char *)data < buf + n) {
+            if (strcmp(data->d_name, ".") != 0 && strcmp(data->d_name, "..") != 0) {
+                char sub_path[1024];
+                snprintf(sub_path, sizeof(sub_path), "%s/%s", path, data->d_name);
+                int sub_count = tlibc_recursive_count_file(sub_path);
+                if (sub_count > 0) {
+                    total += sub_count;
+                }
+            }
+            data = (struct linux_dirent64 *)((char *)data + data->d_reclen);
+        }
+    }
+
+    munmap(buf, TLIBC_BUF_SIZE);
+    close(dir_fd);
+    return total;
+}
+
 //获取目录下的文件数量，路径不存在或不是目录返回-1
 int tlibc_get_file_num(const char *dir_path){
     int dir_fd = openat(AT_FDCWD, dir_path, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0644);

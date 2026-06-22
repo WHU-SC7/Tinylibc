@@ -54,6 +54,11 @@
 #define SYS_accept      __NR_accept
 #define SYS_recvfrom    __NR_recvfrom
 
+#define SYS_fcntl       __NR_fcntl
+#define SYS_dup         __NR_dup
+#define SYS_dup2        __NR_dup2
+#define SYS_dup3        __NR_dup3
+
 #define SYS_getuid       __NR_getuid
 
 #define SYS_chmod       __NR_chmod

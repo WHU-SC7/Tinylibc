@@ -51,6 +51,7 @@ char *default_envp[]={
     NULL
 };
 int flag_count = 0;
+static int g_max_jobs = 1;  // 并行编译任务数，默认串行
 
 int copy_gcc_flags(char **dest){
     int i=0;
@@ -79,14 +80,8 @@ int copy_default_ld_flags(char **dest){
     return i; //返回复制的参数数量
 }
 
-int compile_file(const char *file_path, char *output_path){
-    int pid = fork();
-    char *gcc_flags[256];
-    int flag_num = copy_gcc_flags(gcc_flags);
-    gcc_flags[flag_num++] = "-c";//只编译
-    gcc_flags[flag_num++] = (char *)file_path;
-    gcc_flags[flag_num++] = "-o";//指定目标文件路径
-    //构造目标文件路径
+// Fork + execve gcc 编译一个源文件，返回子进程PID。fork失败返回 -1。
+int compile_file_start(const char *file_path, char *output_path){
     char obj_file_path[512];
     char *file_name = strrchr(file_path, '/');
     snprintf(obj_file_path, 512, "%s", build_path);
@@ -95,39 +90,49 @@ int compile_file(const char *file_path, char *output_path){
     }
     if(file_name){
         snprintf(obj_file_path + strlen(obj_file_path), 512 - strlen(obj_file_path), "/%s", file_name + 1);
-        //把.c和.S后缀改为.o
         char *dot = strrchr(obj_file_path, '.');
         if(dot){
             strcpy(dot, ".o");
         }
     }
-    gcc_flags[flag_num++] = obj_file_path;
-    gcc_flags[flag_num] = NULL;
+    int pid = fork();
     if(pid == 0){
-        //打印出命令
-        // printf("执行命令: %s", default_gcc_path);
-        // for(int i = 0; gcc_flags[i] != NULL; i++){
-        //     printf(" %s", gcc_flags[i]);
-        // }
-        // printf("\n");
+        char *gcc_flags[256];
+        int flag_num = copy_gcc_flags(gcc_flags);
+        gcc_flags[flag_num++] = "-c";
+        gcc_flags[flag_num++] = (char *)file_path;
+        gcc_flags[flag_num++] = "-o";
+        gcc_flags[flag_num++] = obj_file_path;
+        gcc_flags[flag_num] = NULL;
         execve(default_gcc_path, gcc_flags, default_envp);
+        exit(127);
     }
-    else{
-        int status;
-        waitpid(-1,&status,0);
-        if(status == 0){
-            // printf("编译成功\n");
-            return 0;
-        }
-        else{
-            printf("编译失败, 状态码: %d\n", status);
-            if(status == 256){
-                exit_group(-1); //编译失败，退出
-            }
-            return -1;
-        }
+    return pid;
+}
+
+// 等待指定编译子进程结束，返回wait原始状态码。
+int compile_file_wait(int pid){
+    int status;
+    waitpid(pid, &status, 0);
+    return status;
+}
+
+// 串行编译：启动+等待。编译错误时保留exit_group(-1)行为。
+int compile_file(const char *file_path, char *output_path){
+    int pid = compile_file_start(file_path, output_path);
+    if(pid < 0){
+        printf("编译失败, 无法创建子进程\n");
+        return -1;
     }
-    return 0;
+    int status = compile_file_wait(pid);
+    if(status == 0){
+        return 0;
+    }
+    printf("编译失败, 状态码: %d\n", status);
+    if(status == 256){
+        exit_group(-1);
+    }
+    return -1;
 }
 
 //根据路径和文件名来编译
@@ -137,8 +142,72 @@ int compile_path_file(char *path, char *file_name, char *output_path){
     return compile_file(file_path, output_path);
 }
 
+// 并行编译指定path下的所有文件，最多同时运行max_jobs个gcc进程
+int parallel_compile_task(char *path, int max_jobs){
+    int files_count = tlibc_get_file_count(path);
+    printf("要编译的文件数量: %d, 并行任务数: %d\n", files_count, max_jobs);
+    if(files_count <= 0){
+        printf("没有要编译的文件，或者获取文件数量失败, 跳过路径%s的编译: %d\n", path, files_count);
+        return -1;
+    }
+    char **file_name_list = (char **)tlibc_malloc(files_count * sizeof(char *));
+    char *file_name_buf = (char *)tlibc_malloc(files_count * 256);
+    for(int i = 0; i < files_count; i++) {
+        file_name_list[i] = file_name_buf + i * 256;
+    }
+    files_count = tlibc_get_file_name_list(path, (uint64_t)file_name_list, files_count);
+    char buf[1024];
+    snprintf(buf, 1024, "build/%s", path);
+    tlibc_recursive_mkdir(buf);
+
+    if(max_jobs > files_count) max_jobs = files_count;
+    int pids[max_jobs];
+    int active = 0, next = 0, failed = 0;
+
+    while(next < files_count || active > 0){
+        // 启动新编译任务，直到达到上限或全部启动
+        while(active < max_jobs && next < files_count && !failed){
+            char file_path[512];
+            snprintf(file_path, 512, "%s/%s", path, file_name_list[next]);
+            printf("编译文件%d: %s\n", next, file_name_list[next]);
+            int pid = compile_file_start(file_path, path);
+            if(pid > 0){
+                pids[active++] = pid;
+            }
+            next++;
+        }
+        if(active == 0) break;
+
+        // 等待任意子进程结束
+        int status;
+        int done_pid = waitpid(-1, &status, 0);
+        if(done_pid <= 0) break;
+
+        // 从活跃列表中移除已完成的PID
+        for(int i = 0; i < active; i++){
+            if(pids[i] == done_pid){
+                pids[i] = pids[active - 1];
+                active--;
+                break;
+            }
+        }
+
+        if(status != 0){
+            printf("编译失败, 状态码: %d\n", status);
+            failed = 1;
+        }
+    }
+
+    munmap(file_name_list, files_count * sizeof(char *));
+    munmap(file_name_buf, files_count * 256);
+    return failed ? -1 : 0;
+}
+
 //编译指定path下的所有文件
 int compile_task(char *path){
+    if(g_max_jobs > 1){
+        return parallel_compile_task(path, g_max_jobs);
+    }
     int files_count = tlibc_get_file_count(path);
     printf("要编译的文件数量: %d\n", files_count);
     if(files_count <= 0){
@@ -200,7 +269,7 @@ int ar_library(char *build_path){
     }
     else{
         int status;
-        waitpid(-1,&status,0);
+        waitpid(pid,&status,0);
         munmap(file_name_list, files_count * sizeof(char *));
         munmap(file_name_buf, files_count * 256);
         if(status == 0){
@@ -215,10 +284,8 @@ int ar_library(char *build_path){
     return 0;
 }
 
-//把指定的.o文件与静态库文件链接，输出到output_path中
-int link_app(char *app_path, char *output_path){
-    
-    //构建ld的参数
+// Fork + execve ld 链接一个.o文件，返回子进程PID
+int link_app_start(char *app_path, char *output_path){
     char *ld_flags[1024];
     int flag_num = copy_default_ld_flags(ld_flags);
 //必须把库文件放在应用程序后面，否则连接器会认为库文件没有用到，导致库文件中的函数无法链接成功，出现undefined reference错误
@@ -234,45 +301,46 @@ int link_app(char *app_path, char *output_path){
         return -1;
     }
     snprintf(output, 1024, "%s/%s", output_path, app_name + 1);
-    //去掉结尾的.o
     char *dot = strrchr(output, '.');
     if(dot){
         strcpy(dot, "");
     }
     ld_flags[flag_num++] = "-o";
-    ld_flags[flag_num++] = output; //输出文件名
-
+    ld_flags[flag_num++] = output;
     ld_flags[flag_num] = NULL;
-    //打印参数
-    // for(int i=0; ld_flags[i] != NULL; i++){
-    //     printf("ld参数%d: %s\n", i, ld_flags[i]);
-    // }
+
     int pid = fork();
     if(pid == 0){
-        // printf("执行命令: %s", default_ld_path);
-        // for(int i = 0; ld_flags[i] != NULL; i++){
-        //     printf(" %s", ld_flags[i]);
-        // }
-        // printf("\n");
         execve(default_ld_path, ld_flags, default_envp);
+        exit(127);
     }
-    else{
-        int status;
-        waitpid(-1,&status,0);
-        if(status == 0){
-            // printf("链接应用程序成功\n");
-            return 0;
-        }
-        else{
-            printf("链接应用程序失败, 状态码: %d\n", status);
-            return -1;
-        }
+    return pid;
+}
+
+// 等待指定链接子进程结束，返回0成功，-1失败
+int link_app_wait(int pid){
+    int status;
+    waitpid(pid, &status, 0);
+    if(status == 0){
+        return 0;
     }
-    return 0;
+    printf("链接应用程序失败, 状态码: %d\n", status);
+    return -1;
+}
+
+// 串行链接：启动+等待
+int link_app(char *app_path, char *output_path){
+    int pid = link_app_start(app_path, output_path);
+    if(pid < 0) return -1;
+    return link_app_wait(pid);
 }
 
 //链接指定all_app_path下的所有.o文件，输出到output_path中
+int parallel_link_task(char *all_app_path, char *output_path, int max_jobs);
 int link_task(char *all_app_path, char *output_path){
+    if(g_max_jobs > 1){
+        return parallel_link_task(all_app_path, output_path, g_max_jobs);
+    }
     int files_count = tlibc_get_file_count(all_app_path);
     if(files_count < 0){
         printf("获取文件数量失败, 路径%s, 跳过app链接\n", all_app_path, files_count);
@@ -294,6 +362,61 @@ int link_task(char *all_app_path, char *output_path){
     munmap(file_name_list, files_count * sizeof(char *));
     munmap(file_name_buf, files_count * 256);
     return 0;
+}
+
+// 并行链接指定路径下的所有.o文件，最多同时运行max_jobs个ld进程
+int parallel_link_task(char *all_app_path, char *output_path, int max_jobs){
+    int files_count = tlibc_get_file_count(all_app_path);
+    if(files_count < 0){
+        printf("获取文件数量失败, 路径%s, 跳过app链接\n", all_app_path, files_count);
+        return -1;
+    }
+    printf("要链接的文件数量: %d, 并行任务数: %d\n", files_count, max_jobs);
+    char **file_name_list = (char **)tlibc_malloc(files_count * sizeof(char *));
+    char *file_name_buf = (char *)tlibc_malloc(files_count * 256);
+    for(int i = 0; i < files_count; i++) {
+        file_name_list[i] = file_name_buf + i * 256;
+    }
+    files_count = tlibc_get_file_name_list(all_app_path, (uint64_t)file_name_list, files_count);
+
+    if(max_jobs > files_count) max_jobs = files_count;
+    int pids[max_jobs];
+    int active = 0, next = 0, failed = 0;
+
+    while(next < files_count || active > 0){
+        while(active < max_jobs && next < files_count && !failed){
+            char file_path[512];
+            snprintf(file_path, 512, "%s/%s", all_app_path, file_name_list[next]);
+            printf("链接文件%d: %s\n", next, file_path);
+            int pid = link_app_start(file_path, output_path);
+            if(pid > 0){
+                pids[active++] = pid;
+            }
+            next++;
+        }
+        if(active == 0) break;
+
+        int status;
+        int done_pid = waitpid(-1, &status, 0);
+        if(done_pid <= 0) break;
+
+        for(int i = 0; i < active; i++){
+            if(pids[i] == done_pid){
+                pids[i] = pids[active - 1];
+                active--;
+                break;
+            }
+        }
+
+        if(status != 0){
+            printf("链接应用程序失败, 状态码: %d\n", status);
+            failed = 1;
+        }
+    }
+
+    munmap(file_name_list, files_count * sizeof(char *));
+    munmap(file_name_buf, files_count * 256);
+    return failed ? -1 : 0;
 }
 
 //把app_path下的文件复制到install_path下，默认应该安装到~/tlibc/bin
@@ -395,8 +518,80 @@ int link_recursive_task(char *path, char *output_path){
     return 0;
 }
 
+// 简单字符串转数字（项目无stdlib，自实现）
+static int parse_int(const char *s){
+    int n = 0;
+    while(*s >= '0' && *s <= '9'){
+        n = n * 10 + (*s - '0');
+        s++;
+    }
+    return n;
+}
+
+// 读取 /proc/cpuinfo，统计 processor 行数得到在线 CPU 数量
+static int get_nprocs(void){
+    char buf[4096];
+    int fd = openat(AT_FDCWD, "/proc/cpuinfo", O_RDONLY, 0);
+    if(fd < 0) return 1;
+    int n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if(n <= 0) return 1;
+    buf[n] = '\0';
+
+    int count = 0;
+    for(int i = 0; i < n - 8; i++){
+        if(buf[i] == 'p' && buf[i+1] == 'r' && buf[i+2] == 'o' &&
+           buf[i+3] == 'c' && buf[i+4] == 'e' && buf[i+5] == 's' &&
+           buf[i+6] == 's' && buf[i+7] == 'o' && buf[i+8] == 'r'){
+            count++;
+        }
+    }
+    return count > 0 ? count : 1;
+}
+
+// 获取单调时间（毫秒），用于阶段计时
+static long get_ms(void){
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000L + ts.tv_nsec / 1000000L;
+}
+
+// 统计 flat 目录下所有文件的总字节数
+static long sum_file_sizes(const char *path){
+    int n = tlibc_get_file_count(path);
+    if(n <= 0) return 0;
+    char **names = (char **)tlibc_malloc(n * sizeof(char *));
+    char *buf = (char *)tlibc_malloc(n * 256);
+    for(int i = 0; i < n; i++) names[i] = buf + i * 256;
+    n = tlibc_get_file_name_list(path, (uint64_t)names, n);
+    long total = 0;
+    for(int i = 0; i < n; i++){
+        char full[512];
+        snprintf(full, 512, "%s/%s", path, names[i]);
+        int len = tlibc_get_file_len(full);
+        if(len > 0) total += len;
+    }
+    munmap(names, n * sizeof(char *));
+    munmap(buf, n * 256);
+    return total;
+}
+
 int main(int argc, char *argv[]){
-    
+
+    // 先处理 --help / -h，不依赖项目目录
+    for(int i = 1; i < argc; i++){
+        if(strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0){
+            printf("Tinylibc 自托管构建工具\n");
+            printf("\n用法: tmake [-j [N]]\n");
+            printf("\n选项:\n");
+            printf("  -h, --help     显示本帮助信息\n");
+            printf("  -j [N]         并行编译，N 为并行任务数\n");
+            printf("                  不传 N 时自动检测 CPU 核数\n");
+            printf("                  不传 -j 时串行编译（默认）\n");
+            return 0;
+        }
+    }
+
     //检查工作目录是否是Tinylibc项目，以tlibc_everything.h为标志
     memset(pwd, 0, sizeof(pwd));
     getcwd(pwd, 512);
@@ -405,7 +600,7 @@ int main(int argc, char *argv[]){
         printf("当前目录不是Tinylibc项目! 切换到Tinylibc项目目录再尝试tmake生成!\n");
         return 1;
     }
-    
+
     //删除build然后重新创建
     ret = tlibc_recursive_rm_dir("build");
     printf("删除build目录成功\n");
@@ -417,26 +612,78 @@ int main(int argc, char *argv[]){
     }
     printf("创建build目录成功\n");
 
+    // 解析 -j [N] 参数
+    for(int i = 1; i < argc; i++){
+        if(strcmp(argv[i], "-j") == 0){
+            if(i + 1 < argc && argv[i+1][0] >= '0' && argv[i+1][0] <= '9'){
+                g_max_jobs = parse_int(argv[i + 1]);
+            } else {
+                g_max_jobs = get_nprocs();
+                printf("检测到 CPU 核数: %d\n", g_max_jobs);
+            }
+            if(g_max_jobs < 1) g_max_jobs = 1;
+            if(g_max_jobs > 64) g_max_jobs = 64;
+            break;
+        }
+    }
+
     char *exe_path = "build/output";
-    
+
     printf("当前目录: %s\n", pwd);
-    char absolute_lib_path[1024];
-    snprintf(absolute_lib_path, 1024, "%s/lib", pwd);
+
+    long t_start, t_compile_lib, t_ar, t_compile_app, t_link, t_install, t_total;
+    t_total = get_ms();
+
+    t_start = get_ms();
     compile_task("lib");
+    t_compile_lib = get_ms() - t_start;
+
+    t_start = get_ms();
     ar_library("./build/lib");
     tlibc_copy_file("./build/lib/tlibc.a", "./build/tlibc.a");
+    t_ar = get_ms() - t_start;
 
-    // compile_task("app");
-    // compile_task("app/coreutils");
-    // tlibc_recursive_mkdir("build/output");
-    // link_task("build/app", exe_path);
-    // link_task("build/app/coreutils", exe_path);
-
+    t_start = get_ms();
     tlibc_recursive_mkdir("build/output");
     compile_recursive_task("app");
-    link_recursive_task("build/app", "build/output");
+    t_compile_app = get_ms() - t_start;
 
+    t_start = get_ms();
+    link_recursive_task("build/app", "build/output");
+    t_link = get_ms() - t_start;
+
+    t_start = get_ms();
     install(exe_path);
-    //处理参数，可生成不同的目标
+    t_install = get_ms() - t_start;
+
+    t_total = get_ms() - t_total;
+
+    // 统计信息
+    int lib_o_count = tlibc_get_file_count("build/lib");
+    lib_o_count = lib_o_count < 0 ? 0 : lib_o_count;
+    int lib_a_size = tlibc_get_file_len("build/lib/tlibc.a");
+    lib_a_size = lib_a_size < 0 ? 0 : lib_a_size;
+    int exe_count = tlibc_get_file_count(exe_path);
+    exe_count = exe_count < 0 ? 0 : exe_count;
+    long exe_total_size = sum_file_sizes(exe_path);
+
+    printf("\n========== 构建报告 ==========\n");
+    printf("并行任务数:       %d\n", g_max_jobs);
+    printf("-------------------------------\n");
+    printf("阶段               耗时(ms)\n");
+    printf("编译 lib           %ld\n", t_compile_lib);
+    printf("归档 lib           %ld\n", t_ar);
+    printf("编译 app           %ld\n", t_compile_app);
+    printf("链接 app           %ld\n", t_link);
+    printf("安装               %ld\n", t_install);
+    printf("-------------------------------\n");
+    printf("总计               %ld\n", t_total);
+    printf("-------------------------------\n");
+    printf("lib 目标文件数:    %d\n", lib_o_count);
+    printf("tlibc.a 大小:      %d bytes\n", lib_a_size);
+    printf("可执行文件数:      %d\n", exe_count);
+    printf("可执行文件总大小:  %ld bytes\n", exe_total_size);
+    printf("==============================\n");
+
     return 0;
 }

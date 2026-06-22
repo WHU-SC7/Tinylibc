@@ -1,0 +1,80 @@
+#!/bin/sh
+# post-commit hook — 自动将刚提交写入 CLAUDE_COMMITS.md（时间倒序）
+#
+# 新条目插入在同一天的最前面（紧跟 ## YYYY-MM-DD 之后）。
+# 如果当天还不存在日期标题，按时间顺序插入到正确位置。
+
+COMMITS_FILE="CLAUDE_COMMITS.md"
+[ -f "$COMMITS_FILE" ] || exit 0
+
+# ── 收集提交信息 ──────────────────────────────────────────
+
+HASH=$(git log -1 --format="%h")
+DATE_ONLY=$(git log -1 --format="%ai" | awk '{print $1}')
+TIME_ONLY=$(git log -1 --format="%ai" | awk '{print $2}' | cut -c1-5)
+SUBJECT=$(git log -1 --format="%s")
+
+# 避免递归：跳过对 CLAUDE_COMMITS.md 本身的更新提交
+echo "$SUBJECT" | grep -qiE "CLAUDE_COMMITS|claude_commits" && exit 0
+
+TYPE=$(echo "$SUBJECT" | sed -n 's/^\([a-z]*\):.*/\1/p')
+if [ -z "$TYPE" ]; then
+    TYPE="chore"
+    TITLE="$SUBJECT"
+else
+    TITLE=$(echo "$SUBJECT" | sed 's/^[a-z]*: //')
+fi
+ENTRY="### \`$HASH\` $TIME_ONLY — $TYPE: $TITLE"
+
+# ── 用 awk 插入条目（时间倒序）────────────────────────────
+
+TMP=$(mktemp)
+trap 'rm -f "$TMP"' EXIT
+
+awk \
+  -v today="$DATE_ONLY" \
+  -v entry="$ENTRY" \
+'
+BEGIN   { found=0; printed=0 }
+
+# 命中日期标题行
+/^## [0-9]{4}-[0-9]{2}-[0-9]{2}$/ {
+    if (found || printed) { print; next }          # 已处理过 → 原样输出
+
+    if ($0 == "## " today) {
+        found = 1
+        print $0                                   # ## 2026-06-22
+        print ""
+        print entry                                 # 新条目插在最前面
+        print ""
+        print "---"
+        # 跳过紧跟日期标题的空行（原已有的）
+        while (getline > 0 && $0 ~ /^[[:space:]]*$/) {}
+        print                                       # 打印第一个非空行（原第一个条目）
+        next
+    }
+
+    # 当前日期早于 today → 在此处插入 today 的整段
+    printed = 1
+    print "## " today
+    print ""
+    print entry
+    print ""
+    print ""                                          # 留空行再输出原日期
+    print $0
+    next
+}
+
+{ print }                                             # 其余行原样输出
+
+END {
+    if (!found && !printed) {
+        print "## " today
+        print ""
+        print entry
+        print ""
+    }
+}
+' "$COMMITS_FILE" > "$TMP" && cp "$TMP" "$COMMITS_FILE"
+
+echo "  📝 $COMMITS_FILE 已更新（$HASH），工作区有未暂存的修改。"

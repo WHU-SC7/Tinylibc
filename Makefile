@@ -130,3 +130,40 @@ glibc: clean
 
 tlibc: __x86_64
 	./build/bin/exp
+# ─── Git hooks ───────────────────────────────────────────
+
+HOOKS_PATH := .githooks
+
+# 如果 hooks 未配置，在首次构建时提醒
+__x86_64: git-hook-notice
+
+git-hook-notice:
+	@CURRENT=$$(git config core.hooksPath 2>/dev/null); \
+	if [ "$$CURRENT" != "$(HOOKS_PATH)" ]; then \
+		echo "  ℹ  Git commit-msg hook 未设置。运行 'make init-hooks' 启用格式校验。"; \
+	fi
+
+.PHONY: init-hooks check-hooks git-hook-notice
+
+init-hooks:
+	@git config core.hooksPath $(HOOKS_PATH)
+	@echo "  ✔ Git hooksPath -> $(HOOKS_PATH)"
+	@echo "    提交信息格式校验已启用。格式: <type>: <中文标题>"
+	@echo "    绕过: git commit --no-verify"
+	@ls .githooks/ 2>/dev/null | while read f; do \
+		echo "    hook: $$f"; \
+	done
+
+check-hooks:
+	@CURRENT=$$(git config core.hooksPath 2>/dev/null); \
+	if [ -z "$$CURRENT" ]; then \
+		echo "  ✖ Git hooks 未配置"; \
+		echo "    运行 'make init-hooks' 启用"; \
+	elif [ "$$CURRENT" = "$(HOOKS_PATH)" ]; then \
+		echo "  ✔ Git hooksPath = $$CURRENT"; \
+		ls .githooks/ 2>/dev/null | while read f; do \
+			echo "    active hook: $$f"; \
+		done; \
+	else \
+		echo "  ! Git hooksPath = $$CURRENT (非项目默认)"; \
+	fi

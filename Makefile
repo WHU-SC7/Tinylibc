@@ -130,35 +130,36 @@ glibc: clean
 
 tlibc: __x86_64
 	./build/bin/exp
-# ─── Git hooks ───────────────────────────────────────────
+# ─── Git hooks（新机器自动设置）────────────────────────────
 
 HOOKS_PATH := .githooks
 
-# 如果 hooks 未配置，在首次构建时提醒
-__x86_64: git-hook-notice
+# 构建时自动配置 hooks（如果尚未设置）
+__x86_64: git-hooks-setup
 
-git-hook-notice:
+git-hooks-setup:
 	@CURRENT=$$(git config core.hooksPath 2>/dev/null); \
 	if [ "$$CURRENT" != "$(HOOKS_PATH)" ]; then \
-		echo "  ℹ  Git commit-msg hook 未设置。运行 'make init-hooks' 启用格式校验。"; \
+		echo "  → 初始化 Git hooks ($(HOOKS_PATH))..."; \
+		git config core.hooksPath $(HOOKS_PATH); \
+		chmod +x .githooks/* 2>/dev/null; \
+		echo "  ✔ commit-msg 格式校验 + post-commit 自动记录"; \
 	fi
 
-.PHONY: init-hooks check-hooks git-hook-notice
+.PHONY: init-hooks check-hooks git-hooks-setup
 
-init-hooks:
-	@git config core.hooksPath $(HOOKS_PATH)
-	@echo "  ✔ Git hooksPath -> $(HOOKS_PATH)"
-	@echo "    提交信息格式校验已启用。格式: <type>: <中文标题>"
-	@echo "    绕过: git commit --no-verify"
+init-hooks: git-hooks-setup
+	@echo "  ✔ Git hooks 已就绪"
 	@ls .githooks/ 2>/dev/null | while read f; do \
-		echo "    hook: $$f"; \
+		echo "    active hook: $$f"; \
 	done
+	@echo "    绕过: git commit --no-verify"
 
 check-hooks:
 	@CURRENT=$$(git config core.hooksPath 2>/dev/null); \
 	if [ -z "$$CURRENT" ]; then \
 		echo "  ✖ Git hooks 未配置"; \
-		echo "    运行 'make init-hooks' 启用"; \
+		echo "    make all 会自动设置，或运行 'make init-hooks'"; \
 	elif [ "$$CURRENT" = "$(HOOKS_PATH)" ]; then \
 		echo "  ✔ Git hooksPath = $$CURRENT"; \
 		ls .githooks/ 2>/dev/null | while read f; do \
@@ -166,4 +167,5 @@ check-hooks:
 		done; \
 	else \
 		echo "  ! Git hooksPath = $$CURRENT (非项目默认)"; \
+		echo "    项目期望: $(HOOKS_PATH)"; \
 	fi

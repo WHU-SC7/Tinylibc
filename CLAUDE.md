@@ -10,7 +10,10 @@
 make all       # 两阶段：先 Makefile 编译 tmake+shell，再用 tmake 递归构建所有 app
 make run       # 编译后进入 shell
 make clean     # rm -rf build/
+make init-hooks # 初始化 Git hooks（make all 自动配置，通常不需手动）
 ```
+
+> 新机器只需 `git clone && make all` 即可。Git hooks（commit-msg 格式校验 + post-commit 自动记录）由构建流程自动设置。
 
 `app/tmake.c` 是自托管构建工具，支持 `-j [N]` 并行编译。
 

@@ -316,7 +316,9 @@ docs: 补充 CLAUDE_DETAILS.md 测试章节
 
 ### 提交记录（CLAUDE_COMMITS.md）
 
-所有 Claude 生成的提交应记入 `CLAUDE_COMMITS.md`，按日期和提交时间倒序排列：
+每次 `git commit` 成功后，`.githooks/post-commit` 自动将本次提交信息写入 `CLAUDE_COMMITS.md`（按日期、时间倒序），然后通过 `git commit --amend --no-edit` 将这份记录**附加到本次提交自身**。即一次工作 = 一条提交（代码 + 记录合一），不再需要单独的 `docs: 记录到 CLAUDE_COMMITS.md` 提交。
+
+**格式：**
 
 ```
 ## YYYY-MM-DD
@@ -337,3 +339,15 @@ docs: 补充 CLAUDE_DETAILS.md 测试章节
 本规范对人和 LLM 同等重要：
 - **对人类**——标题+标签让 changelog 一目了然，body 提供上下文
 - **对 LLM**——标签提供了可 parse 的语义分类，`Co-Authored-By` 让 git log 可被 grep 以识别哪次提交是 Claude 生成的
+
+### Git Hooks 系统
+
+项目在 `.githooks/` 中管理 Git hooks，通过 `git config core.hooksPath .githooks` 激活：
+
+| Hook | 文件 | 作用 |
+|------|------|------|
+| `commit-msg` | `.githooks/commit-msg` | 校验提交信息格式：`<type>: <中文标题>` |
+| `post-commit` | `.githooks/post-commit` | 写入 CLAUDE_COMMITS.md + `git commit --amend` 附到本次提交 |
+
+`make all` 会在首次构建时自动配置 hooks。也可单独运行 `make init-hooks`。
+绕过校验：`git commit --no-verify`。

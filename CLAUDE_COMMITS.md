@@ -7,6 +7,9 @@
 
 ## 2026-06-23
 
+### `290b6b4` 00:21 — refactor: post-commit hook 自动 amend，Makefile 新机器自动配置 hooks
+
+---
 ### `eb80186` 00:04 — feat: 扩展系统调用包装、printf格式化、hexdump工具，修复pthread_join
 
 

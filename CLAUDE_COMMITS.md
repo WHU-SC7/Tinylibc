@@ -7,6 +7,16 @@
 
 ## 2026-06-23
 
+### 16:55 — feat: 添加 SSH 远程 Shell 程序（服务端 + 客户端）
+
+- `app/net/sshd.c`: TCP 服务端，密码认证 + fork/execve /bin/sh
+- `app/net/ssh.c`: TCP 客户端，双线程双向转发 + 本地回显
+- `lib/net.c` / `include/net.h`: 添加 shutdown() 系统调用包装
+- `include/socket.h`: 添加 SHUT_RD/SHUT_WR/SHUT_RDWR 常量
+- `arch/x86_64/syscall_num.h`: 修复 SYS_shutdown 为真实 __NR_shutdown (48)
+
+---
+
 ### 11:13 — refactor: 将提交记录写入逻辑迁移到 commit-msg hook
 
 pre-commit hook 在提交信息尚未就绪时运行，COMMIT_EDITMSG

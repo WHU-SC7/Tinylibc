@@ -28,6 +28,7 @@ int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 int listen(int sockfd, int backlog);
 int accept(int sockfd, struct sockaddr *addr,socklen_t *addrlen);
 ssize_t recv(int sockfd, void *buf, size_t len, int flags);
+int shutdown(int sockfd, int how);
 
 unsigned short tlibc_htons(unsigned short host_val);
 char* tlibc_inet_ntoa(struct in_addr in);

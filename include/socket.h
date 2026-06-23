@@ -64,5 +64,10 @@ enum __socket_type
 #define SO_REUSEADDR  2
 #define INADDR_ANY   (0x00000000) //bind
 
+/* shutdown() how 参数 */
+#define SHUT_RD   0
+#define SHUT_WR   1
+#define SHUT_RDWR 2
+
 
 #endif

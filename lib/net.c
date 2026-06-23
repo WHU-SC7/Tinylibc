@@ -37,6 +37,11 @@ ssize_t recv(int sockfd, void *buf, size_t len, int flags)
     return syscall(SYS_recvfrom, sockfd, buf, len, flags);
 }
 
+int shutdown(int sockfd, int how)
+{
+    return syscall(SYS_shutdown, sockfd, how);
+}
+
 /* 库函数 */
 
 //x86_64的小端字节序转换为网络的大端

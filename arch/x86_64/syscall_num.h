@@ -64,5 +64,4 @@
 #define SYS_chmod       __NR_chmod
 #define SYS_stat        __NR_stat
 
-// SC7自定义，在qemu才有效
-#define SYS_shutdown 1000
+#define SYS_shutdown    __NR_shutdown

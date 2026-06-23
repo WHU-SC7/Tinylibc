@@ -38,7 +38,7 @@ make init-hooks # 初始化 Git hooks（make all 自动配置，通常不需手�
 | `file.c` | `tlibc_get_file_count`, `tlibc_recursive_mkdir`, `tlibc_copy_file` 等 |
 | `path.c` | 路径规范化 |
 | `tty.c` | 终端大小、raw 模式、按键处理 |
-| `net.c` | socket / connect / bind / listen / accept |
+| `net.c` | socket / connect / bind / listen / accept / shutdown |
 | `system.c` | `tlibc_get_user_dir`（解析 /etc/passwd） |
 | `envp.c` | 环境变量处理 |
 | `init.c` | `tlibc_init`：预分配线程栈 → 初始化内存池 → 调 main |
@@ -52,7 +52,7 @@ make init-hooks # 初始化 Git hooks（make all 自动配置，通常不需手�
 | `shell.c` | 交互式 shell |
 | `tmake.c` | 自托管构建工具（并行编译、链接） |
 | `coreutils/` | cat, cp, echo, ls, mkdir, mv, pwd, rm, rmdir, touch |
-| `net/` | client, server, http, tclient, tserver |
+| `net/` | client, server, http, tclient, tserver, ssh, sshd |
 | `term/` | vim, top, __game_pacman |
 | `test/` | 内部测试 |
 | `paper/` | 与 glibc 对比实验 |
@@ -117,7 +117,7 @@ make init-hooks # 初始化 Git hooks（make all 自动配置，通常不需手�
 
 - 标题用中文，一行；body 用中文或英文要点
 - Claude 提交须在末尾加 `Co-Authored-By: Claude <noreply@anthropic.com>`
-- 提交记录记入 `CLAUDE_COMMITS.md`，格式：``### HH:MM — type: title``（手动维护）
+- 提交记录记入 `CLAUDE_COMMITS.md`，格式：``### HH:MM — type: title``（按需总结，非每次提交）
 - 完整规范见 `CLAUDE_DETAILS.md`
 
 ### 编程规则

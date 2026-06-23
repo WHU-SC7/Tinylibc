@@ -1,0 +1,80 @@
+#!/bin/sh
+# pre-commit hook — 将本次提交信息写入 CLAUDE_COMMITS.md
+#
+# 在提交创建前运行，读取 COMMIT_EDITMSG 获取标题，
+# 将条目插入 CLAUDE_COMMITS.md 并暂存，使提交本身包含该更新。
+# 无需 amend，无需递归守卫，无 hash stale 问题。
+
+COMMITS_FILE="CLAUDE_COMMITS.md"
+[ -f "$COMMITS_FILE" ] || exit 0
+
+# ── 读取即将提交的标题 ──────────────────────────────────
+MSG_FILE="$(git rev-parse --git-dir 2>/dev/null)/COMMIT_EDITMSG"
+[ -f "$MSG_FILE" ] || exit 0
+SUBJECT=$(head -1 "$MSG_FILE")
+
+# 跳过对 CLAUDE_COMMITS.md 本身的提交
+echo "$SUBJECT" | grep -qiE "CLAUDE_COMMITS|claude_commits" && exit 0
+
+# ── 收集信息（无 hash ─ commit 尚未创建）─────────────────
+DATE_ONLY=$(date '+%Y-%m-%d')
+TIME_ONLY=$(date '+%H:%M')
+
+TYPE=$(echo "$SUBJECT" | sed -n 's/^\([a-z]*\):.*/\1/p')
+if [ -z "$TYPE" ]; then
+    TYPE="chore"
+    TITLE="$SUBJECT"
+else
+    TITLE=$(echo "$SUBJECT" | sed 's/^[a-z]*: //')
+fi
+ENTRY="### $TIME_ONLY — $TYPE: $TITLE"
+
+# ── 插入条目（时间倒序）───────────────────────────────────
+TMP=$(mktemp)
+trap 'rm -f "$TMP"' EXIT
+
+awk \
+  -v today="$DATE_ONLY" \
+  -v entry="$ENTRY" \
+'
+BEGIN   { found=0; printed=0 }
+
+/^## [0-9]{4}-[0-9]{2}-[0-9]{2}$/ {
+    if (found || printed) { print; next }
+
+    if ($0 == "## " today) {
+        found = 1
+        print $0
+        print ""
+        print entry
+        print ""
+        print "---"
+        while (getline > 0 && $0 ~ /^[[:space:]]*$/) {}
+        print
+        next
+    }
+
+    printed = 1
+    print "## " today
+    print ""
+    print entry
+    print ""
+    print ""
+    print $0
+    next
+}
+
+{ print }
+
+END {
+    if (!found && !printed) {
+        print "## " today
+        print ""
+        print entry
+        print ""
+    }
+}
+' "$COMMITS_FILE" > "$TMP" && cp "$TMP" "$COMMITS_FILE"
+
+# ── 暂存，让本次提交包含 CLAUDE_COMMITS.md 的更新 ────────
+git add "$COMMITS_FILE" 2>/dev/null

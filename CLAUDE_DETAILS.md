@@ -316,23 +316,22 @@ docs: 补充 CLAUDE_DETAILS.md 测试章节
 
 ### 提交记录（CLAUDE_COMMITS.md）
 
-每次 `git commit` 成功后，`.githooks/post-commit` 自动将本次提交信息写入 `CLAUDE_COMMITS.md`（按日期、时间倒序），然后通过 `git commit --amend --no-edit` 将这份记录**附加到本次提交自身**。即一次工作 = 一条提交（代码 + 记录合一），不再需要单独的 `docs: 记录到 CLAUDE_COMMITS.md` 提交。
+每次 `git commit` 时，`.githooks/pre-commit` 自动读取提交信息并写入 `CLAUDE_COMMITS.md`（按日期、时间倒序），然后 `git add` 将该修改**包含在本次提交中**。即一次工作 = 一条提交，代码与记录合一。
 
 **格式：**
 
 ```
 ## YYYY-MM-DD
 
-### `hash` HH:MM — type: 中文标题
+### HH:MM — type: 中文标题
 
 <变更要点，分点说明>
 ```
 
-- 标题行格式：三级标题，反引号包裹 7 位 hash，空格 + 时间（HH:MM），空格 + `—`，空格 + 完整 commit 标题
+- 标题行格式：三级标题，空格 + 时间（HH:MM），空格 + `—`，空格 + 完整 commit 标题
 - 同一日期的多个提交按时间倒序（最新的最上）
 - body 列出该次提交的主要变更点，不重复 commit message 全文
 - `---` 分隔线隔开相邻提交
-- 查看完整 diff：`git show <hash>`
 
 ### 共识
 
@@ -347,7 +346,8 @@ docs: 补充 CLAUDE_DETAILS.md 测试章节
 | Hook | 文件 | 作用 |
 |------|------|------|
 | `commit-msg` | `.githooks/commit-msg` | 校验提交信息格式：`<type>: <中文标题>` |
-| `post-commit` | `.githooks/post-commit` | 写入 CLAUDE_COMMITS.md + `git commit --amend` 附到本次提交 |
+| `pre-commit` | `.githooks/pre-commit` | 提交前写入 CLAUDE_COMMITS.md，自动 `git add` 纳入本次提交 |
+| `post-commit` | `.githooks/post-commit` | **已弃用**（旧方案：amend 附加记录，现由 pre-commit 替代） |
 
 `make all` 会在首次构建时自动配置 hooks。也可单独运行 `make init-hooks`。
 绕过校验：`git commit --no-verify`。

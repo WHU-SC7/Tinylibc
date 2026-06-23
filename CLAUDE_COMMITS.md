@@ -3,19 +3,22 @@
 本文件记录通过 Claude Code 生成代码的 git 提交，按时间倒序排列。
 所有 Claude 提交在 git log 中可通过 `Co-Authored-By: Claude` 检索。
 
-> 查看 diff：`git show <hash>` 或 `git log <hash>~1..<hash> -p`
+> 查看 diff：`git log --oneline` 按时间定位后 `git show <hash>`
 
 ## 2026-06-23
 
-### `290b6b4` 00:21 — refactor: post-commit hook 自动 amend，Makefile 新机器自动配置 hooks
+### 10:13 — refactor: post-commit hook 自动 amend，Makefile 新机器自动配置 hooks
 
 ---
-### `eb80186` 00:04 — feat: 扩展系统调用包装、printf格式化、hexdump工具，修复pthread_join
+### 00:21 — refactor: post-commit hook 自动 amend，Makefile 新机器自动配置 hooks
+
+---
+### 00:04 — feat: 扩展系统调用包装、printf格式化、hexdump工具，修复pthread_join
 
 
 ## 2026-06-22
 
-### `764d14a` 23:16 — feat: 添加 post-commit hook，自动写入 CLAUDE_COMMITS.md
+### 23:16 — feat: 添加 post-commit hook，自动写入 CLAUDE_COMMITS.md
 
 每次 git commit 成功后自动将提交信息写入 CLAUDE_COMMITS.md，
 新条目插入在同一天的最前面（时间倒序）。
@@ -23,7 +26,7 @@
 
 ---
 
-### `1c0d071` 23:09 — docs: 建立 git 提交规范，添加 commit-msg hook
+### 23:09 — docs: 建立 git 提交规范，添加 commit-msg hook
 
 CLAUDE.md — 精简为快速参考手册，新增类型标签表
 CLAUDE_DETAILS.md — 完整文档（测试框架 + git 提交规范）
@@ -33,7 +36,7 @@ Makefile — 添加 init-hooks / check-hooks 目标，修复 CRLF 行尾
 
 ---
 
-### `4d07e4c` 23:09 — test: 完善测试框架 tlibc_test.h，新增字符串测试 35 用例
+### 23:09 — test: 完善测试框架 tlibc_test.h，新增字符串测试 35 用例
 
 用完整的宏定义测试框架（TEST_START / TEST_ASSERT / TEST_PASS 等）
 替换原来的 tlibc_test 占位声明，支持计数、颜色输出、断言失败
@@ -42,7 +45,7 @@ strcpy/strncpy/strcmp/memcpy/strchr/itoa/strerror 共 35 个用例。
 
 ---
 
-### `a479ed6` 15:38 — build: tmake 支持 -j N 并行编译+链接+计时报告
+### 15:38 — build: tmake 支持 -j N 并行编译+链接+计时报告
 
 **编译与链接并行化：**
 - 拆分 `compile_file()` 为 `compile_file_start() / compile_file_wait()`
@@ -64,7 +67,7 @@ strcpy/strncpy/strcmp/memcpy/strchr/itoa/strerror 共 35 个用例。
 
 ---
 
-### `d65db26` 12:31 — docs: 补充 CLAUDE.md 阶段 3-4 约定，修复章节编号
+### 12:31 — docs: 补充 CLAUDE.md 阶段 3-4 约定，修复章节编号
 
 - 在 CLAUDE.md 中补充命名约定、编程规则
 - 修复章节编号连续性
@@ -72,7 +75,7 @@ strcpy/strncpy/strcmp/memcpy/strchr/itoa/strerror 共 35 个用例。
 
 ---
 
-### `e7d9fda` 12:27 — fix: 添加路径缓冲区长度参数，统一魔数常量 TLIBC_BUF_SIZE
+### 12:27 — fix: 添加路径缓冲区长度参数，统一魔数常量 TLIBC_BUF_SIZE
 
 - `lib/path.c`：为 `tlibc_cal_absolute_path` 添加 `max_len` 参数，用 `snprintf` 替代无长度检查的 `strcpy`
 - `include/tlibc_everything.h`：新增 `TLIBC_BUF_SIZE (1024*1024)` 统一宏
@@ -80,14 +83,14 @@ strcpy/strncpy/strcmp/memcpy/strchr/itoa/strerror 共 35 个用例。
 
 ---
 
-### `6a75096` 12:23 — refactor: 移除重复类型定义，标记竞态变量 volatile
+### 12:23 — refactor: 移除重复类型定义，标记竞态变量 volatile
 
 - `include/atomic.h`：移除重复的 `uint64_t`/`uint32_t` 类型定义，改为 `#include "tlibc_types.h"`
 - `include/init.h` + `lib/init.c`：`pre_alloc_stack` 和 `remain_thread_stack_num` 添加 `volatile` 限定
 
 ---
 
-### `e3977fd` 12:20 — style: 清理中文分析注释、死代码块，标准化 TODO
+### 12:20 — style: 清理中文分析注释、死代码块，标准化 TODO
 
 - `lib/path.c`：精简 150+ 行中文自省分析注释为英文 TODO，保留已知边界条件标注
 - `lib/pthread.c`：移除 pthread_join 中 30+ 行注释掉的旧实现，用英文说明异步回收设计
@@ -98,7 +101,7 @@ strcpy/strncpy/strcmp/memcpy/strchr/itoa/strerror 共 35 个用例。
 
 ---
 
-### `fa1cfd9` 12:07 — refactor: 统一 tlibc_ 前缀，消除符号冲突
+### 12:07 — refactor: 统一 tlibc_ 前缀，消除符号冲突
 
 **A 组 — POSIX 接口封装：**
 - `getuid()` → `tlibc_getuid()`

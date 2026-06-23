@@ -1,5 +1,0 @@
-#!/bin/sh
-# post-commit — 已废弃，功能移至 pre-commit
-# pre-commit hook 在提交创建前写入 CLAUDE_COMMITS.md 并暂存，
-# 提交本身自然包含该更新，无需 amend，无 hash stale 问题。
-exit 0

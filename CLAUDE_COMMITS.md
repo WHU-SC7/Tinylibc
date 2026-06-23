@@ -7,6 +7,17 @@
 
 ## 2026-06-23
 
+### 11:09 — docs: pre-commit hook 增加 body 提取功能
+
+pre-commit hook 现在会读取 COMMIT_EDITMSG 中 subject 之后的内容作为详细条目，
+自动写入 CLAUDE_COMMITS.md，匹配早期提交的详细记录风格。
+
+- 提取 commit body（跳过 subject 行和紧跟空行）
+- 过滤 Co-Authored-By 尾注（非提交内容）
+- 跳过条件增加 CLAUDE.md（防止递归）
+
+---
+
 ### 10:13 — refactor: 切换到 pre-commit hook，条目中去掉 hash
 
 ---

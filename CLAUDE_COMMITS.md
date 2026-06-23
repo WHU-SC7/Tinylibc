@@ -7,6 +7,21 @@
 
 ## 2026-06-23
 
+### 11:13 — refactor: 将提交记录写入逻辑迁移到 commit-msg hook
+
+pre-commit hook 在提交信息尚未就绪时运行，COMMIT_EDITMSG
+里装的还是上次提交的残留内容，导致条目信息错乱。
+
+将写入逻辑移至 commit-msg hook，此时消息文件（$1）已包含正确的
+提交信息。commit-msg 同时承担格式校验和 CLAUDE_COMMITS.md 写入。
+
+- pre-commit 降为 stub（原逻辑已废弃）
+- commit-msg 合并格式校验 + 写入 CLAUDE_COMMITS.md
+- 写入逻辑不变：提取 subject + body，过滤 Co-Authored-By
+- CLAUDE.md 更新描述：commit-msg 自动写入提交记录
+
+---
+
 ### 11:09 — docs: pre-commit hook 增加 body 提取功能
 
 pre-commit hook 现在会读取 COMMIT_EDITMSG 中 subject 之后的内容作为详细条目，

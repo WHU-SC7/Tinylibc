@@ -7,7 +7,7 @@
 
 ## 2026-06-23
 
-### 10:13 — refactor: post-commit hook 自动 amend，Makefile 新机器自动配置 hooks
+### 10:13 — refactor: 切换到 pre-commit hook，条目中去掉 hash
 
 ---
 ### 00:21 — refactor: post-commit hook 自动 amend，Makefile 新机器自动配置 hooks

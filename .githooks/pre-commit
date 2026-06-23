@@ -1,55 +1,5 @@
 #!/bin/sh
-# pre-commit hook — 将本次提交信息（含详细内容）写入 CLAUDE_COMMITS.md
-# 读取 COMMIT_EDITMSG → 提取 subject + body → 插入到日期标题下方 → git add
-
-COMMITS_FILE="CLAUDE_COMMITS.md"
-[ -f "$COMMITS_FILE" ] || exit 0
-
-MSG_FILE="$(git rev-parse --git-dir 2>/dev/null)/COMMIT_EDITMSG"
-[ -f "$MSG_FILE" ] || exit 0
-
-FULL_MSG=$(cat "$MSG_FILE")
-SUBJECT=$(echo "$FULL_MSG" | head -1)
-
-# 跳过对 CLAUDE_COMMITS.md 本身的提交
-echo "$SUBJECT" | grep -qiE "CLAUDE_COMMITS|claude_commits|CLAUDE\.md" && exit 0
-
-# 解析提交信息
-DATE_ONLY=$(date '+%Y-%m-%d')
-TIME_ONLY=$(date '+%H:%M')
-TYPE=$(echo "$SUBJECT" | sed -n 's/^\([a-z]*\):.*/\1/p')
-if [ -z "$TYPE" ]; then
-    TYPE="chore"
-    TITLE="$SUBJECT"
-else
-    TITLE=$(echo "$SUBJECT" | sed 's/^[a-z]*: //')
-fi
-
-# 提取 body：跳过 subject 行和紧跟的空行，去掉 Co-Authored-By 尾注
-BODY=$(echo "$FULL_MSG" | tail -n +2 | sed '/./,$!d' | grep -v '^Co-Authored-By:')
-
-if [ -n "$BODY" ]; then
-    ENTRY="### $TIME_ONLY — $TYPE: $TITLE
-
-$BODY"
-else
-    ENTRY="### $TIME_ONLY — $TYPE: $TITLE"
-fi
-
-# ── 用 head/tail 插入条目 ─────────────────────────────────
-# 在 ## 日期标题 的下一行插入空白+新条目+空白+分隔线
-LINE_NUM=$(grep -n "^## $DATE_ONLY$" "$COMMITS_FILE" | head -1 | cut -d: -f1)
-
-if [ -z "$LINE_NUM" ]; then
-    # 日期标题不存在，追加到文件末尾
-    printf "\n## %s\n\n%s\n\n" "$DATE_ONLY" "$ENTRY" >> "$COMMITS_FILE"
-else
-    # 在日期标题行后插入
-    head -n "$LINE_NUM" "$COMMITS_FILE" > "${COMMITS_FILE}.tmp"
-    printf "\n%s\n\n---\n" "$ENTRY" >> "${COMMITS_FILE}.tmp"
-    tail -n +$((LINE_NUM + 1)) "$COMMITS_FILE" >> "${COMMITS_FILE}.tmp"
-    mv "${COMMITS_FILE}.tmp" "$COMMITS_FILE"
-fi
-
-# 暂存，让本次提交包含该更新
-git add "$COMMITS_FILE"
+# pre-commit hook — 仅作占位
+# CLAUDE_COMMITS.md 的写入逻辑已移到 commit-msg hook
+# （pre-commit 运行时提交信息尚未就绪）
+exit 0

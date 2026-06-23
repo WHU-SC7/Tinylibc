@@ -13,7 +13,7 @@ make clean     # rm -rf build/
 make init-hooks # 初始化 Git hooks（make all 自动配置，通常不需手动）
 ```
 
-> 新机器只需 `git clone && make all` 即可。Git hooks（commit-msg 格式校验 + pre-commit 自动写入提交记录）由构建流程自动设置。
+> 新机器只需 `git clone && make all` 即可。Git hooks（commit-msg 格式校验 + commit-msg 自动写入提交记录）由构建流程自动设置。
 
 `app/tmake.c` 是自托管构建工具，支持 `-j [N]` 并行编译。
 

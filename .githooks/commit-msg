@@ -1,19 +1,23 @@
 #!/bin/sh
-# commit-msg hook — 校验提交信息格式
-# 要求: <type>: <中文标题>
-# 类型: feat|fix|refactor|perf|docs|style|test|build|chore
+# commit-msg hook
+# 1) 校验提交信息格式: <type>: <中文标题>
+# 2) 将提交信息写入 CLAUDE_COMMITS.md（含详细 body）
 #
 # 绕过: git commit --no-verify
 
-PATTERN="^(feat|fix|refactor|perf|docs|style|test|build|chore): "
+set -e
 
 MSG_FILE="$1"
-TITLE=$(head -n 1 "$MSG_FILE")
+FULL_MSG=$(cat "$MSG_FILE")
+SUBJECT=$(echo "$FULL_MSG" | head -1)
+
+# ── 格式校验 ──────────────────────────────────────────
+PATTERN="^(feat|fix|refactor|perf|docs|style|test|build|chore): "
 
 # 跳过 merge 提交（git 自动生成的信息）
-echo "$TITLE" | grep -qE "^Merge " && exit 0
+echo "$SUBJECT" | grep -qE "^Merge " && exit 0
 
-if ! echo "$TITLE" | grep -qE "$PATTERN"; then
+if ! echo "$SUBJECT" | grep -qE "$PATTERN"; then
     echo ""
     echo "  ✖ 提交信息格式错误"
     echo "    标题行需要: <type>: <中文标题>"
@@ -38,5 +42,44 @@ if ! echo "$TITLE" | grep -qE "$PATTERN"; then
     echo ""
     exit 1
 fi
+
+# ── 写入 CLAUDE_COMMITS.md ───────────────────────────
+
+COMMITS_FILE="CLAUDE_COMMITS.md"
+[ -f "$COMMITS_FILE" ] || exit 0
+
+# 跳过对 CLAUDE_COMMITS.md / CLAUDE.md 本身的提交
+echo "$SUBJECT" | grep -qiE "CLAUDE_COMMITS|claude_commits|CLAUDE\.md" && exit 0
+
+# 解析提交信息
+DATE_ONLY=$(date '+%Y-%m-%d')
+TIME_ONLY=$(date '+%H:%M')
+TYPE=$(echo "$SUBJECT" | sed -n 's/^\([a-z]*\):.*/\1/p')
+TITLE=$(echo "$SUBJECT" | sed 's/^[a-z]*: //')
+
+# 提取 body：跳过 subject 行和紧跟的空行，去掉 Co-Authored-By 尾注
+BODY=$(echo "$FULL_MSG" | tail -n +2 | sed '/./,$!d' | grep -v '^Co-Authored-By:')
+
+if [ -n "$BODY" ]; then
+    ENTRY="### $TIME_ONLY — $TYPE: $TITLE
+
+$BODY"
+else
+    ENTRY="### $TIME_ONLY — $TYPE: $TITLE"
+fi
+
+# ── 用 head/tail 插入条目 ────────────────────────────
+LINE_NUM=$(grep -n "^## $DATE_ONLY$" "$COMMITS_FILE" | head -1 | cut -d: -f1)
+
+if [ -z "$LINE_NUM" ]; then
+    printf "\n## %s\n\n%s\n\n" "$DATE_ONLY" "$ENTRY" >> "$COMMITS_FILE"
+else
+    head -n "$LINE_NUM" "$COMMITS_FILE" > "${COMMITS_FILE}.tmp"
+    printf "\n%s\n\n---\n" "$ENTRY" >> "${COMMITS_FILE}.tmp"
+    tail -n +$((LINE_NUM + 1)) "$COMMITS_FILE" >> "${COMMITS_FILE}.tmp"
+    mv "${COMMITS_FILE}.tmp" "$COMMITS_FILE"
+fi
+
+git add "$COMMITS_FILE"
 
 exit 0

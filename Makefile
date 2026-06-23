@@ -143,7 +143,7 @@ git-hooks-setup:
 		echo "  → 初始化 Git hooks ($(HOOKS_PATH))..."; \
 		git config core.hooksPath $(HOOKS_PATH); \
 		chmod +x .githooks/* 2>/dev/null; \
-		echo "  ✔ commit-msg 格式校验 + post-commit 自动记录"; \
+		echo "  ✔ commit-msg 格式校验"; \
 	fi
 
 .PHONY: init-hooks check-hooks git-hooks-setup

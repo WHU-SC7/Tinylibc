@@ -13,7 +13,7 @@ make clean     # rm -rf build/
 make init-hooks # 初始化 Git hooks（make all 自动配置，通常不需手动）
 ```
 
-> 新机器只需 `git clone && make all` 即可。Git hooks（commit-msg 格式校验 + commit-msg 自动写入提交记录）由构建流程自动设置。
+> 新机器只需 `git clone && make all` 即可。Git hooks（commit-msg 格式校验）由构建流程自动设置。
 
 `app/tmake.c` 是自托管构建工具，支持 `-j [N]` 并行编译。
 
@@ -117,7 +117,7 @@ make init-hooks # 初始化 Git hooks（make all 自动配置，通常不需手�
 
 - 标题用中文，一行；body 用中文或英文要点
 - Claude 提交须在末尾加 `Co-Authored-By: Claude <noreply@anthropic.com>`
-- 提交记录记入 `CLAUDE_COMMITS.md`，格式：``### HH:MM — type: title``（commit-msg 自动写入 + body 提取）
+- 提交记录记入 `CLAUDE_COMMITS.md`，格式：``### HH:MM — type: title``（手动维护）
 - 完整规范见 `CLAUDE_DETAILS.md`
 
 ### 编程规则

@@ -1,5 +1,0 @@
-#!/bin/sh
-# pre-commit hook — 仅作占位
-# CLAUDE_COMMITS.md 的写入逻辑已移到 commit-msg hook
-# （pre-commit 运行时提交信息尚未就绪）
-exit 0

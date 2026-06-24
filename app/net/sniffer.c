@@ -149,29 +149,27 @@ __recvfrom(int sockfd, void *buf, unsigned long len, int flags,
                    src_addr, addrlen);
 }
 
-/* 将 MAC 地址格式化为 "xx:xx:xx:xx:xx:xx" */
-static const char *
-mac_to_str(const unsigned char *mac)
+/* 将 MAC 地址格式化为 "xx:xx:xx:xx:xx:xx"，写入调用者提供的缓冲区 */
+static void
+mac_to_str_buf(const unsigned char *mac, char *buf, int buf_size)
 {
-    static char buf[18];
     static const char hex[] = "0123456789abcdef";
     int pos = 0;
+    if (buf_size < 18) { buf[0] = '\0'; return; }
     for (int i = 0; i < 6; i++) {
         if (i > 0) buf[pos++] = ':';
         buf[pos++] = hex[(mac[i] >> 4) & 0x0f];
         buf[pos++] = hex[mac[i] & 0x0f];
     }
     buf[pos] = '\0';
-    return buf;
 }
 
-/* 将 uint32 IP（网络字节序）格式化为点分十进制，返回静态缓冲区 */
-static const char *
-ip_to_str(unsigned int ip)
+/* 将 uint32 IP（网络字节序）格式化为点分十进制，写入调用者提供的缓冲区 */
+static void
+ip_to_str_buf(unsigned int ip, char *buf, int buf_size)
 {
-    static char buf[16];
     unsigned char *b = (unsigned char *)&ip;
-    /* 手动转换，不使用 snprintf（避免 va_arg 类型提升问题） */
+    if (buf_size < 16) { buf[0] = '\0'; return; }
     int pos = 0;
     for (int i = 0; i < 4; i++) {
         if (i > 0) buf[pos++] = '.';
@@ -181,7 +179,6 @@ ip_to_str(unsigned int ip)
         buf[pos++] = '0' + (v % 10);
     }
     buf[pos] = '\0';
-    return buf;
 }
 
 /* 写一个十六进制字节到 buf，返回写的位置 */
@@ -226,13 +223,14 @@ dec_uint(char *buf, unsigned int val)
     return pos;
 }
 
-/* 获取含毫秒的时间戳字符串，返回静态缓冲区 */
-static const char *
-timestamp_str(void)
+/* 获取含毫秒的时间戳字符串，写入调用者提供的缓冲区 */
+static void
+timestamp_str_buf(char *buf, int buf_size)
 {
-    static char buf[24];
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
+
+    if (buf_size < 24) { buf[0] = '\0'; return; }
 
     long total_sec = (long)ts.tv_sec;
     long h = (total_sec % 86400) / 3600;
@@ -260,10 +258,9 @@ timestamp_str(void)
     pos += dec_uint(tmp + pos, (unsigned int)ms);
     tmp[pos] = '\0';
 
-    /* 复制到静态 buffer */
+    /* 复制到输出 buffer */
     for (int i = 0; i <= pos; i++)
         buf[i] = tmp[i];
-    return buf;
 }
 
 /* 十六进制 + ASCII 转储 — 手动格式化（printf 不支持 %02x/%04x） */
@@ -368,16 +365,31 @@ guess_app_proto(unsigned short port)
 }
 
 /* ================================================================== */
-/*  包解析与显示                                                       */
+/*  过滤逻辑                                                           */
 /* ================================================================== */
 
+/* 检查给定协议是否应被显示。
+ * - 未设置过滤器时，显示所有协议。
+ * - 过滤器为 "ip" 时，TCP/UDP/ICMP 均匹配（显示所有 IP 包）。
+ * - 其他情况精确匹配。 */
 static int
-check_filter(const char *proto_name)
+should_display_packet(const char *proto_name)
 {
     if (!g_filter_proto)
         return 1;
+
+    if (strcmp(g_filter_proto, "ip") == 0) {
+        return (strcmp(proto_name, "tcp") == 0 ||
+                strcmp(proto_name, "udp") == 0 ||
+                strcmp(proto_name, "icmp") == 0);
+    }
+
     return (strcmp(g_filter_proto, proto_name) == 0);
 }
+
+/* ================================================================== */
+/*  包解析与显示                                                       */
+/* ================================================================== */
 
 /* 显示 Ethernet 头部 */
 static void
@@ -392,12 +404,16 @@ print_eth(const struct eth_hdr *eth)
         default:     type_str = NULL;   break;
     }
 
+    char src_mac[18], dst_mac[18];
+    mac_to_str_buf(eth->src, src_mac, sizeof(src_mac));
+    mac_to_str_buf(eth->dst, dst_mac, sizeof(dst_mac));
+
     if (type_str)
         printf("  ETH: %s -> %s | Type: %s\n",
-               mac_to_str(eth->src), mac_to_str(eth->dst), type_str);
+               src_mac, dst_mac, type_str);
     else
         printf("  ETH: %s -> %s | Type: 0x%x\n",
-               mac_to_str(eth->src), mac_to_str(eth->dst), type);
+               src_mac, dst_mac, type);
 }
 
 /* 显示 IPv4 头部 */
@@ -405,7 +421,6 @@ static void
 print_ip(const struct ip_hdr *ip, int *ip_hdr_len)
 {
     *ip_hdr_len = (ip->ver_ihl & 0x0f) * 4;
-    if (*ip_hdr_len < 20) *ip_hdr_len = 20;
 
     int total_len = tlibc_ntohs(ip->total_len);
     const char *proto_str;
@@ -416,13 +431,17 @@ print_ip(const struct ip_hdr *ip, int *ip_hdr_len)
         default:           proto_str = NULL;   break;
     }
 
+    char src_ip[16], dst_ip[16];
+    ip_to_str_buf(ip->src, src_ip, sizeof(src_ip));
+    ip_to_str_buf(ip->dst, dst_ip, sizeof(dst_ip));
+
     if (proto_str)
         printf("  IP:  %s -> %s | TTL: %d | Proto: %s (%d) | Len: %d\n",
-               ip_to_str(ip->src), ip_to_str(ip->dst),
+               src_ip, dst_ip,
                ip->ttl, proto_str, ip->proto, total_len);
     else
         printf("  IP:  %s -> %s | TTL: %d | Proto: %d | Len: %d\n",
-               ip_to_str(ip->src), ip_to_str(ip->dst),
+               src_ip, dst_ip,
                ip->ttl, ip->proto, total_len);
 }
 
@@ -448,7 +467,7 @@ handle_tcp(const unsigned char *packet, int ip_hdr_len,
     unsigned short sport = tlibc_ntohs(tcp->src_port);
     unsigned short dport = tlibc_ntohs(tcp->dst_port);
 
-    if (!port_matches(sport, dport) || !check_filter("tcp"))
+    if (!port_matches(sport, dport) || !should_display_packet("tcp"))
         return;
 
     int tcp_hdr_len = ((tcp->offset_res >> 12) & 0x0f) * 4;
@@ -460,8 +479,10 @@ handle_tcp(const unsigned char *packet, int ip_hdr_len,
     const char *app_src = guess_app_proto(sport);
     const char *app_dst = guess_app_proto(dport);
 
+    char ts[24];
+    timestamp_str_buf(ts, sizeof(ts));
     printf("[%s] TCP: %u -> %u | Flags: [%s] | Seq: %u | Ack: %u | Win: %u | Len: %d",
-           timestamp_str(), sport, dport,
+           ts, sport, dport,
            tcp_flags_str(tcp->offset_res),
            tcp->seq, tcp->ack_seq,
            tlibc_ntohs(tcp->window), payload_len);
@@ -471,9 +492,12 @@ handle_tcp(const unsigned char *packet, int ip_hdr_len,
                app_dst ? app_dst : "");
     printf("\n");
 
+    char src_ip[16], dst_ip[16];
+    ip_to_str_buf(ip->src, src_ip, sizeof(src_ip));
+    ip_to_str_buf(ip->dst, dst_ip, sizeof(dst_ip));
     printf("       %s:%u -> %s:%u\n",
-           ip_to_str(ip->src), sport,
-           ip_to_str(ip->dst), dport);
+           src_ip, sport,
+           dst_ip, dport);
 
     if (payload_len > 0) {
         int show = payload_len > 128 ? 128 : payload_len;
@@ -496,7 +520,7 @@ handle_udp(const unsigned char *packet, int ip_hdr_len,
     unsigned short sport = tlibc_ntohs(udp->src_port);
     unsigned short dport = tlibc_ntohs(udp->dst_port);
 
-    if (!port_matches(sport, dport) || !check_filter("udp"))
+    if (!port_matches(sport, dport) || !should_display_packet("udp"))
         return;
 
     int payload_len = tlibc_ntohs(udp->len) - sizeof(struct udp_hdr);
@@ -508,8 +532,10 @@ handle_udp(const unsigned char *packet, int ip_hdr_len,
     const char *app_src = guess_app_proto(sport);
     const char *app_dst = guess_app_proto(dport);
 
+    char ts[24];
+    timestamp_str_buf(ts, sizeof(ts));
     printf("[%s] UDP: %u -> %u | Len: %d",
-           timestamp_str(), sport, dport,
+           ts, sport, dport,
            tlibc_ntohs(udp->len));
     if (app_src || app_dst)
         printf(" (%s%s%s)", app_src ? app_src : "",
@@ -517,9 +543,12 @@ handle_udp(const unsigned char *packet, int ip_hdr_len,
                app_dst ? app_dst : "");
     printf("\n");
 
+    char src_ip[16], dst_ip[16];
+    ip_to_str_buf(ip->src, src_ip, sizeof(src_ip));
+    ip_to_str_buf(ip->dst, dst_ip, sizeof(dst_ip));
     printf("       %s:%u -> %s:%u\n",
-           ip_to_str(ip->src), sport,
-           ip_to_str(ip->dst), dport);
+           src_ip, sport,
+           dst_ip, dport);
 
     if (payload_len > 0) {
         int show = payload_len > 128 ? 128 : payload_len;
@@ -538,7 +567,7 @@ handle_icmp(const unsigned char *packet, int ip_hdr_len,
 {
     if (remaining < (int)sizeof(struct icmp_hdr))
         return;
-    if (!check_filter("icmp"))
+    if (!should_display_packet("icmp"))
         return;
 
     const struct icmp_hdr *icmp = (const struct icmp_hdr *)(packet + ETH_HLEN + ip_hdr_len);
@@ -555,8 +584,10 @@ handle_icmp(const unsigned char *packet, int ip_hdr_len,
     int payload_len = remaining - sizeof(struct icmp_hdr);
     if (payload_len < 0) payload_len = 0;
 
+    char ts[24];
+    timestamp_str_buf(ts, sizeof(ts));
     printf("[%s] ICMP: %s (type=%d, code=%d)\n",
-           timestamp_str(), type_str, icmp->type, icmp->code);
+           ts, type_str, icmp->type, icmp->code);
 
     if (payload_len > 0) {
         int show = payload_len > 64 ? 64 : payload_len;
@@ -574,7 +605,7 @@ handle_arp(const unsigned char *packet, int len)
 {
     if (len < (int)(ETH_HLEN + (int)sizeof(struct arp_hdr)))
         return;
-    if (!check_filter("arp"))
+    if (!should_display_packet("arp"))
         return;
 
     const struct arp_hdr *arp = (const struct arp_hdr *)(packet + ETH_HLEN);
@@ -585,10 +616,17 @@ handle_arp(const unsigned char *packet, int len)
     else if (oper == 2) oper_str = "Reply";
     else                oper_str = "Other";
 
+    char ts[24], spa_str[16], tpa_str[16], sha_str[18], tha_str[18];
+    timestamp_str_buf(ts, sizeof(ts));
+    ip_to_str_buf(arp->spa, spa_str, sizeof(spa_str));
+    ip_to_str_buf(arp->tpa, tpa_str, sizeof(tpa_str));
+    mac_to_str_buf(arp->sha, sha_str, sizeof(sha_str));
+    mac_to_str_buf(arp->tha, tha_str, sizeof(tha_str));
+
     printf("[%s] ARP: %s | %s (%s) -> %s (%s)\n",
-           timestamp_str(), oper_str,
-           ip_to_str(arp->spa), mac_to_str(arp->sha),
-           ip_to_str(arp->tpa), mac_to_str(arp->tha));
+           ts, oper_str,
+           spa_str, sha_str,
+           tpa_str, tha_str);
 }
 
 /* IPv4 包分发 */
@@ -620,9 +658,11 @@ handle_ipv4(const unsigned char *packet, int len)
             handle_icmp(packet, ip_hdr_len, remaining);
             break;
         default:
-            if (check_filter("ip")) {
+            if (should_display_packet("ip")) {
+                char ts[24];
+                timestamp_str_buf(ts, sizeof(ts));
                 printf("[%s] IP:  proto=%d, remaining=%d bytes\n",
-                       timestamp_str(), ip->proto, remaining);
+                       ts, ip->proto, remaining);
             }
             break;
     }
@@ -728,12 +768,15 @@ int main(int argc, char *argv[])
                 handle_arp(buf, n);
                 break;
             default:
-                if (!g_filter_proto)
+                if (!g_filter_proto) {
+                    char ts[24], src_mac[18], dst_mac[18];
+                    timestamp_str_buf(ts, sizeof(ts));
+                    mac_to_str_buf(eth->src, src_mac, sizeof(src_mac));
+                    mac_to_str_buf(eth->dst, dst_mac, sizeof(dst_mac));
                     printf("[%s] ETH: %s -> %s | Type: 0x%x | Len: %d\n",
-                           timestamp_str(),
-                           mac_to_str(eth->src), mac_to_str(eth->dst),
+                           ts, src_mac, dst_mac,
                            etype, n);
-                else
+                } else
                     printed = 0;
                 break;
         }

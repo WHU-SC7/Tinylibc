@@ -1,0 +1,16 @@
+# 统一换行符为 LF（避免 Windows/Linux 混合开发问题）
+* text=auto
+
+# 明确指定文本文件强制 LF
+*.c     text eol=lf
+*.h     text eol=lf
+*.S     text eol=lf
+*.md    text eol=lf
+*.sh    text eol=lf
+Makefile text eol=lf
+ld.script text eol=lf
+.gitignore  text eol=lf
+
+# 二进制文件不作转换
+*.o     binary
+*.a     binary

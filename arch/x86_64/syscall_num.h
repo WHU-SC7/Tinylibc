@@ -65,3 +65,6 @@
 #define SYS_stat        __NR_stat
 
 #define SYS_shutdown    __NR_shutdown
+
+#define SYS_poll        __NR_poll
+#define SYS_ppoll       __NR_ppoll

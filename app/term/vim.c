@@ -110,7 +110,7 @@ void exit_handler(int num)
     }
 }
 
-void vim_exit()//主进程让读取输入进程退出
+void vim_exit(int sig)//主进程让读取输入进程退出
 {
     // __creat("进程受到信号退出", 0644);
     __exit_group(0);

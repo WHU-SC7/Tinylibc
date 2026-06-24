@@ -15,7 +15,7 @@
 #define PROMPT_LINE_FG_COLOR FG_CYAN
 #define TOP_MAX_PROC 1024//最多能处理的进程数，影响内存分配
 
-void top_exit_handler()
+void top_exit_handler(int sig)
 {
     __printf(ALT_SCREEN_OFF); //恢复原终端缓冲区
     tlibc_restore_term(0);
@@ -321,7 +321,7 @@ int main(int argc, char *argv[])
 
         if(final_input == 'q')//优先检查退出
         {
-            top_exit_handler(); //退出
+            top_exit_handler(2); //退出
         }
         if(final_input == 'p')//暂停
         {

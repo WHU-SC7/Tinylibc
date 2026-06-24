@@ -12,7 +12,7 @@
 #define TEMPLATE_COL_WANTED 32
 #define TEMPLATE_CHILD_EXIT_SIG 64
 
-void template_exit_handler()
+void template_exit_handler(int sig)
 {
     __printf(ALT_SCREEN_OFF); //恢复原终端缓冲区
     tlibc_restore_term(0);
@@ -59,7 +59,7 @@ int main(int argc, char *argv[])
         while(__read(pipefd[PIPE_READ], &final_input, 1) != -11){}
         if(final_input == 'q')
         {
-            template_exit_handler(); //退出
+            template_exit_handler(2); //退出
         }
         if(final_input == NOINPUT)
             __write(1, ".", 1);

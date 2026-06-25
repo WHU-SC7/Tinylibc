@@ -1,24 +1,24 @@
 #ifndef _STAT_H
 #define _STAT_H
 struct stat {
-	dev_t st_dev;
-	ino_t st_ino;
-	nlink_t st_nlink;
-    unsigned int __pad0;    // 填充
+	dev_t st_dev;          // 8  @0
+	ino_t st_ino;          // 8  @8
+	nlink_t st_nlink;      // 8  @16
 
-	mode_t st_mode;
-	uid_t st_uid;
-	gid_t st_gid;
-	unsigned int    __pad1;
-	dev_t st_rdev;
-	off_t st_size;
-	blksize_t st_blksize;
-	blkcnt_t st_blocks;
+	mode_t st_mode;        // 4  @24
+	uid_t st_uid;          // 4  @28
+	gid_t st_gid;          // 4  @32
+	unsigned int __pad0;   // 4  @36  — 对齐 st_rdev 到 8 字节
 
-	struct timespec st_atim;
-	struct timespec st_mtim;
-	struct timespec st_ctim;
-	long __unused[3];
+	dev_t st_rdev;         // 8  @40
+	off_t st_size;         // 8  @48
+	blksize_t st_blksize;  // 8  @56
+	blkcnt_t st_blocks;    // 8  @64
+
+	struct timespec st_atim;  // 16 @72
+	struct timespec st_mtim;  // 16 @88
+	struct timespec st_ctim;  // 16 @104
+	long __unused[3];        // 24 @120
 };
 
 // 文件类型掩码

@@ -59,8 +59,8 @@ struct linux_dirent64 {
 
 //stat,放到什么文件呢？之后参考别的libc吧
 struct timespec {
-    unsigned long tv_sec;
-    unsigned long tv_nsec;
+    time_t tv_sec;
+    long   tv_nsec;
 };
 //参考man 2 fstat
 #include "stat.h"
@@ -109,7 +109,7 @@ typedef struct {
 } sigset_t;
 struct sigaction {
                void     (*sa_handler)(int);
-               int        sa_flags;
+               unsigned long sa_flags;
                void     (*sa_restorer)(void);
                sigset_t   sa_mask;
            };

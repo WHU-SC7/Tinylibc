@@ -97,11 +97,72 @@ static void get_obj_path(const char *file_path, const char *output_path, char *o
     }
 }
 
-/* 检查 .o 是否存在（简单增量：存在即跳过，不改源就不重编） */
+/* 比较源文件和所有依赖的修改时间，决定是否需要重新编译
+ * 返回: 1=需要编译, 0=跳过(.o已最新), -1=源文件不存在
+ * 依赖信息来自 gcc -MD 生成的 .d 文件（含头文件依赖链）*/
 static int needs_rebuild(const char *src, const char *obj)
 {
-    (void)src;  /* 预留给将来时间戳比较 */
-    return tlibc_is_path_file(obj) != 1;
+    struct stat obj_s;
+    if(tlibc_stat(obj, &obj_s) < 0)
+        return 1;   /* .o 不存在，需要编译 */
+
+    struct stat src_s;
+    if(tlibc_stat(src, &src_s) < 0)
+        return -1;  /* 源文件不存在 */
+
+    if(src_s.st_mtim.tv_sec > obj_s.st_mtim.tv_sec) return 1;
+    if(src_s.st_mtim.tv_sec == obj_s.st_mtim.tv_sec &&
+       src_s.st_mtim.tv_nsec > obj_s.st_mtim.tv_nsec) return 1;
+
+    /* 从 .d 文件读取头文件依赖，检查是否有头文件变更 */
+    char dep[512];
+    snprintf(dep, sizeof(dep), "%s", obj);
+    char *dot = strrchr(dep, '.');
+    if(dot) strcpy(dot, ".d");
+
+    int fd = openat(AT_FDCWD, dep, O_RDONLY, 0);
+    if(fd < 0) return 0;  /* 无 .d 文件，只比较源文件 */
+
+    char buf[16384];
+    int n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if(n <= 0) return 0;
+    buf[n] = '\0';
+
+    /* .d 格式: "target.o: dep1 dep2 \\\n  dep3 ..." 。跳过 "target.o:" */
+    char *p = buf;
+    while(*p && *p != ':') p++;
+    if(!*p || !*(p+1)) return 0;
+    p++;  /* 跳过 ':' */
+
+    while(*p){
+        /* 跳过空白、换行、续行符 */
+        while(*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+        if(*p == '\\'){ p++; continue; }
+        if(!*p) break;
+
+        char dep_file[512];
+        int i = 0;
+        while(*p && *p != ' ' && *p != '\t' && *p != '\n' && *p != '\r' && *p != '\\'){
+            if(i < (int)sizeof(dep_file) - 1) dep_file[i++] = *p;
+            p++;
+        }
+        dep_file[i] = '\0';
+        if(i == 0) continue;
+
+        /* 跳过 .o 自身 */
+        if(strcmp(dep_file, obj) == 0) continue;
+
+        struct stat dep_s;
+        if(tlibc_stat(dep_file, &dep_s) == 0){
+            if(dep_s.st_mtim.tv_sec > obj_s.st_mtim.tv_sec ||
+               (dep_s.st_mtim.tv_sec == obj_s.st_mtim.tv_sec &&
+                dep_s.st_mtim.tv_nsec > obj_s.st_mtim.tv_nsec))
+                return 1;
+        }
+    }
+
+    return 0;  /* 所有依赖都是最新的 */
 }
 
 // Fork + execve gcc 编译一个源文件，返回子进程PID。
@@ -558,16 +619,20 @@ static int parse_int(const char *s){
 
 // 读取 /proc/cpuinfo，统计 processor 行数得到在线 CPU 数量
 static int get_nprocs(void){
-    char buf[4096];
+    char buf[65536];
     int fd = openat(AT_FDCWD, "/proc/cpuinfo", O_RDONLY, 0);
     if(fd < 0) return 1;
-    int n = read(fd, buf, sizeof(buf) - 1);
+    int total = 0, n;
+    while(total < (int)sizeof(buf) - 1 &&
+          (n = read(fd, buf + total, sizeof(buf) - total - 1)) > 0){
+        total += n;
+    }
     close(fd);
-    if(n <= 0) return 1;
-    buf[n] = '\0';
+    if(total <= 0) return 1;
+    buf[total] = '\0';
 
     int count = 0;
-    for(int i = 0; i < n - 8; i++){
+    for(int i = 0; i < total - 8; i++){
         if(buf[i] == 'p' && buf[i+1] == 'r' && buf[i+2] == 'o' &&
            buf[i+3] == 'c' && buf[i+4] == 'e' && buf[i+5] == 's' &&
            buf[i+6] == 's' && buf[i+7] == 'o' && buf[i+8] == 'r'){

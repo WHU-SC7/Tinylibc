@@ -7,7 +7,7 @@
 **前置依赖：** `x86_64-linux-gnu-gcc`、`x86_64-linux-gnu-ld`、`x86_64-linux-gnu-ar`
 
 ```bash
-make all       # 两阶段：先 Makefile 编译 tmake+shell，再用 tmake 递归构建所有 app
+make all       # 两阶段：先 Makefile 编译 tmake+shell，再用 tmake -j 递归构建所有 app
 make run       # 编译后进入 shell
 make clean     # rm -rf build/
 make init-hooks # 初始化 Git hooks（make all 自动配置，通常不需手动）
@@ -15,7 +15,20 @@ make init-hooks # 初始化 Git hooks（make all 自动配置，通常不需手�
 
 > 新机器只需 `git clone && make all` 即可。Git hooks（commit-msg 格式校验）由构建流程自动设置。
 
-`app/tmake.c` 是自托管构建工具，支持 `-j [N]` 并行编译。
+### 快速迭代
+
+```bash
+tmake -b ndiscover     # 只编译+链接 ndiscover（跳过 lib，秒级完成）
+tmake -b shell         # 只编译 shell（根级 app/*.c 也支持）
+tmake -j 4 -b cat      # 并行编译单个程序
+```
+
+`app/tmake.c` 是自托管构建工具，支持 `-j [N]` 并行编译和 `-b <程序名>` 单应用构建。
+第二次调用 `tmake -b` 会跳过未修改的源文件（增量构建）。
+
+### 构建产物
+
+可执行文件统一输出到 `build/output/`，安装到 `~/tlibc/bin/`。
 
 > 详细操作步骤（运行、调试、测试等）参见 `CLAUDE_DETAILS.md`。
 
@@ -50,7 +63,7 @@ make init-hooks # 初始化 Git hooks（make all 自动配置，通常不需手�
 | 文件 | 内容 |
 |------|------|
 | `shell.c` | 交互式 shell |
-| `tmake.c` | 自托管构建工具（并行编译、链接） |
+| `tmake.c` | 自托管构建工具（并行编译、增量构建、`-b` 单目标编译） |
 | `coreutils/` | cat, cp, echo, ls, mkdir, mv, pwd, rm, rmdir, touch |
 | `net/` | client, server, http, tclient, tserver, ssh, sshd |
 | `term/` | vim, top, __game_pacman |

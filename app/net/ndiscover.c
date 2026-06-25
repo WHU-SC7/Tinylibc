@@ -351,8 +351,8 @@ find_default_interface(char *buf, int buf_size)
 
         if (de->d_name[0] == '.')
             continue;
-        /* 跳过 lo 和 loopback* 等虚拟环回接口 */
-        if (de->d_name[0] == 'l' && de->d_name[1] == 'o')
+        /* 跳过虚拟环回接口 lo */
+        if (strcmp(de->d_name, "lo") == 0)
             continue;
 
         /* 记录第一个非 loopback 候选（兜底用） */
@@ -413,11 +413,17 @@ parse_cidr(const char *s, unsigned int *ip_out, unsigned int *mask_out)
         }
     }
 
+    /* 限制有效前缀范围：/1 ~ /30，避免 /0 (UB) 和 /32 (无主机) */
+    if (prefix < 1 || prefix > 30) {
+        printf("Invalid prefix /%d (must be 1-30)\n", prefix);
+        return -1;
+    }
+
     unsigned int ip = tlibc_inet_addr(ip_str);
     if (ip == 0xffffffff)
         return -1;
 
-    /* 根据前缀计算掩码 */
+    /* 根据前缀计算掩码 — swap32 确保掩码字节序与 tlibc_inet_addr / 内核 s_addr 一致 */
     unsigned int mask = 0;
     if (prefix > 0)
         mask = swap32(0xffffffffu << (32 - prefix));
@@ -444,6 +450,66 @@ sort_hosts(struct host_info *hosts, int count)
         }
         hosts[j + 1] = key;
     }
+}
+
+/* ================================================================== */
+/*  OUI 厂商表（MAC 前 3 字节 → 厂商名）                                */
+/* ================================================================== */
+
+struct oui_entry {
+    unsigned char prefix[3];
+    const char   *vendor;
+};
+
+static const struct oui_entry oui_table[] = {
+    {{0x00, 0x15, 0x5d}, "Microsoft"},
+    {{0x00, 0x0c, 0x29}, "VMware"},
+    {{0x00, 0x50, 0x56}, "VMware"},
+    {{0x08, 0x00, 0x27}, "Oracle"},
+    {{0x00, 0x1a, 0x11}, "Google"},
+    {{0x00, 0x23, 0x93}, "Google"},
+    {{0x00, 0x24, 0x97}, "Apple"},
+    {{0x00, 0x25, 0x00}, "Apple"},
+    {{0x00, 0x23, 0x32}, "Apple"},
+    {{0x3c, 0x22, 0xfb}, "Dell"},
+    {{0x00, 0x26, 0xb9}, "Dell"},
+    {{0x00, 0x15, 0xc5}, "HP"},
+    {{0x00, 0x1a, 0x4b}, "HP"},
+    {{0x00, 0x19, 0xbb}, "Samsung"},
+    {{0x00, 0x23, 0xd4}, "Samsung"},
+    {{0x00, 0x12, 0x47}, "Intel"},
+    {{0x00, 0x1b, 0x21}, "Intel"},
+    {{0x00, 0x1e, 0x67}, "Intel"},
+    {{0x00, 0x24, 0x6c}, "TP-Link"},
+    {{0x00, 0x14, 0xbf}, "TP-Link"},
+    {{0x00, 0x25, 0x9c}, "TP-Link"},
+    {{0x00, 0x0e, 0x8e}, "Huawei"},
+    {{0x00, 0x25, 0x9e}, "Huawei"},
+    {{0x00, 0x18, 0x82}, "Huawei"},
+    {{0x98, 0x3d, 0x79}, "Hangzhou"},
+    {{0x00, 0x24, 0xbe}, "Xiaomi"},
+    {{0x00, 0x16, 0xe8}, "HTC"},
+    {{0x00, 0x23, 0x8b}, "Foxconn"},
+    {{0x00, 0x25, 0x90}, "ASUS"},
+    {{0x00, 0x26, 0x5a}, "Netgear"},
+    {{0x00, 0x1b, 0xfc}, "Nokia"},
+    {{0x00, 0x23, 0xcd}, "TP-Link"},
+    {{0x00, 0x24, 0xd7}, "Intel"},
+    {{0x00, 0x26, 0x08}, "Apple"},
+    {{0x00, 0x26, 0x4a}, "Apple"},
+};
+
+/* 通过 MAC 前 3 字节查找厂商名，未找到返回 NULL */
+static const char *lookup_vendor(const unsigned char *mac)
+{
+    int n = sizeof(oui_table) / sizeof(oui_table[0]);
+    for (int i = 0; i < n; i++) {
+        if (mac[0] == oui_table[i].prefix[0] &&
+            mac[1] == oui_table[i].prefix[1] &&
+            mac[2] == oui_table[i].prefix[2])
+            return oui_table[i].vendor;
+    }
+    return NULL;
 }
 
 /* ================================================================== */
@@ -490,7 +556,9 @@ arp_scan(const char *iface, unsigned int src_ip,
     int sent = 0;
 
     /* ---- 构造并发送所有 ARP 请求 ---- */
+    printf("  Sending %u probes ", num_hosts);
     for (unsigned int i = 1; i <= num_hosts; i++) {
+        if (i % 1024 == 0) printf(".");   /* 每 1024 个打一个点 */
         unsigned int target_ip = swap32(swap32(net_addr) + i);
 
         /* 跳过广播地址 */
@@ -529,6 +597,7 @@ arp_scan(const char *iface, unsigned int src_ip,
         if (ret >= 0)
             sent++;
     }
+    printf("\n");
 
     if (sent_out)
         *sent_out = sent;
@@ -597,6 +666,12 @@ arp_scan(const char *iface, unsigned int src_ip,
         results[result_count].ip      = sender_ip;
         __memmove(results[result_count].mac, rp->arp.sha, ETH_ALEN);
         results[result_count].is_self = 0;
+        {
+            char found_ip[16], found_mac[18];
+            ip_to_str(sender_ip, found_ip, sizeof(found_ip));
+            mac_to_str(rp->arp.sha, found_mac, sizeof(found_mac));
+            printf("  + %-15s (%s)\n", found_ip, found_mac);
+        }
         result_count++;
     }
 
@@ -644,8 +719,9 @@ print_results(struct host_info *results, int count,
             color = BRIGHT_GREEN_COLOR_PRINT;
             tag   = "This host";
         } else {
-            color = COLOR_RESET;
-            tag   = "Unknown";
+            const char *vendor = lookup_vendor(results[i].mac);
+            color = vendor ? COLOR_RESET : YELLOW_COLOR_PRINT;
+            tag   = vendor ? vendor : "Active";
         }
 
         printf("    %s%-15s (%s) [%s]%s\n",

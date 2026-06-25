@@ -7,13 +7,18 @@ Tinylibc 是一个轻量级、独立的部分 C 标准库实现，运行于 x86_
 **前置依赖：** `x86_64-linux-gnu-gcc`、`x86_64-linux-gnu-ld`、`x86_64-linux-gnu-ar`
 
 ```bash
-make all       # 两阶段编译：先编译 tmake + shell，再用 tmake 递归编译所有 app
+make all       # 两阶段编译：先编译 tmake + shell，再用 tmake -j 递归构建所有 app
 make run       # 编译并进入 shell
 make clean     # 删除 build/
 make glibc     # 用 glibc 编译 app/paper/exp.c 做对比实验
 make tlibc     # 用 Tinylibc 编译 app/paper/exp.c 做对比实验
 make debug     # make all + strace
 make disassemb # 反汇编 tlibc_x64 到 build/dis_tlibc
+
+# 快速迭代（修改单个 app 后）
+tmake -b ndiscover       # 只编译+链接 ndiscover，跳过 lib
+tmake -j 4 -b cat        # 并行编译单个程序
+tmake -b ndiscover       # 第二次调用：跳过已有 .o（增量）
 ```
 
 ## 目录结构
@@ -45,7 +50,7 @@ make disassemb # 反汇编 tlibc_x64 到 build/dis_tlibc
 | 文件 | 行数 | 职责 |
 |------|------|------|
 | `shell.c` | 771 | 交互式 shell：命令解析、PATH 查找、tab 补全、程序执行 |
-| `tmake.c` | 441 | 自托管构建工具：递归编译 `/app/` 下所有子目录的 .c 文件 |
+| `tmake.c` | ~560 | 自托管构建工具：递归编译 app/ 下所有子目录的 .c 文件，支持 -j 并行、-b 单目标构建、增量跳过 .o |
 | `coreutils/` | ~290 | cat、cp、echo、ls、mkdir、mv、pwd、rm、rmdir、touch |
 | `net/` | ~530 | client、server(多线程)、http、tclient、tserver |
 | `term/` | ~1,484 | vim(基础查看器)、top、吃豆人游戏、模板 |
@@ -89,7 +94,7 @@ make disassemb # 反汇编 tlibc_x64 到 build/dis_tlibc
 
 | 文件 | 职责 |
 |------|------|
-| `Makefile` | 顶层构建，两阶段流程 |
+| `Makefile` | 顶层构建，Phase 1 仅编译 boot 必需（lib + tmake + shell） |
 | `ld.script` | 链接脚本：.text 起始于 0x400000，无复杂段布局 |
 | `CLAUDE.md` | 本文件，项目手册 |
 | `CLAUDE_COMMITS.md` | Claude Code 提交记录 |
@@ -130,9 +135,10 @@ make disassemb # 反汇编 tlibc_x64 到 build/dis_tlibc
 - 使用自旋锁（atomic compare-exchange）保护全局内存列表
 
 ### 6. 构建方式
-两阶段构建：
-1. Makefile 直接编译 `app/tmake.c` 和 `app/shell.c`，链接 `tlibc.a`
-2. `tmake` 扫描 `/app/` 下所有子目录，递归编译每个 `.c` 文件
+两阶段构建，可执行文件统一输出到 `build/output/`：
+1. **Phase 1 (Makefile):** 只编译 boot 必需文件（lib/* + app/tmake.c + app/shell.c），创建 tlibc.a，链接 tmake、shell
+2. **Phase 2 (tmake -j):** 递归编译 `app/` 下所有子目录，链接全部可执行文件并安装到 `~/tlibc/bin/`
+3. **快速迭代:** `tmake -b ndiscover` 只编译+链接单个程序，跳过 lib；重复调用跳过已有 `.o`
 
 ## 编程约定
 
@@ -206,10 +212,10 @@ x86_64-linux-gnu-gcc -c $(CFLAGS) \
 
 # 链接（link 静态库 tlibc.a）
 x86_64-linux-gnu-ld $(LDFLAGS) -T ld.script \
-  -o build/bin/test_xxx build/app/test/test_xxx.o build/lib/tlibc.a
+  -o build/output/test_xxx build/app/test/test_xxx.o build/lib/tlibc.a
 
 # 运行（用重定向而非管道取退出码）
-./build/bin/test_xxx > /tmp/out.txt 2>&1
+./build/output/test_xxx > /tmp/out.txt 2>&1
 echo "Exit: $?"          # 0=全通过 1=有失败
 ```
 

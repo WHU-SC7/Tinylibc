@@ -21,7 +21,9 @@ make all      # 编译生成所有用户程序
 ```bash
 make run      # 编译并运行shell
 ```
-进入shell后会进入build/bin目录，目录下对每个app下的.c文件都编译了可执行程序
+进入 shell 后会进入 ~/tlibc/bin/（tmake 安装目录），目录下对每个 app 下的 .c 文件都编译了可执行程序
+
+可执行文件也统一输出在 `build/output/` 下。
 
 riscv架构待更新
 # 2.Tlibc项目结构

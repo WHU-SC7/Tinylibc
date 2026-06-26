@@ -19,7 +19,8 @@
  *       192.168.1.101   (11:22:33:44:55:66) [Unknown]
  *     => 3 hosts found (sent 254 probes, 2000ms timeout)
  *
- * 注意: 需要 root 权限 (CAP_NET_RAW) 运行。
+ * 注意: 需要 CAP_NET_RAW 权限。运行以下命令一次即可免 sudo 使用：
+ *       sudo setcap cap_net_raw+ep ~/tlibc/bin/ndiscover
  *
  * 编译: make all 或 tmake 自动构建
  */
@@ -535,7 +536,7 @@ arp_scan(const char *iface, unsigned int src_ip,
     int sock = socket(AF_PACKET, SOCK_RAW, tlibc_htons(ETH_P_ARP));
     if (sock < 0) {
         printf("Error: socket(AF_PACKET, SOCK_RAW) failed (errno=%d)\n", -sock);
-        printf("This program requires root privileges (CAP_NET_RAW).\n");
+        printf("Need CAP_NET_RAW. Fix once: sudo setcap cap_net_raw+ep ~/tlibc/bin/ndiscover\n");
         return -1;
     }
 
@@ -757,7 +758,7 @@ print_usage(void)
     printf("  ndiscover -i eth0 -r 10.0.0.0/24\n");
     printf("  ndiscover -t 3000             # Longer timeout\n");
     printf("\n");
-    printf("Note: requires root (CAP_NET_RAW) for raw socket.\n");
+    printf("Note: needs CAP_NET_RAW. Fix once: sudo setcap cap_net_raw+ep ~/tlibc/bin/ndiscover\n");
 }
 
 /* ================================================================== */

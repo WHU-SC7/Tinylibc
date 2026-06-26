@@ -1,0 +1,3 @@
+# Tinylibc: allow setcap without password for raw socket capability setup
+# Install: sudo cp this-file /etc/sudoers.d/tlibc-setcap && sudo chmod 440 /etc/sudoers.d/tlibc-setcap
+%sudo ALL=(ALL) NOPASSWD: /usr/sbin/setcap

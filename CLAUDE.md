@@ -130,7 +130,6 @@ tmake -j 4 -b cat      # 并行编译单个程序
 
 - 标题用中文，一行；body 用中文或英文要点
 - Claude 提交须在末尾加 `Co-Authored-By: Claude <noreply@anthropic.com>`
-- 提交记录记入 `CLAUDE_COMMITS.md`，格式：``### HH:MM — type: title``（按需总结，非每次提交）
 - 完整规范见 `CLAUDE_DETAILS.md`
 
 ### 编程规则

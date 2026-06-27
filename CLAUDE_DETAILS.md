@@ -97,7 +97,6 @@ tmake -b ndiscover       # 第二次调用：跳过已有 .o（增量）
 | `Makefile` | 顶层构建，Phase 1 仅编译 boot 必需（lib + tmake + shell） |
 | `ld.script` | 链接脚本：.text 起始于 0x400000，无复杂段布局 |
 | `CLAUDE.md` | 本文件，项目手册 |
-| `CLAUDE_COMMITS.md` | Claude Code 提交记录 |
 | `项目计划.md` | 开发计划 |
 
 ## 关键架构决策
@@ -319,25 +318,6 @@ benchmark 显示数字格式化快约 5 倍。
 ```
 docs: 补充 CLAUDE_DETAILS.md 测试章节
 ```
-
-### 提交记录（CLAUDE_COMMITS.md）
-
-`CLAUDE_COMMITS.md` 按日期、时间倒序记录每次 Claude Code 生成代码的提交，**手工维护**。
-
-**格式：**
-
-```
-## YYYY-MM-DD
-
-### HH:MM — type: 中文标题
-
-<变更要点，分点说明>
-```
-
-- 标题行格式：三级标题，空格 + 时间（HH:MM），空格 + `—`，空格 + 完整 commit 标题
-- 同一日期的多个提交按时间倒序（最新的最上）
-- body 列出该次提交的主要变更点，不重复 commit message 全文
-- `---` 分隔线隔开相邻提交
 
 ### 共识
 

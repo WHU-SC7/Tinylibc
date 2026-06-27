@@ -12,7 +12,6 @@
 
 #include "core.h"
 #include "pthread.h"
-#include "tlibc.h"
 #include "errno.h"
 
 /* 测试计数 */

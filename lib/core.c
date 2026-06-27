@@ -1,7 +1,7 @@
 #include "syscall.h"
 #include "syscall_num.h"
-#include "tlibc.h"
 #include "core.h"
+#include "string.h"    /* __memset/__memmove 声明 */
 
 
 //系统调用包装
@@ -255,7 +255,7 @@ int tlibc_sigaction(int signum, void (*handler)(int))//包装系统调用，提�
 {
     struct sigaction sig;
 
-    void *__memset(void *dst, int value, unsigned int n);
+    void *__memset(void *dst, int value, size_t n);
     __memset(&sig, 0, sizeof(struct sigaction));
     #define SA_RESTORER   0x04000000
     sig.sa_handler = handler;
@@ -393,11 +393,10 @@ int tlibc_stat(const char *pathname, struct stat *statbuf){
 /**
  * @brief 应为string.h的标准库函数，为了避免同名冲突，命名加上下划线
  */
-void *__memset(void *dst, int value, unsigned int n)
+void *__memset(void *dst, int value, size_t n)
 {
     char *cdst = (char *)dst;
-    unsigned int i;
-    for (i = 0; i < n; i++)
+    for (size_t i = 0; i < n; i++)
     {
         cdst[i] = value;
     }

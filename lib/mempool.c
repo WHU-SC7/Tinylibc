@@ -2,7 +2,6 @@
 #include "pthread.h"
 #include "syscall.h"
 #include "syscall_num.h"
-#include "tlibc.h"
 #include "mempool.h"
 #include "atomic.h"
 

@@ -1,4 +1,5 @@
 #include "tlibc_test.h"
+#include "tlibc_compat.h"
 
 TEST_DEFINE_COUNTERS();
 

@@ -28,4 +28,8 @@ typedef unsigned int uint32_t;
 typedef signed long int int64_t;
 typedef unsigned long int uint64_t;
 
+#ifndef NULL
+#define NULL ((void *)0)
+#endif
+
 #endif

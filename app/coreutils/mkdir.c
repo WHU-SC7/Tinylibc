@@ -1,6 +1,5 @@
 #include "core.h"
 #include "tlibc_print.h"
-#include "tlibc.h"
 #include "errno.h"
 
 int main(int argc, char *argv[])

@@ -16,6 +16,8 @@ char *default_gcc_flags[]={
     "x86_64-linux-gnu-gcc",
     //头文件路径
     "-I./include",
+    "-I./include/posix",
+    "-I./include/tlibc",
     "-I./arch",
     "-I./arch/x86_64",
     //宏

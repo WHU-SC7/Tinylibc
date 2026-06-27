@@ -1,7 +1,7 @@
 #include "syscall.h"
 #include "syscall_num.h"
-#include "tlibc.h"
 #include "core.h"
+#include "string.h"    /* __memset */
 
 typedef __builtin_va_list my_va_list;
 #define my_va_start(v, l)   __builtin_va_start(v, l)

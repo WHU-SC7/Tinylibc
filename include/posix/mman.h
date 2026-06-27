@@ -1,6 +1,25 @@
 #ifndef _MMAN_H
 #define _MMAN_H
 
+/* ── 内存保护标志（来自 pthread.h） ── */
+#define PROT_READ       0x1
+#define PROT_WRITE      0x2
+#define PROT_EXEC       0x4
+#define PROT_NONE       0x0
+#define PROT_GROWSDOWN  0x01000000
+#define PROT_GROWSUP    0x02000000
+
+/* ── mmap 映射类型（来自 pthread.h） ── */
+#define MAP_SHARED       0x01
+#define MAP_PRIVATE      0x02
+#define MAP_SHARED_VALIDATE 0x03
+#define MAP_TYPE         0x0f
+#define MAP_ANONYMOUS    0x20
+#define MAP_ANON         MAP_ANONYMOUS
+
+#define MAP_FAILED ((void *) -1)
+
+/* ── madvise 建议（原有） ── */
 # define MADV_NORMAL	  0	/* No further special treatment.  */
 # define MADV_RANDOM	  1	/* Expect random page references.  */
 # define MADV_SEQUENTIAL  2	/* Expect sequential page references.  */

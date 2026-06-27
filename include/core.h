@@ -1,6 +1,15 @@
 #ifndef __CORE_H
 #define __CORE_H
-#include "tlibc.h" // for struct linux_dirent64
+
+#include "tlibc_types.h"    /* size_t, pid_t, mode_t, off_t, clockid_t */
+#include "errno.h"
+#include "fcntl.h"          /* O_* flags */
+#include "unistd.h"         /* SEEK_*, STDIN, PIPE_* */
+#include "dirent.h"         /* struct linux_dirent64 */
+#include "time.h"           /* struct timespec */
+#include "signal.h"         /* sigset_t, struct sigaction */
+#include "mman.h"           /* PROT_*, MAP_*, MAP_FAILED */
+#include "stat.h"           /* struct stat — arch 依赖，-I 解析 */
 
 ssize_t __write(int fd, const void *buf, int len);
 ssize_t __read(int fd, const void *buf, int len);
@@ -63,10 +72,6 @@ int __dup(int oldfd);
 int __dup2(int oldfd, int newfd);
 int __dup3(int oldfd, int newfd, int flags);
 
-//string操作
-void *__memset(void *dst, int value, unsigned int n);
-void *__memmove(void *dest, const void *src, size_t n);
-
 //printf
 void tlibc_print_int(int num);
 void __printf(const char *fmt, ...);
@@ -76,8 +81,9 @@ void __fprintf(int fd, const char *fmt, ...);
 int tlibc_timespec_get(struct timespec *ts, int base);
 #define printf(fmt, ...) __printf(fmt, ##__VA_ARGS__)
 #define fprintf(fd, fmt, ...) __fprintf(fd, fmt, ##__VA_ARGS__)
-#define fdprintf(fd, fmt, ...) __fprintf(fd, fmt, ##__VA_ARGS__)//像一个fd写入，Tinylibc没有File结构体，这样命名更合适
+#define fdprintf(fd, fmt, ...) __fprintf(fd, fmt, ##__VA_ARGS__)
 
-#include "tlibc_compat.h"
+/* main_tid — 主线程 pid（来自 init.h） */
+extern pid_t main_tid;
 
 #endif

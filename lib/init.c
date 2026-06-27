@@ -1,8 +1,6 @@
 #include "core.h"
 #include "pthread.h"
 #include "tlibc_print.h"
-#include "tlibc.h"
-#include "init.h"
 #include "mempool.h"
 #include "tlibc_everything.h"
 #include "syscall.h"

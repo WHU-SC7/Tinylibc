@@ -1,6 +1,7 @@
 #include "core.h"
 #include "tty.h"
-#include "tlibc_ioctl.h"
+#include "termios.h"
+#include "terminal_esc.h"
 #include "tlibc_print.h"
 
 int tlibc_get_term_size(int fd, struct winsize *term)

@@ -1,6 +1,5 @@
 #include "core.h"
 #include "tlibc_print.h"
-#include "tlibc.h"
 #include "errno.h"
 
 // 带AT_REMOVEDIR的unlinkat会直接删除整个文件夹，不管里面有没有文件

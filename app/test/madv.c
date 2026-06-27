@@ -1,6 +1,5 @@
 #include "core.h"
 #include "tlibc_print.h"
-#include "tlibc.h"
 #include "pthread.h"
 #include "mman.h"
 //madvise系统调用

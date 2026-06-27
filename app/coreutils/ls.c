@@ -1,6 +1,5 @@
 #include "core.h"
 #include "tlibc_print.h"
-#include "tlibc.h"
 
 /**
  * @brief 格式化显示getdents64的内容，没有错误处理

@@ -1,5 +1,4 @@
 #include "core.h"
-#include "tlibc.h"
 #include "tlibc_print.h"
 #include "tlibc_everything.h"
 

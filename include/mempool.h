@@ -1,7 +1,7 @@
 #ifndef __MEMPOOL_H
 #define __MEMPOOL_H
 
-#include "tlibc.h"
+#include "tlibc_types.h"  /* pid_t */
 
 int tlibc_mem_pool_init();
 void *malloc(unsigned long size);

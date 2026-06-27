@@ -1,9 +1,10 @@
 #include "core.h"
 #include "tlibc_print.h"
-#include "tlibc.h"
+#include "string.h"
 #include "errno.h"
-#include "tlibc_ioctl.h"
-#include "sig_num.h"
+#include "termios.h"
+#include "terminal_esc.h"
+#include "signal.h"
 
 struct winsize {
     unsigned short ws_row;

@@ -33,7 +33,7 @@ CFLAGS += -mno-red-zone
 
 
 #头文件
-CFLAGS += -Iarch -Iinclude
+CFLAGS += -Iarch -Iinclude -Iinclude/posix -Iinclude/tlibc
 CFLAGS += -Iarch/x86_64
 #宏定义
 CFLAGS += -DX86_64_TLIBC=1

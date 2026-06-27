@@ -1,10 +1,10 @@
 #if X86_64_TLIBC == 1
 //使用Tinylibc
 #include "core.h"
+#include "tlibc_compat.h"
 #include "pthread.h"
 #include "syscall.h"
 #include "syscall_num.h"
-#include "tlibc.h"
 #include "mempool.h"
 #else
 //使用Glibc

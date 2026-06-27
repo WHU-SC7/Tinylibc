@@ -2,10 +2,10 @@
 // 只需要更改template_exit_handler和template的函数名为新程序函数名即可
 #include "core.h"
 #include "tlibc_print.h"
-#include "tlibc.h"
 #include "errno.h"
-#include "tlibc_ioctl.h"
-#include "sig_num.h"
+#include "termios.h"
+#include "terminal_esc.h"
+#include "signal.h"
 #include "tty.h"
 
 #define TEMPLATE_ROW_WANTED 16

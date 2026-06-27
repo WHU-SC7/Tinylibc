@@ -1,7 +1,8 @@
 #ifndef __TLIBC_TEST_H
 #define __TLIBC_TEST_H
 
-#include "tlibc_everything.h"
+#include "core.h"    /* __printf */
+#include "string.h"  /* strcmp */
 
 /*
  * Tinylibc 测试框架

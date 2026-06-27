@@ -2,6 +2,8 @@
 #include "errno.h"
 #include "pthread.h"
 #include "pthread_arch.h"
+#include "string.h"    /* __memset */
+#include "sched.h"     /* CLONE_* 标志 */
 #include "tlibc_print.h"
 
 /* 子线程启动参数（放在栈上） */

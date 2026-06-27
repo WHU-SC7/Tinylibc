@@ -16,7 +16,6 @@
 
 #include "core.h"
 #include "tlibc_print.h"
-#include "tlibc.h"
 #include "errno.h"
 #include "string.h"
 #include "net.h"

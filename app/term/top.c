@@ -1,9 +1,9 @@
 #include "core.h"
 #include "tlibc_print.h"
-#include "tlibc.h"
 #include "errno.h"
-#include "tlibc_ioctl.h"
-#include "sig_num.h"
+#include "termios.h"
+#include "terminal_esc.h"
+#include "signal.h"
 #include "tty.h"
 #include "string.h"
 

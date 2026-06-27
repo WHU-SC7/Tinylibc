@@ -112,16 +112,21 @@ debug: all
 #   sudo setcap cap_net_raw+ep ~/tlibc/bin/ndiscover
 #   sudo setcap cap_net_raw+ep ~/tlibc/bin/netprobe
 #   sudo setcap cap_net_raw+ep ~/tlibc/bin/sniffer
+SETCAP := /usr/sbin/setcap
+ifeq ($(wildcard $(SETCAP)),)
+SETCAP := /sbin/setcap
+endif
+
 setcap:
 	@echo "  → 设置 CAP_NET_RAW 权限..."
 	@for bin in ndiscover netprobe sniffer; do \
 		installed=~/tlibc/bin/$$bin; \
 		buildout=build/output/$$bin; \
 		if [ -f $$installed ]; then \
-			sudo setcap cap_net_raw+ep $$installed 2>/dev/null && echo "    ✔ $$installed" || echo "    ! $$installed (skip)"; \
+			sudo "$(SETCAP)" cap_net_raw+ep $$installed 2>/dev/null && echo "    ✔ $$installed" || echo "    ! $$installed (skip)"; \
 		fi; \
 		if [ -f $$buildout ]; then \
-			sudo setcap cap_net_raw+ep $$buildout 2>/dev/null || true; \
+			sudo "$(SETCAP)" cap_net_raw+ep $$buildout 2>/dev/null || true; \
 		fi; \
 	done
 

@@ -10,6 +10,8 @@
 Makefile text eol=lf
 ld.script text eol=lf
 .gitignore  text eol=lf
+.githooks/** text eol=lf
+sudoers.d-* text eol=lf
 
 # 二进制文件不作转换
 *.o     binary

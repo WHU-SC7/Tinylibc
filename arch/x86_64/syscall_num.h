@@ -44,6 +44,7 @@
 #define SYS_munmap      __NR_munmap
 #define SYS_gettid      __NR_gettid
 #define SYS_futex       __NR_futex
+#define SYS_arch_prctl  __NR_arch_prctl
 
 //网络
 #define SYS_socket      __NR_socket

@@ -154,15 +154,8 @@ static int tlibc_mempool_clean_thread()
             DEBUG_PRINTF("回收线程%d的资源\n", global_mem_list->thread_id_idx[i]);
             struct thread_mem_list *t_mem_list = global_mem_list->thread_mem_list[i];
             struct mem_chunk *chunk = t_mem_list->first; 
-            //回收线程栈
-            int ret = __munmap((void *)t_mem_list->stack_base, t_mem_list->stack_size);
-            if(ret==0)
-                DEBUG_PRINTF("回收栈成功!base: %ld, size: %ld\n", t_mem_list->stack_base, t_mem_list->stack_size);
-            else{
-                DEBUG_PRINTF("ERROR!回收栈失败. 线程tid: %ld, state: %ld\n", t_mem_list->tid, t_mem_list->state);
-                goto clean;
-                // tlibc_debug_print_mem_list();
-            }
+            // NOTE: 线程栈回收已由 pthread_join 负责，这里不再回收栈。
+            // 仍然清理 malloc chunk 链表（保留，后续不再注册栈时实际 no-op）。
             for(int i=0; i<t_mem_list->chunk_num; i++){ //回收所有映射和struct mem_chunk
                 if(__munmap((void *)chunk->base, chunk->size) == -1){
                     DEBUG_PRINTF("ERROR! 回收内存失败, base: %ld, size: %ld\n", chunk->base, chunk->size);
@@ -171,7 +164,6 @@ static int tlibc_mempool_clean_thread()
                 chunk = chunk->next;
                 __munmap((void *)chunk, sizeof(struct mem_chunk));
             }
-clean:
             //线程内存全部释放，回收struct thread_mem_list;
             __munmap((void *)t_mem_list, sizeof(struct thread_mem_list));
             //前移填空，保持有序

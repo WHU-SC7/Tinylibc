@@ -1,126 +1,135 @@
 #include "core.h"
 #include "errno.h"
 #include "pthread.h"
+#include "pthread_arch.h"
 #include "tlibc_print.h"
-#include "init.h"
-#include "mempool.h"
+
+/* 子线程启动参数（放在栈上） */
+struct start_args {
+    void *(*func)(void *);
+    void *arg;
+};
 
 /* Internal thread entry: runs the user function then calls pthread_exit */
 static int start(void *p)
 {
-    struct start_args {
-        void *(*start_func)(void *);
-        void *start_arg;
-        void **result_ptr;   /* points to struct pthread.result */
-    } *args = p;
-
-    void *ret = args->start_func(args->start_arg);
-
-    /* Store return value so pthread_join can retrieve it */
-    if (args->result_ptr) {
-        *args->result_ptr = ret;
-    }
-
+    struct start_args *args = p;
+    void *ret = args->func(args->arg);
     pthread_exit(ret);
-    return 0;
+    return 0;   /* never reached */
 }
 
-/*
-   sys_clone args:  fn(stack, flags, arg, parent_tid, tls, child_tid)
-   pthread_create:  res(ptr to struct pthread on child's stack), attrp(unused),
-                    entry(user func), arg(user arg)
-*/
 int pthread_create(pthread_t *restrict res,
-                     const pthread_attr_t *restrict attrp,
-                     void *(*entry)(void *),
-                     void *restrict arg)
+                   const pthread_attr_t *restrict attrp,
+                   void *(*entry)(void *),
+                   void *restrict arg)
 {
-    size_t size;
-    struct pthread *new;
-    unsigned char *map = 0, *stack = 0;
-    unsigned flags = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND
-        | CLONE_THREAD | CLONE_SYSVSEM | CLONE_SETTLS
-        | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID;
+    (void)attrp;    /* TODO: handle PTHREAD_CREATE_DETACHED from attr */
 
-    size = THREAD_STACK_SIZE;
-
-    // Pre-allocated stacks: batch mmap to avoid per-thread mmap overhead
-    if(remain_thread_stack_num==0){
-        pre_alloc_stack = __mmap(0, PRE_ALLOC_SIZE*THREAD_STACK_SIZE, PROT_READ|PROT_WRITE,
-                     MAP_PRIVATE|MAP_ANON, -1, 0);
-        if(pre_alloc_stack == (void *)-1)
-        {
-            __printf("Failed to pre-allocate thread stacks!\n");
-            return EAGAIN;
-        }
-        remain_thread_stack_num = PRE_ALLOC_SIZE;
-    }
-    map = (unsigned char *)pre_alloc_stack;
-    pre_alloc_stack = ((char *)pre_alloc_stack + THREAD_STACK_SIZE);
-    remain_thread_stack_num --;
-
-    stack = map + size;
-
-    // Initialize pthread struct at the bottom of the stack
-    new = (struct pthread *)(stack - sizeof(struct pthread));
-    __memset(new, 0, sizeof(struct pthread));
-
-    new->map_base = map;
-    new->map_size = size;
-    new->tid = -1;
-    new->self = new;
-    new->result = NULL;
-
-    // Place args below the pthread struct (3 pointers: func, arg, result_ptr)
-    stack -= sizeof(void *) * 3;
-    struct {
-        void *(*func)(void *);
-        void *arg;
-        void **result_ptr;
-    } *args = (void *)stack;
-    args->func = entry;
-    args->arg = arg;
-    args->result_ptr = &new->result;
-
-    int ret = __clone(start, stack, flags, args, &new->tid,
-                      new, &new->tid);
-
-    if (ret < 0) {
-        pre_alloc_stack = ((char *)pre_alloc_stack - THREAD_STACK_SIZE);
-        remain_thread_stack_num ++;
-        __printf("clone failed!\n");
+    /* 1. mmap 线程栈 */
+    unsigned char *map = __mmap(NULL, THREAD_STACK_SIZE,
+                                PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (map == MAP_FAILED) {
+        __printf("pthread_create: mmap stack failed\n");
         return EAGAIN;
     }
-    tlibc_register_thread_stack(new->tid, (long)map, size);
+
+    /* 2. 栈顶（栈向下增长） */
+    unsigned char *stack_top = map + THREAD_STACK_SIZE;
+
+    /* 3. struct pthread 放在栈底附近（同时也是 TLS 区域） */
+    struct pthread *new = (struct pthread *)(stack_top - sizeof(struct pthread));
+    __memset(new, 0, sizeof(struct pthread));
+
+    new->self        = new;
+    new->dtv         = NULL;
+    new->canary      = 0;
+    new->tid         = -1;         /* CLONE_PARENT_SETTID 会写入实际值 */
+    new->detach_state = PTHREAD_CREATE_JOINABLE;
+    new->map_base    = map;
+    new->map_size    = THREAD_STACK_SIZE;
+    new->result      = NULL;
+
+    /* 4. start_args 放在 struct pthread 下方 */
+    unsigned char *sp = (unsigned char *)new - sizeof(struct start_args);
+    struct start_args *sargs = (struct start_args *)sp;
+    sargs->func = entry;
+    sargs->arg  = arg;
+
+    /* 5. clone 子线程 */
+    unsigned flags = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND
+                   | CLONE_THREAD | CLONE_SYSVSEM | CLONE_SETTLS
+                   | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID;
+
+    int ret = __clone(start, sp, flags, sargs,
+                      &new->tid,       /* parent_tid  — 内核写 tid */
+                      new,             /* tls         — fs_base = new */
+                      &new->tid);      /* child_tid   — 退出时内核清 0 */
+
+    if (ret < 0) {
+        __munmap(map, THREAD_STACK_SIZE);
+        return EAGAIN;
+    }
+
     *res = (pthread_t)new;
     return 0;
 }
-
-/* Futex operations */
-#define FUTEX_WAIT          0
-#define FUTEX_WAKE          1
 
 int pthread_join(pthread_t t, void **res)
 {
     struct pthread *p = (struct pthread *)t;
 
-    /* Wait until the target thread exits.  The kernel clears ->tid and
-       wakes futex waiters when the thread exits via CLONE_CHILD_CLEARTID. */
+    /* 不允许 join 已分离的线程 */
+    if (p->detach_state == PTHREAD_CREATE_DETACHED)
+        return EINVAL;
+
+    /* 等待内核清除 tid（CLONE_CHILD_CLEARTID） */
     while (p->tid != 0) {
-        __futex((unsigned int *)&p->tid, FUTEX_WAIT, p->tid, NULL, NULL, 0);
+        __futex((unsigned int *)&p->tid, 0 /* FUTEX_WAIT */,
+                p->tid, NULL, NULL, 0);
     }
 
-    /* Return the thread's result if requested */
-    if (res) {
+    if (res)
         *res = p->result;
-    }
 
+    /* 回收线程栈 + struct pthread */
+    __munmap(p->map_base, p->map_size);
     return 0;
 }
 
-/* Marks the calling thread as exited so the mempool worker can reclaim its resources */
 void pthread_exit(void *retval)
 {
-    tlibc_mempool_mark_exit(__gettid());
+    struct pthread *self = __tlibc_thread_self();
+    self->result = retval;
+
+    /* 退出线程 — 内核自动清除 tid 并唤醒 futex waiter */
     __exit(0);
+}
+
+int pthread_detach(pthread_t t)
+{
+    struct pthread *p = (struct pthread *)t;
+
+    /* 标记为已分离，后续 pthread_join 会返回 EINVAL。
+     *
+     * 注意：这里不检查 tid==0 主动 munmap——因为此时另一个线程可能正在
+     * pthread_join 中读取 p 的字段（尽管已经 detach 了就不该 join）。
+     * 更关键的是，如果我们在 detach 时释放了栈，然后调用者又误调了
+     * pthread_join，就会 UAF。
+     *
+     * detached 线程的栈回收留待后续实现（自回收或 manager 线程）。
+     */
+    p->detach_state = PTHREAD_CREATE_DETACHED;
+    return 0;
+}
+
+pthread_t pthread_self(void)
+{
+    return (pthread_t)__tlibc_thread_self();
+}
+
+int pthread_equal(pthread_t a, pthread_t b)
+{
+    return a == b;
 }

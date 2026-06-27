@@ -1,8 +1,7 @@
 #ifndef __INIT_H
 #define __INIT_H
 
-extern void * volatile pre_alloc_stack;
-extern volatile int remain_thread_stack_num;
-#define PRE_ALLOC_SIZE (long)100//每次预先分配的数量
+/* main_tid — 主线程 pid，用于判断是否由主线程调用 __exit_group */
+extern pid_t main_tid;
 
 #endif

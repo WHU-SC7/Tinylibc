@@ -4,6 +4,7 @@
 #include "errno.h"
 #include "termios.h"
 #include "terminal_esc.h"
+#include "tty.h"
 #include "signal.h"
 
 #define VIM_BUF_SIZE    16*1024
@@ -24,11 +25,6 @@ int cursor_x=1;
 int cursor_y=1;
 int file_line=0;
 
-//自定义键值
-#define KEY_UP     0x11    // DC1 - 设备控制1
-#define KEY_DOWN   0x12    // DC2 - 设备控制2  
-#define KEY_LEFT   0x13    // DC3 - 设备控制3
-#define KEY_RIGHT  0x14    // DC4 - 设备控制4
 int vim_input_process(int pipe_write_fd)//专门读取键盘输入的进程
 {
     while(1)
@@ -177,14 +173,6 @@ static int vim_get_line_length(int i)
         return -1;
 }
 
-struct winsize {
-    unsigned short ws_row;
-    unsigned short ws_col;
-    unsigned short ws_xpixel;
-    unsigned short ws_ypixel;
-};
-#define TIOCGWINSZ 0x5413
-
 int main(int argc, char *argv[])
 {
     __memset((void*)&w, 0, sizeof(w));
@@ -238,10 +226,7 @@ int main(int argc, char *argv[])
 
     //创建管道用于子进程传递输入给游戏主进程
     int pipefd[2];
-    #define O_NONBLOCK      0x800//如果管道没有数据，直接返回-11,不会阻塞
-    #define PIPE_READ   0
-    #define PIPE_WRITE  1
-    __pipe2(pipefd, O_NONBLOCK); 
+    __pipe2(pipefd, O_NONBLOCK);
 
     // 创建进程读取输入
     // int fork_ret = __clone(0,0,0,0,0);//这样也可以
@@ -333,7 +318,7 @@ int main(int argc, char *argv[])
                     continue;
                 break;
             }
-                __printf("\033[%d;%dH", cursor_y, cursor_x);
+                tlibc_cursor_goto(cursor_y, cursor_x);
             // __printf(CLEAR_SCREEN CURSOR_HOME);
             // vim_render_line(first_line, w.ws_row-1);//除了最后一行，都输出文件内容
             // if(final_input != (char)-62) //在最下行显示用户输入
@@ -373,7 +358,7 @@ int main(int argc, char *argv[])
                             char_num--;
                         if(cursor_x > char_num)
                             cursor_x = char_num;
-                        __printf("\033[%d;%dH", cursor_y, cursor_x);
+                        tlibc_cursor_goto(cursor_y, cursor_x);
                         continue;
                     }
                     else
@@ -388,7 +373,7 @@ int main(int argc, char *argv[])
                     char_num = vim_get_line_length(first_line + cursor_y-1);
                     if(cursor_x > char_num) //光标y不需要动，改变x适应新行的长度
                         cursor_x = char_num;
-                    __printf("\033[%d;%dH", cursor_y, cursor_x);
+                    tlibc_cursor_goto(cursor_y, cursor_x);
                     continue;
                 }
                 if(cursor_y<w.ws_row-1)
@@ -398,7 +383,7 @@ int main(int argc, char *argv[])
                     char_num--;
                 if(cursor_x > char_num)
                     cursor_x = char_num;
-                __printf("\033[%d;%dH", cursor_y, cursor_x);
+                tlibc_cursor_goto(cursor_y, cursor_x);
                 continue;
                 break;
             case KEY_RIGHT :
@@ -407,7 +392,7 @@ int main(int argc, char *argv[])
                     char_num--;
                 if(cursor_x<char_num)//移动光标，不能超过这一行
                     cursor_x++;
-                __printf("\033[%d;%dH", cursor_y, cursor_x);
+                tlibc_cursor_goto(cursor_y, cursor_x);
                 continue;
                 break;
             case KEY_LEFT :
@@ -441,7 +426,7 @@ int main(int argc, char *argv[])
                 }
                 if(cursor_x>1)
                     cursor_x--;
-                __printf("\033[%d;%dH", cursor_y, cursor_x);//更新光标
+                tlibc_cursor_goto(cursor_y, cursor_x);//更新光标
                 continue;
                 break;
             case 27 ://ESC
@@ -470,14 +455,14 @@ int main(int argc, char *argv[])
                     }
                     else
                         cursor_x++;
-                    __printf("\033[%d;%dH", cursor_y, cursor_x);
+                    tlibc_cursor_goto(cursor_y, cursor_x);
                     continue;
                 }
                 if(final_input == 194)
                     continue;
                 break;
             }
-            __printf("\033[%d;%dH", cursor_y, cursor_x);
+            tlibc_cursor_goto(cursor_y, cursor_x);
 
             continue;
         }
@@ -555,7 +540,7 @@ int main(int argc, char *argv[])
         __printf(CLEAR_SCREEN CURSOR_HOME);
         // __printf("宽度: %d", w.ws_row);
         vim_render_line(first_line, w.ws_row-1);//除了最后一行，都输出文件内容
-        __printf("\033[%d;%dH", w.ws_row, 1); //移动到最下面一行
+        tlibc_cursor_goto(w.ws_row, 1); //移动到最下面一行
         if(final_input != (char)-62) //在最下行显示用户输入
             __write(1, &final_input, 1);
     }

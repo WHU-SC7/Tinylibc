@@ -7,7 +7,7 @@
 void print_getdents64_buf(struct linux_dirent64 *buf) //要求buf无数据部分是全0
 {
     struct linux_dirent64 *data = buf;
-    PRINT_COLOR(BRIGHT_CYAN_COLOR_PINRT, "off\tinode\ttype\tname\t\n");
+    PRINT_COLOR(BRIGHT_CYAN_COLOR_PRINT, "off\tinode\ttype\tname\t\n");
     while (data->d_off != 0) //< 检查不严谨，但是考虑到每次list_file会清空ls_buf为0,这样是可以的
     {
         // printf("%d\t%d\t%d\t%s\n",data->d_off,data->d_ino,data->d_type,data->d_name);

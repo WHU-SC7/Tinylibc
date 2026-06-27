@@ -4,6 +4,20 @@
 #include "terminal_esc.h"
 #include "tlibc_print.h"
 
+/*
+ * Per-fd saved termios for restore.
+ * In practice only fd 0 (stdin) is used for terminal control across the
+ * codebase, so a single slot suffices. The fork() model is safe because
+ * the child gets its own copy via COW — the parent's flag is unaffected
+ * when the child calls restore_term before exec.
+ */
+static struct {
+    struct termios term;
+    int           valid;
+} saved[16];
+
+/* ---- helpers ---- */
+
 int tlibc_get_term_size(int fd, struct winsize *term)
 {
     if (__ioctl(fd, TIOCGWINSZ, term) < 0) {
@@ -12,7 +26,6 @@ int tlibc_get_term_size(int fd, struct winsize *term)
     return 0;
 }
 
-//这个函数假设__printf可用
 int tlibc_check_term_size(int fd, int row_wanted, int col_wanted)
 {
     struct winsize w;
@@ -49,36 +62,73 @@ int tlibc_set_term_config(int fd, struct termios *term)
     return 0;
 }
 
-// 关闭规范模式和回显
+/*
+ * 设置完整 raw 模式（cfmakeraw 风格），并保存原始配置。
+ *
+ * 清除的标志（对应 Linux cfmakeraw）：
+ *   c_iflag: ICRNL, IXON, BRKINT, INPCK, ISTRIP
+ *   c_oflag: OPOST
+ *   c_lflag: ICANON, ECHO, ECHOE, ECHOK, ECHONL, ISIG, IEXTEN
+ *   c_cflag: 设置 CS8、CREAD
+ *   c_cc:    VMIN=1, VTIME=0
+ */
 int tlibc_set_term_raw_and_noecho(int fd)
 {
+    if (fd < 0 || fd >= 16) return -1;
+
     struct termios term;
-    if (tlibc_get_term_config(fd, &term) < 0) {
+    if (tlibc_get_term_config(fd, &term) < 0)
         return -1;
-    }
-    term.c_lflag &= ~(ICANON | ECHO);
-    if (tlibc_set_term_config(fd, &term) < 0) {
+
+    /* 保存原始配置 */
+    saved[fd].term = term;
+    saved[fd].valid = 1;
+
+    /* 应用 raw 模式 */
+    term.c_iflag &= ~(ICRNL | IXON | BRKINT | INPCK | ISTRIP);
+    term.c_oflag &= ~OPOST;
+    term.c_lflag &= ~(ICANON | ECHO | ECHOE | ECHOK | ECHONL | ISIG | IEXTEN);
+    term.c_cflag |= CS8 | CREAD;
+    term.c_cc[VMIN]  = 1;
+    term.c_cc[VTIME] = 0;
+
+    if (tlibc_set_term_config(fd, &term) < 0)
         return -2;
-    }
+
     return 0;
 }
 
-//恢复到规范和回显模式
+/*
+ * 从 saved[] 完全恢复终端配置。
+ * 如果没有调用过 set_term_raw_and_noecho，则是空操作。
+ */
 int tlibc_restore_term(int fd)
 {
-    struct termios term;
-    if (tlibc_get_term_config(fd, &term) < 0) {
-        return -1;
-    }
-    term.c_lflag |= (ICANON | ECHO);
-    if (tlibc_set_term_config(fd, &term) < 0) {
+    if (fd < 0 || fd >= 16) return -1;
+    if (!saved[fd].valid)
+        return 0; /* 没设置过，跳过 */
+
+    if (tlibc_set_term_config(fd, &saved[fd].term) < 0)
         return -2;
-    }
+
+    saved[fd].valid = 0;
     return 0;
+}
+
+/* ---- 光标定位（运行时参数，不能用编译期字符串化宏） ---- */
+
+void tlibc_cursor_goto(int row, int col)
+{
+    __printf("\033[%d;%dH", row, col);
+}
+
+void tlibc_cursor_goto_col(int col)
+{
+    __printf("\033[%dG", col);
 }
 
 /**
- * @brief 让子进程执行这个函数，子进程恢一直从终端读取输入，
+ * @brief 让子进程执行这个函数，子进程一直从终端读取输入，
  *          每读取到一次就会写入给定的管道的写入端
  *          支持方向键的转义序列，会转换成KEY_UP等自定义键值
  */
@@ -92,36 +142,33 @@ int tlibc_general_input_process(int pipe_write_fd)
         int ret = __read(0, input, 3); //阻塞读取
         if(ret == 1)
         {
-            int ret = __write(pipe_write_fd, input, 1);
             if(input[0] == 'q')
                 __exit(0);
-            if(ret != 1)
-                panic("[input_process]ret: %d", ret);
-            // __write(0, &input, 1);
+
+            int wret = __write(pipe_write_fd, input, 1);
+            if (wret < 0) {
+                /* 父进程已退出，管道破裂 */
+                __exit(0);
+            }
         }
         else if(ret == 2)
         {
-            // __creat("vim出现错误!", 0644);
+            /* 两次read得到2字节？视为出错，发送 'q' 退出 */
             input[0] = 'q';
             __write(pipe_write_fd, input, 1);
             __exit(0);
         }
         else if(ret == 3) //1次三个字节，是转义序列
         {
-            if(input[0] == 27)//0x1b(ESC) 转义序列开头，读取完整的序列
+            if(input[0] == 27)//0x1b(ESC) 转义序列开头
             {
-                // char tmp;
-                // __write(pipe_write_fd, &input, 1);
-                // __read(0, &tmp, 1);
                 if(input[1] == 91) //0x5b [
                 {
-                    // __read(0, &tmp, 1);
                     switch (input[2])
                     {
                     case 0x41: //A, 方向上
                         input[0] = KEY_UP;
                         __write(pipe_write_fd, input, 1);
-                        // __creat("转义序列上", 0644);
                         break;
                     case 0x42: //B, 方向下
                         input[0] = KEY_DOWN;

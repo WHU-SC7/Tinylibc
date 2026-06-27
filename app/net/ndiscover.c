@@ -537,12 +537,12 @@ dev_class_color(enum device_class dc)
 {
     switch (dc) {
         case DEV_PHONE:   return BRIGHT_MAGANTA_COLOR_PRINT;
-        case DEV_ROUTER:  return BRIGHT_CYAN_COLOR_PINRT;
+        case DEV_ROUTER:  return BRIGHT_CYAN_COLOR_PRINT;
         case DEV_PC:      return BRIGHT_BLUE_COLOR_PRINT;
         case DEV_NAS:     return BRIGHT_YELLOW_COLOR_PRINT;
         case DEV_IOT:     return COLOR_RESET;
-        case DEV_GAME:    return BRIGHT_RED_COLOR_PINRT;
-        case DEV_TV:      return BRIGHT_CYAN_COLOR_PINRT;
+        case DEV_GAME:    return BRIGHT_RED_COLOR_PRINT;
+        case DEV_TV:      return BRIGHT_CYAN_COLOR_PRINT;
         case DEV_PRINTER: return BRIGHT_GREEN_COLOR_PRINT;
         default:          return COLOR_RESET;
     }

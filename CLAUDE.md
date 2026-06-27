@@ -50,7 +50,7 @@ tmake -j 4 -b cat      # 并行编译单个程序
 | `mempool.c` | 内存池 + 后台线程异步回收线程资源 |
 | `file.c` | `tlibc_get_file_count`, `tlibc_recursive_mkdir`, `tlibc_copy_file` 等 |
 | `path.c` | 路径规范化 |
-| `tty.c` | 终端大小、raw 模式、按键处理 |
+| `tty.c` | 终端大小、raw 模式（保存/恢复 termios、完整 cfmakeraw 风格）、光标定位、按键处理（方向键→自定义键值、EPIPE 防护） |
 | `net.c` | socket / connect / bind / listen / accept / shutdown |
 | `system.c` | `tlibc_get_user_dir`（解析 /etc/passwd） |
 | `envp.c` | 环境变量处理 |
@@ -64,28 +64,54 @@ tmake -j 4 -b cat      # 并行编译单个程序
 |------|------|
 | `shell.c` | 交互式 shell |
 | `tmake.c` | 自托管构建工具（并行编译、增量构建、`-b` 单目标编译） |
-| `coreutils/` | cat, cp, echo, ls, mkdir, mv, pwd, rm, rmdir, touch |
-| `net/` | client, server, http, tclient, tserver, ssh, sshd |
-| `term/` | vim, top, __game_pacman |
+| `coreutils/` | cat, cp, echo, ls, mkdir, mv, pwd, rm, rmdir, touch, hexdump |
+| `net/` | ndiscover, webserv, sniffer, netprobe, portscan, ssh, sshd, tclient, tserver, client, server, http |
+| `term/` | vim, top, __game_pacman, template |
 | `test/` | 内部测试 |
 | `paper/` | 与 glibc 对比实验 |
 
-### 头文件 `include/*.h`
+### 头文件（三层结构：核心 → POSIX → 项目自定义）
+
+**Layer 1 — 核心 `include/`**（与架构/硬编码相关）
 
 | 文件 | 内容 |
 |------|------|
-| `core.h` | syscall 包装声明 + printf/fprintf 宏 |
-| `tlibc.h` | O_*, DT_*, SEEK_*, timespec, sigaction, linux_dirent64 等 |
-| `tlibc_types.h` | size_t, pid_t 等类型 |
-| `tlibc_compat.h` | 兼容宏：`#define write __write` |
-| `tlibc_everything.h` | 伞状头文件 + 工具函数声明 |
-| `pthread.h` | pthread 结构体、clone/mmap 标志 |
-| `mempool.h` | 内存池 API |
+| `core.h` | 所有 syscall 包装声明 + 核心公共头文件引用 |
 | `atomic.h` | x86_64 原子操作：lock cmpxchg / lock xadd |
-| `tty.h` | winsize, TIOCGWINSZ, raw 模式 |
-| `net.h` / `socket.h` | 网络 API |
-| `errno.h` | 错误码 |
-| `sig_num.h` | 信号编号 |
+| `mempool.h` | 内存池 API |
+| `net.h` | socket / bind / listen / accept 等网络 API |
+| `terminal_esc.h` | ANSI/VT100 转义序列宏：CURSOR_HOME, CLEAR_SCREEN, ALT_SCREEN |
+| `tty.h` | winsize, TIOCGWINSZ, raw 模式 API, 自定义键值 (KEY_UP/DOWN/LEFT/RIGHT), 光标定位 |
+
+**Layer 2 — POSIX 兼容层 `include/posix/`**（标准 POSIX 语义）
+
+| 文件 | 内容 |
+|------|------|
+| `dirent.h` | DT_* 类型常量, `struct linux_dirent64` |
+| `errno.h` | 错误码 (EPERM, ENOENT, ESRCH 等) |
+| `fcntl.h` | O_RDONLY / O_WRONLY / O_RDWR, O_CREAT, AT_FDCWD |
+| `mman.h` | PROT_READ / PROT_WRITE, MAP_PRIVATE / MAP_ANONYMOUS |
+| `pthread.h` | pthread_t, pthread_attr_t, pthread_mutex_t, create/join/exit/lock |
+| `sched.h` | CLONE_VM / CLONE_THREAD / CLONE_SETTLS 等 clone 标志 |
+| `signal.h` | 信号编号 (SIGHUP–SIGSYS), sigset_t, struct sigaction |
+| `socket.h` | struct sockaddr_in, in_addr, AF_INET / AF_INET6 |
+| `string.h` | strlen, strcpy, strcmp, memcpy, strchr, itoa 等声明 |
+| `termios.h` | struct termios, TCGETS/TCSETS, ICANON/ECHO/ISIG/CS8 等标志 |
+| `time.h` | struct timespec, CLOCK_REALTIME / CLOCK_MONOTONIC |
+| `unistd.h` | SEEK_SET/CUR/END, STDIN/STDOUT/STDERR, PIPE_READ/WRITE, O_NONBLOCK |
+
+**Layer 3 — 项目自定义 `include/tlibc/`**（tlibc 私有语义）
+
+| 文件 | 内容 |
+|------|------|
+| `tlibc_compat.h` | 兼容宏：`#define write __write`, `#define fork __fork` |
+| `tlibc_everything.h` | 伞状头文件（include 全部）+ 工具函数声明 |
+| `tlibc_print.h` | 彩色打印宏：PRINT_COLOR, LOG, panic, 256 色 SET_ROW_COLOR |
+| `tlibc_test.h` | 测试框架：TEST_START, TEST_ASSERT, TEST_BEGIN/END |
+| `tlibc_types.h` | size_t, pid_t, uid_t, off_t, ssize_t 等基础类型 |
+
+> `tlibc_everything.h` 是伞状头文件，新写 app 只需 `#include "tlibc_everything.h"`。
+> `tlibc_test.h` 需要显式包含，不在伞状头中。
 
 ### 架构 `arch/`
 

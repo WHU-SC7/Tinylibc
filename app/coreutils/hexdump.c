@@ -41,7 +41,7 @@ static void hexdump_fd(int fd, const char *label)
     while ((n = __read(fd, buf, HEXDUMP_BUF_SIZE)) > 0) {
         for (ssize_t i = 0; i < n; i += HEXDUMP_COLS) {
             /* Offset - cyan, 8 hex digits + "  " */
-            PRINT_COLOR(BRIGHT_CYAN_COLOR_PINRT, "");
+            PRINT_COLOR(BRIGHT_CYAN_COLOR_PRINT, "");
             print_hex8(offset + i);
             __write(STDOUT, "  ", 2);
 
@@ -77,7 +77,7 @@ static void hexdump_fd(int fd, const char *label)
     }
 
     /* Final offset line */
-    PRINT_COLOR(BRIGHT_CYAN_COLOR_PINRT, "");
+    PRINT_COLOR(BRIGHT_CYAN_COLOR_PRINT, "");
     print_hex8(offset);
     __printf("\n");
 }

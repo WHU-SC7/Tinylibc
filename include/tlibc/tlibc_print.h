@@ -10,12 +10,12 @@
 #define CYAN_COLOR_PRINT		"\033[36;1m"
 #define CLEAR_COLOR_PRINT	"\033[0m"
 
-#define BRIGHT_RED_COLOR_PINRT	   "\033[91m"
+#define BRIGHT_RED_COLOR_PRINT	   "\033[91m"
 #define BRIGHT_GREEN_COLOR_PRINT   "\033[92m"
 #define BRIGHT_YELLOW_COLOR_PRINT  "\033[93m"
 #define BRIGHT_BLUE_COLOR_PRINT	   "\033[94m"
 #define BRIGHT_MAGANTA_COLOR_PRINT "\033[95m"
-#define BRIGHT_CYAN_COLOR_PINRT	   "\033[96m"
+#define BRIGHT_CYAN_COLOR_PRINT    "\033[96m"
 
 #define PRINT_COLOR(color, format, ...) \
     do { \

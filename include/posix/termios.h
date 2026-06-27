@@ -18,9 +18,12 @@ struct termios {
 #define TCSETSF     0x5404
 
 /* 本地模式标志 */
+#define ISIG        0x00000001
 #define ICANON      0x00000002
 #define ECHO        0x00000008
-#define ISIG        0x00000001
+#define ECHOE       0x00000010
+#define ECHOK       0x00000020
+#define ECHONL      0x00000040
 #define IEXTEN      0x00008000
 
 /* 控制字符索引 */
@@ -36,5 +39,10 @@ struct termios {
 
 /* 输出模式标志 */
 #define OPOST       0x00000001
+
+/* 控制模式标志 */
+#define CSIZE       0x00000030
+#define CS8         0x00000030
+#define CREAD       0x00000080
 
 #endif /* __TERMIOS_H */

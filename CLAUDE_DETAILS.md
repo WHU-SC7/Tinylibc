@@ -29,58 +29,76 @@ tmake -b ndiscover       # 第二次调用：跳过已有 .o（增量）
 |------|------|------|
 | `start.S` | 14 | 入口点 `__tlibc_start`，调用 `tlibc_init` 后执行 main |
 | `clone.S` | 27 | clone() 系统调用的汇编封装 |
-| `core.c` | 380 | 所有系统调用包装函数：`__write`、`__read`、`__openat`、`__mmap`、`__fork`、`__futex` 等 |
-| `string.c` | 262 | strcpy/strncpy/strcmp/strcat/strchr/memcpy/itoa/strerror 等 |
-| `printf.c` | 296 | `__printf`/`__fprintf` 实现，支持 `%d` `%s` `%x` `%f` `%l` |
-| `snprintf.c` | 253 | snprintf 实现 |
-| `mempool.c` | 325 | 内存池 + 后台工作线程异步回收线程资源 |
-| `pthread.c` | 154 | pthread_create/pthread_join/pthread_exit |
-| `file.c` | 386 | 文件工具函数：递归删除/创建目录、复制文件、目录列表等 |
-| `path.c` | 201 | 路径规范化（绝对路径计算、./../ 处理） |
-| `tty.c` | 144 | 终端控制：获取终端大小、设置 raw 模式、按键处理 |
-| `net.c` | 128 | socket/connect/bind/listen/accept/recv 等网络 syscall 封装 |
+| `core.c` | 426 | 所有系统调用包装函数：`__write`、`__read`、`__openat`、`__mmap`、`__fork`、`__futex` 等 |
+| `string.c` | 263 | strcpy/strncpy/strcmp/strcat/strchr/memcpy/itoa/strerror 等 |
+| `printf.c` | 410 | `__printf`/`__fprintf` 实现，支持 `%d` `%s` `%x` `%f` `%l` |
+| `snprintf.c` | 440 | snprintf 实现 |
+| `mempool.c` | 329 | 内存池 + 后台工作线程异步回收线程资源 |
+| `pthread.c` | 137 | pthread_create/pthread_join/pthread_exit |
+| `file.c` | 435 | 文件工具函数：递归删除/创建目录、复制文件、目录列表等 |
+| `path.c` | 139 | 路径规范化（绝对路径计算、./../ 处理） |
+| `tty.c` | 194 | 终端控制：获取终端大小、raw 模式（保存/恢复 termios、完整 cfmakeraw 风格）、光标定位、按键处理（方向键→KEY_UP/DOWN/LEFT/RIGHT、EPIPE 防护） |
+| `net.c` | 133 | socket/connect/bind/listen/accept/recv 等网络 syscall 封装 |
 | `system.c` | 72 | 系统函数：get_user_dir（解析 /etc/passwd） |
-| `envp.c` | 50 | 环境变量处理 |
-| `init.c` | 38 | 初始化：预分配线程栈、初始化内存池、调用 main |
+| `envp.c` | 52 | 环境变量处理 |
+| `init.c` | 55 | 初始化：预分配线程栈、初始化内存池、调用 main |
 
-**总行数：约 2,730 行**
+**总行数：约 3,126 行**
 
 ### `/app/` — 用户态程序
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
-| `shell.c` | 771 | 交互式 shell：命令解析、PATH 查找、tab 补全、程序执行 |
-| `tmake.c` | ~560 | 自托管构建工具：递归编译 app/ 下所有子目录的 .c 文件，支持 -j 并行、-b 单目标构建、增量跳过 .o |
-| `coreutils/` | ~290 | cat、cp、echo、ls、mkdir、mv、pwd、rm、rmdir、touch |
-| `net/` | ~530 | client、server(多线程)、http、tclient、tserver |
-| `term/` | ~1,484 | vim(基础查看器)、top、吃豆人游戏、模板 |
-| `test/` | ~360 | 内部测试、fcount、float、madv、passwd、queue、snprintf |
-| `paper/` | ~215 | 与 glibc 对比实验：exp、mempool、memtest、pthread |
+| `shell.c` | 770 | 交互式 shell：命令解析、PATH 查找、tab 补全、程序执行 |
+| `tmake.c` | 928 | 自托管构建工具：递归编译 app/ 下所有子目录的 .c 文件，支持 -j 并行、-b 单目标构建、增量跳过 .o |
+| `coreutils/` | 528 | cat、cp、echo、ls、mkdir、mv、pwd、rm、rmdir、touch、hexdump |
+| `net/` | 5,731 | 网络工具：ndiscover（网络发现）、webserv（HTTP 服务器）、sniffer（抓包）、netprobe（探测）、portscan（端口扫描）、ssh/sshd、tclient/tserver、client/server、http |
+| `term/` | 1,531 | 终端程序：vim（文本查看器）、top（进程监视器）、__game_pacman（吃豆人）、template（模板） |
+| `test/` | 1,645 | 内部测试：string、printf、snprintf、fcount、float、madv、passwd、queue 等 |
+| `paper/` | 187 | 与 glibc 对比实验：exp、mempool、memtest、pthread |
 | `compiler/` | 76 | ELF 读写器 |
 
-### `/include/` — 头文件
+### `/include/` — 头文件（三层结构）
+
+头文件按功能分为三个目录：核心 `include/` → POSIX 兼容 `include/posix/` → 项目自定义 `include/tlibc/`。
+
+**Layer 1 — 核心 `include/`**（与架构/硬编码相关）
 
 | 文件 | 职责 |
 |------|------|
-| `core.h` | 系统调用包装声明 + printf/fprintf 宏定义 |
-| `tlibc.h` | O_*、DT_*、SEEK_*、timespec、sigaction、linux_dirent64 等通用常量/结构 |
-| `tlibc_types.h` | size_t、pid_t、uid_t、int64_t 等类型定义 |
-| `tlibc_compat.h` | 兼容宏层：`#define write __write`、`#define fork __fork` 等 |
-| `tlibc_everything.h` | 伞状头文件（include 所有头文件）+ 工具函数声明 |
-| `tlibc_print.h` | 彩色打印宏：PRINT_COLOR、LOG、panic |
-| `tlibc_ioctl.h` | termios 结构体、ioctl 常量、ANSI 转义序列 |
-| `tlibc_test.h` | 测试框架 |
-| `string.h` | 字符串函数声明 |
-| `pthread.h` | pthread 结构体、clone/mmap 标志、pthread_create/join/exit |
-| `mempool.h` | 内存池 API |
-| `net.h` | 网络 API 声明 |
-| `socket.h` | sockaddr_in、in_addr、AF_INET 等 socket 类型 |
-| `mman.h` | madvise 常量 |
-| `atomic.h` | x86_64 原子操作：atomic_fetch_add、atomic_compare_exchange（lock cmpxchg） |
-| `errno.h` | 错误码定义 |
-| `sig_num.h` | 信号编号 |
-| `tty.h` | winsize、TIOCGWINSZ、自定义键值、终端 raw 模式函数 |
-| `init.h` | 预分配栈全局变量 |
+| `core.h` | 所有 syscall 包装声明 + core 子模块公共头文件引用 |
+| `atomic.h` | x86_64 原子操作：atomic_fetch_add_u64 / atomic_fetch_add_u32（lock xaddq / lock xaddl） |
+| `mempool.h` | 内存池 API：malloc、线程内存回收、后台工作线程 |
+| `net.h` | 网络 API 声明：socket、bind、listen、accept、connect、send、recv、getaddrinfo |
+| `terminal_esc.h` | ANSI/VT100 转义序列宏：光标移动、清屏、替代屏幕、光标显隐 |
+| `tty.h` | 终端控制 API：winsize、TIOCGWINSZ/TIOCSWINSZ、raw 模式（保存/恢复）、自定义键值（KEY_UP/DOWN/LEFT/RIGHT）、光标定位（tlibc_cursor_goto） |
+
+**Layer 2 — POSIX 兼容 `include/posix/`**（标准 POSIX 语义）
+
+| 文件 | 职责 |
+|------|------|
+| `dirent.h` | DT_UNKNOWN/DT_REG/DT_DIR 等类型常量、struct linux_dirent64 |
+| `errno.h` | POSIX 错误码：EPERM / ENOENT / ESRCH / EINTR / EIO / ENXIO / E2BIG / EAGAIN / ENOMEM 等 |
+| `fcntl.h` | 文件控制：O_RDONLY / O_WRONLY / O_RDWR、O_CREAT / O_TRUNC / O_APPEND、O_DIRECTORY、O_CLOEXEC、AT_FDCWD |
+| `mman.h` | 内存映射：PROT_READ / PROT_WRITE / PROT_EXEC、MAP_SHARED / MAP_PRIVATE / MAP_ANONYMOUS、MAP_FAILED |
+| `pthread.h` | pthread 类型 + 函数：pthread_t、pthread_mutex_t、pthread_create/join/detach/exit/self、mutex lock/unlock/trylock/destroy |
+| `sched.h` | clone 标志：CSIGNAL、CLONE_VM/FS/FILES/SIGHAND/THREAD/SETTLS/CHILD_CLEARTID 等 |
+| `signal.h` | 信号：SIGHUP–SIGSYS 编号、sigset_t、struct sigaction、siginfo_t、sigaltstack |
+| `socket.h` | socket 类型：in_port_t、sa_family_t、in_addr、sockaddr_in、AF_INET / AF_INET6 / AF_UNIX |
+| `string.h` | 字符串/内存函数声明：strcpy/strncpy/strlen/strcat/strcmp/memcpy/itoa/tlibc_strtoul |
+| `termios.h` | 终端 I/O：struct termios、TCGETS/TCSETS/TCSETSW/TCSETSF、ICANON/ECHO/ISIG/ECHOE/IXON/CS8/CREAD |
+| `time.h` | 时间类型：struct timespec、clockid_t（CLOCK_REALTIME/MONOTONIC 等）|
+| `unistd.h` | POSIX 常量：SEEK_SET/CUR/END、STDIN_FILENO/STDOUT_FILENO/STDERR_FILENO、PIPE_READ/PIPE_WRITE、O_NONBLOCK |
+
+**Layer 3 — 项目自定义 `include/tlibc/`**（tlibc 私有语义）
+
+| 文件 | 职责 |
+|------|------|
+| `tlibc_compat.h` | 兼容宏层：`#define write __write`、`#define fork __fork`、`#define printf __printf` 等 |
+| `tlibc_everything.h` | 伞状头文件（include 所有其他头文件）+ 工具函数声明（get_user_dir、copy_file、recursive_mkdir 等）。新写 app 只需 `#include "tlibc_everything.h"` |
+| `tlibc_print.h` | 彩色打印宏：PRINT_COLOR、LOG、panic、256 色 SET_ROW_COLOR、BRIGHT_* 系列 |
+| `tlibc_test.h` | 测试框架：TEST_BEGIN/END、TEST_START/PASS/FAIL、TEST_ASSERT、TEST_ASSERT_EQ。需显式包含（不在伞状头中）|
+| `tlibc_types.h` | 基础类型：size_t、pid_t、uid_t、gid_t、off_t、ssize_t、dev_t、ino_t、mode_t、time_t、clockid_t |
 
 ### `/arch/` — 架构相关
 

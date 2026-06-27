@@ -546,17 +546,17 @@ int main(int argc, char *argv[])
 
             SET_ROW_COLOR(5, PROMPT_LINE_BG_COLOR, PROMPT_LINE_FG_COLOR);//设置提示行颜色
             __printf("PID");
-            __printf("\033[%dG", START);
+            tlibc_cursor_goto_col(START);
             __printf("NAME");
-            __printf("\033[%dG", START+NAME_WIDTH);
+            tlibc_cursor_goto_col(START+NAME_WIDTH);
             __printf("VMSIZE");
-            __printf("\033[%dG", START+NAME_WIDTH+VM_SIZE_WIDTH);
+            tlibc_cursor_goto_col(START+NAME_WIDTH+VM_SIZE_WIDTH);
             __printf("VMRSS");
-            __printf("\033[%dG", START+NAME_WIDTH+VM_SIZE_WIDTH+VM_RSS_WIDTH);
+            tlibc_cursor_goto_col(START+NAME_WIDTH+VM_SIZE_WIDTH+VM_RSS_WIDTH);
             __printf("TIME+");
-            __printf("\033[%dG", START+NAME_WIDTH+VM_SIZE_WIDTH+VM_RSS_WIDTH+RUN_TIME_WIDTH);
+            tlibc_cursor_goto_col(START+NAME_WIDTH+VM_SIZE_WIDTH+VM_RSS_WIDTH+RUN_TIME_WIDTH);
             __printf("CPU");
-            __printf("\033[%dG", START+NAME_WIDTH+VM_SIZE_WIDTH+VM_RSS_WIDTH+RUN_TIME_WIDTH+CPU_WIDTH);
+            tlibc_cursor_goto_col(START+NAME_WIDTH+VM_SIZE_WIDTH+VM_RSS_WIDTH+RUN_TIME_WIDTH+CPU_WIDTH);
             __printf("EXE");
             __printf(COLOR_RESET "\n");
 
@@ -580,13 +580,13 @@ int main(int argc, char *argv[])
                     continue;
 
                 __write(1, proc_pid[i], 8);//输出pid
-                __printf("\033[%dG", START); //到当前行的第9列
+                tlibc_cursor_goto_col(START); //到当前行的第9列
                 __write(1, name, NAME_WIDTH);//Name
-                __printf("\033[%dG", START+NAME_WIDTH); 
+                tlibc_cursor_goto_col(START+NAME_WIDTH);
                 __write(1, vm_size, VM_SIZE_WIDTH);//VmSize
-                __printf("\033[%dG", START+NAME_WIDTH+VM_SIZE_WIDTH);
+                tlibc_cursor_goto_col(START+NAME_WIDTH+VM_SIZE_WIDTH);
                 __write(1, vm_rss, VM_RSS_WIDTH);//VmRSS
-                __printf("\033[%dG", START+NAME_WIDTH+VM_SIZE_WIDTH+VM_RSS_WIDTH);
+                tlibc_cursor_goto_col(START+NAME_WIDTH+VM_SIZE_WIDTH+VM_RSS_WIDTH);
 
                 //输出已运行时间
                 long run_time = top_get_run_time(proc_pid[i]);
@@ -596,7 +596,7 @@ int main(int argc, char *argv[])
                     __printf("%ld.0%lds ", sec_time, t_time);//补齐小数点后的0,用整数来表示浮点数有点麻烦
                 else
                     __printf("%ld.%lds ", sec_time, t_time);
-                __printf("\033[%dG", START+NAME_WIDTH+VM_SIZE_WIDTH+VM_RSS_WIDTH+RUN_TIME_WIDTH);
+                tlibc_cursor_goto_col(START+NAME_WIDTH+VM_SIZE_WIDTH+VM_RSS_WIDTH+RUN_TIME_WIDTH);
 
                 //输出CPU占用
                 int ret = top_search_proc_time(proc_time, proc_pid[i]);
@@ -614,7 +614,7 @@ int main(int argc, char *argv[])
                 }
                 else
                     __printf("0%");
-                __printf("\033[%dG", START+NAME_WIDTH+VM_SIZE_WIDTH+VM_RSS_WIDTH+RUN_TIME_WIDTH+CPU_WIDTH);
+                tlibc_cursor_goto_col(START+NAME_WIDTH+VM_SIZE_WIDTH+VM_RSS_WIDTH+RUN_TIME_WIDTH+CPU_WIDTH);
 
                 //输出进程的exe路径
                 #define EXE_END 48

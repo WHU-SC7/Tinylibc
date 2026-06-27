@@ -4,15 +4,8 @@
 #include "errno.h"
 #include "termios.h"
 #include "terminal_esc.h"
+#include "tty.h"
 #include "signal.h"
-
-struct winsize {
-    unsigned short ws_row;
-    unsigned short ws_col;
-    unsigned short ws_xpixel;
-    unsigned short ws_ypixel;
-};
-#define TIOCGWINSZ 0x5413
 
 //命令行的空战游戏
 void __game_space_invader(int argc, char *argv[])
@@ -153,10 +146,7 @@ void __game_pacman()
 
     //创建管道用于子进程传递输入给游戏主进程
     int pipefd[2];
-    #define O_NONBLOCK      0x800//如果管道没有数据，直接返回-11,不会阻塞
-    #define PIPE_READ   0
-    #define PIPE_WRITE  1
-    __pipe2(pipefd, O_NONBLOCK); 
+    __pipe2(pipefd, O_NONBLOCK);
 
     // 创建进程读取输入
     // int fork_ret = __clone(0,0,0,0,0);//这样也可以

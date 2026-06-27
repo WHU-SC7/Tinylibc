@@ -57,7 +57,9 @@ static inline void spinlock_lock(spinlock_t *lock) {
 static inline void spinlock_unlock(spinlock_t *lock) {
     lock->lock = 0;
 }
-/* Initializes the global memory pool and starts the background cleanup worker thread */
+/* Initializes the global memory pool (tracking structures only).
+ * Background auto-reclaim is NOT started by default; call
+ * tlibc_mempool_enable_auto_reclaim() to enable it. */
 int tlibc_mem_pool_init()
 {
     if(whether_have_init != 1){
@@ -66,12 +68,18 @@ int tlibc_mem_pool_init()
         global_mem_list->thread_mem_list[thread_idx]->state = TLIBC_TS_MAIN;
         whether_have_init = 1;
         global_mem_list->spinlock.lock = 0;
-        //创建工作线程，定期回收已经退出的线程资源
-        pthread_t thread;
-        pthread_create(&thread, NULL, tlibc_mempool_worker, NULL);
         return 0;
     }
     else return 0;
+}
+
+/* Opt-in: starts the background worker that reclaims exited threads' memory.
+ * Only needed when threads are created/destroyed in large numbers and
+ * tlibc_free() isn't called explicitly. */
+int tlibc_mempool_enable_auto_reclaim()
+{
+    pthread_t thread;
+    return pthread_create(&thread, NULL, tlibc_mempool_worker, NULL);
 }
 
 int tlibc_find_or_alloc_thread_idx(pid_t tid)
@@ -157,9 +165,7 @@ static int tlibc_mempool_clean_thread()
             // NOTE: 线程栈回收已由 pthread_join 负责，这里不再回收栈。
             // 仍然清理 malloc chunk 链表（保留，后续不再注册栈时实际 no-op）。
             for(int i=0; i<t_mem_list->chunk_num; i++){ //回收所有映射和struct mem_chunk
-                if(__munmap((void *)chunk->base, chunk->size) == -1){
-                    DEBUG_PRINTF("ERROR! 回收内存失败, base: %ld, size: %ld\n", chunk->base, chunk->size);
-                }
+                tlibc_free((void *)chunk->base);
                 DEBUG_PRINTF("成功回收内存, base: %ld, size: %ld\n", chunk->base, chunk->size);
                 chunk = chunk->next;
                 __munmap((void *)chunk, sizeof(struct mem_chunk));
@@ -203,9 +209,9 @@ void *malloc(unsigned long size)
         DEBUG_PRINTF("malloc失败! 禁止未初始化时使用\n");
         return (void *)-2;
     }
-    void *addr = __mmap(0, size, PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANON, -1, 0);
-    if(addr == MAP_FAILED)
-        return MAP_FAILED;
+    void *addr = tlibc_malloc(size);
+    if(!addr || addr == MAP_FAILED)
+        return addr;
     //记录
     pid_t tid = __gettid();
     int thread_idx = -1; //请求malloc的线程对应的idex
@@ -268,9 +274,7 @@ int tlibc_clean_thread_mem(pid_t tid)
         struct thread_mem_list *t_mem_list = global_mem_list->thread_mem_list[thread_idx];
         struct mem_chunk *chunk = t_mem_list->first; 
         for(int i=0; i<t_mem_list->chunk_num; i++){ //回收所有映射和struct mem_chunk
-            if(__munmap((void *)chunk->base, chunk->size) == -1){
-                DEBUG_PRINTF("ERROR! 回收内存失败, base: %ld, size: %ld\n", chunk->base, chunk->size);
-            }
+            tlibc_free((void *)chunk->base);
             chunk = chunk->next;
             __munmap((void *)chunk, sizeof(struct mem_chunk));
         }

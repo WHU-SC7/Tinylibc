@@ -29,6 +29,7 @@ int __ioctl(int fd, unsigned long request, void *argp);
 
 long __brk(void *addr);
 void *tlibc_malloc(unsigned long size);
+void tlibc_free(void *ptr);
 int __nanosleep(const struct timespec *req, struct timespec *rem);
 int tlibc_msleep(unsigned int msecond);
 int tlibc_usleep(unsigned int usecond);

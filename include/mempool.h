@@ -13,6 +13,7 @@ int tlibc_find_or_alloc_thread_idx(pid_t tid);
 int tlibc_mempool_mark_exit(pid_t tid);
 void *tlibc_mempool_worker(void* arg);
 void tlibc_mempool_stop_worker();
+int tlibc_mempool_enable_auto_reclaim();
 
 enum tlibc_thread_state_t{
     TLIBC_TS_UNKNOWN,

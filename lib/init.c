@@ -53,6 +53,5 @@ int tlibc_init(int argc, char *argv[], char *envp[])
     if (__gettid() == main_tid)
         __exit_group(ret);
 
-    tlibc_mempool_stop_worker();
     return ret;
 }

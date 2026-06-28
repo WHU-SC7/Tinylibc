@@ -29,9 +29,8 @@ void* receive_thread(void* arg) {
 
 int main(int argc, char *argv[]) {
     if (argc != 3) {
-        printf("Usage: %s <IP address or domain> <port>\n", argv[0]);
+        printf("Usage: %s <IP address> <port>\n", argv[0]);
         printf("Example: %s 120.26.254.205 8888\n", argv[0]);
-        printf("Example: %s www.google.com 80\n", argv[0]);
         return 1;
     }
     
@@ -45,7 +44,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
-    // 2. 解析服务器地址（支持域名和IP）
+    // 2. 解析服务器地址（仅支持数字 IP）
     struct sockaddr_in server;
     server.sin_family = AF_INET;
     server.sin_port = tlibc_htons(port);

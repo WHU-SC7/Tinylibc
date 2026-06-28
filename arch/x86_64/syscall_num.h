@@ -54,6 +54,7 @@
 #define SYS_listen      __NR_listen
 #define SYS_accept      __NR_accept
 #define SYS_recvfrom    __NR_recvfrom
+#define SYS_sendto     __NR_sendto
 
 #define SYS_fcntl       __NR_fcntl
 #define SYS_dup         __NR_dup

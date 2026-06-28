@@ -34,7 +34,19 @@ int accept(int sockfd, struct sockaddr *addr,socklen_t *addrlen)
 
 ssize_t recv(int sockfd, void *buf, size_t len, int flags)
 {
-    return syscall(SYS_recvfrom, sockfd, buf, len, flags);
+    return syscall(SYS_recvfrom, sockfd, buf, len, flags, 0, 0);
+}
+
+ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
+               const struct sockaddr *dest_addr, socklen_t addrlen)
+{
+    return syscall(SYS_sendto, sockfd, buf, len, flags, dest_addr, addrlen);
+}
+
+ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
+                 struct sockaddr *src_addr, socklen_t *addrlen)
+{
+    return syscall(SYS_recvfrom, sockfd, buf, len, flags, src_addr, addrlen);
 }
 
 int shutdown(int sockfd, int how)

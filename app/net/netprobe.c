@@ -446,6 +446,13 @@ print_usage(void)
 
 int main(int argc, char *argv[])
 {
+    /* -h / --help 优先，不触发 argc 不足的错误 */
+    if (argc >= 2 &&
+        (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
+        print_usage();
+        return 0;
+    }
+
     if (argc < 3) {
         print_usage();
         return 1;
@@ -453,11 +460,6 @@ int main(int argc, char *argv[])
 
     const char *mode = argv[1];
     const char *host = argv[2];
-
-    if (strcmp(mode, "-h") == 0 || strcmp(mode, "--help") == 0) {
-        print_usage();
-        return 0;
-    }
 
     unsigned int target_ip;
     if (parse_ip(host, &target_ip) < 0)

@@ -7,7 +7,7 @@ int thread_info = 0; //验证子线程能主进程的变量值，虽然没有用
 
 void* thread_func(void* arg) {
     thread_info = 1;
-    tlibc_msleep(1000);
+    tlibc_msleep(200);
     __printf("Hello from thread %d\n", __gettid());
     return (void *)0;
 }
@@ -26,7 +26,7 @@ int main(int argc, char *argv[])
     // tlibc_msleep(1000); //thread_func打印可能会交错，因为gettid调用时可能线程被调度
     pthread_t thread1;
     pthread_create(&thread1, NULL, thread_func, NULL);
-    tlibc_msleep(1000);
+    tlibc_msleep(200);
     if(thread_info==1)
         __printf("验证！子线程改变了thread_info的值为: %d\n", thread_info);
     return 0;

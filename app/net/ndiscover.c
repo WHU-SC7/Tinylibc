@@ -48,8 +48,6 @@
 #include "syscall.h"
 #include "syscall_num.h"
 
-/* strstr 是项目内实现的，但未在 string.h 中声明 */
-extern char *strstr(const char *haystack, const char *needle);
 
 /* ================================================================== */
 /*  Linux 网络常量 — 项目头文件未提供 */

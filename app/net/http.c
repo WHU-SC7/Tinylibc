@@ -3,16 +3,26 @@
 /* DNS 响应中最多解析的 A 记录数 */
 #define MAX_IPS 16
 
+static void print_usage(const char *prog)
+{
+    printf("Usage: %s <host> [<path>] [<port>] [<Host-header>]\n", prog);
+    printf("Examples:\n");
+    printf("  %s example.com\n", prog);
+    printf("  %s example.com /index.html\n", prog);
+    printf("  %s example.com / 8080\n", prog);
+    printf("  %s 93.184.216.34 / 80 example.com\n", prog);
+    printf("                               ^^^^ IP 直连时用此指定 Host 头\n");
+}
+
 int main(int argc, char *argv[])
 {
+    if (argc >= 2 && (strcmp(argv[1], "-h") == 0 ||
+                      strcmp(argv[1], "--help") == 0)) {
+        print_usage(argv[0]);
+        return 0;
+    }
     if (argc < 2) {
-        printf("Usage: %s <host> [<path>] [<port>] [<Host-header>]\n", argv[0]);
-        printf("Examples:\n");
-        printf("  %s example.com\n", argv[0]);
-        printf("  %s example.com /index.html\n", argv[0]);
-        printf("  %s example.com / 8080\n", argv[0]);
-        printf("  %s 93.184.216.34 / 80 example.com\n", argv[0]);
-        printf("                               ^^^^ IP 直连时用此指定 Host 头\n");
+        print_usage(argv[0]);
         return 1;
     }
     char *host      = argv[1];

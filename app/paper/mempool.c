@@ -8,7 +8,7 @@
 void* thread_func(void* arg) {
     // struct pthread *pthread = (struct pthread *)arg;
     // __printf("从struct pthread, %ld获取child thread tid: %d\n", pthread, pthread->tid);
-    tlibc_msleep(1000);
+    tlibc_msleep(200);
     // __printf("Hello from thread %d\n", __gettid());
 
     for(int i=0;i<10;i++)
@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
     malloc(4096);
     tlibc_debug_print_mem_list();
 
-    tlibc_msleep(2000);//等待一会。如果马上退出，工作线程来不及回收
+    tlibc_msleep(500); // 等待后台工作线程回收
     
     return 0;
 }

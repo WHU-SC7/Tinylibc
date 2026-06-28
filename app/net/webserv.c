@@ -31,8 +31,6 @@
 #include "tlibc_types.h"
 #include "tlibc_everything.h"
 
-/* strstr 在 lib/string.c 中有实现但头文件缺少声明 */
-extern char *strstr(const char *haystack, const char *needle);
 
 /* memcmp 在该项目中没有实现，在 webserv.c 内自包含 */
 static int

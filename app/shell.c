@@ -673,11 +673,21 @@ int main(int argc, char *argv[])
         }
     }
 
+    /* 信号处理：外部 kill 时恢复终端 */
+    tlibc_sigaction(SIGINT,  sigint_handler);
+    tlibc_sigaction(SIGTERM, sigint_handler);
+
     char *buf = mmap(0, SHELL_BUF_SIZE, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     while(1)
     {
-        tlibc_sigaction(2,sigint_handler);//SIGINT
         tlibc_set_term_raw_and_noecho(STDIN); //设置终端为raw模式，关闭回显
+        /* raw 模式清除了 OPOST，重新启用 \n → \r\n 输出换行 */
+        {
+            struct termios term;
+            tlibc_get_term_config(STDIN, &term);
+            term.c_oflag |= OPOST | ONLCR;
+            tlibc_set_term_config(STDIN, &term);
+        }
         print_promt();
 
         memset(buf, 0, SHELL_BUF_SIZE); //每次都清空缓冲区，防止未定义行为
@@ -692,10 +702,10 @@ int main(int argc, char *argv[])
                 continue;
             }
             // __printf("接收到输入，字符的码值: %d\n",buf[read_count]);
-            if(ch == '\n') //输入一行结束
+            if(ch == '\n' || ch == '\r') //输入一行结束（raw 模式下 Enter 发 \r）
             {
                 buf[read_count] = 0; //把换行符改成0，构成字符串
-                write(STDOUT,"\n",1); //回显输入
+                write(STDOUT,"\n",1); //回显输入（OPOST+ONLCR 转成 \r\n）
                 break;
             }
             else if(ch == '\t') //补全
@@ -709,6 +719,21 @@ int main(int argc, char *argv[])
                 printf("%s", buf);
                 read_count = strlen(buf); //更新count
                 continue;
+            }
+            else if(ch == 3) // Ctrl+C — 取消当前行
+            {
+                write(STDOUT, "^C\n", 3);
+                memset(buf, 0, SHELL_BUF_SIZE);
+                read_count = 0;
+                print_promt();
+                continue;
+            }
+            else if(ch == 4 && read_count == 0) // Ctrl+D — EOF，空行时退出
+            {
+                write(STDOUT, "exit\n", 5);
+                tlibc_restore_term(STDIN);
+                munmap(buf, SHELL_BUF_SIZE);
+                return 0;
             }
             else if(ch == 127) //退格
             {
@@ -732,6 +757,12 @@ int main(int argc, char *argv[])
         
 
         if(buf[0]=='q' && buf[1]==0)    //输入是单字符就退出
+        {
+            tlibc_restore_term(STDIN); //恢复终端设置
+            munmap(buf, SHELL_BUF_SIZE);
+            break;
+        }
+        if(strcmp(buf, "exit") == 0) //输入是exit就退出
         {
             tlibc_restore_term(STDIN); //恢复终端设置
             munmap(buf, SHELL_BUF_SIZE);

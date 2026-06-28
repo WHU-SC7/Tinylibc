@@ -84,9 +84,8 @@ int tlibc_set_term_raw_and_noecho(int fd)
     saved[fd].term = term;
     saved[fd].valid = 1;
 
-    /* 应用 raw 模式 */
+    /* 应用 raw 模式 — 保留 OPOST/ONLCR 以便 \n → \r\n 输出正常 */
     term.c_iflag &= ~(ICRNL | IXON | BRKINT | INPCK | ISTRIP);
-    term.c_oflag &= ~OPOST;
     term.c_lflag &= ~(ICANON | ECHO | ECHOE | ECHOK | ECHONL | ISIG | IEXTEN);
     term.c_cflag |= CS8 | CREAD;
     term.c_cc[VMIN]  = 1;
@@ -142,14 +141,13 @@ int tlibc_general_input_process(int pipe_write_fd)
         int ret = __read(0, input, 3); //阻塞读取
         if(ret == 1)
         {
-            if(input[0] == 'q')
-                __exit(0);
-
             int wret = __write(pipe_write_fd, input, 1);
             if (wret < 0) {
                 /* 父进程已退出，管道破裂 */
                 __exit(0);
             }
+            if(input[0] == 'q')
+                __exit(0);
         }
         else if(ret == 2)
         {

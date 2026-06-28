@@ -12,10 +12,14 @@
 #define TEMPLATE_COL_WANTED 32
 #define TEMPLATE_CHILD_EXIT_SIG 64
 
+static int template_child_pid;
+
 void template_exit_handler(int sig)
 {
     __printf(ALT_SCREEN_OFF); //恢复原终端缓冲区
     tlibc_restore_term(0);
+    if(template_child_pid > 0)
+        __kill(template_child_pid, SIGTERM);
     __exit_group(0);
 }
 
@@ -25,7 +29,8 @@ int main(int argc, char *argv[])
     tlibc_check_term_size(1, TEMPLATE_ROW_WANTED, TEMPLATE_COL_WANTED);
     tlibc_set_term_raw_and_noecho(0);
 
-    tlibc_sigaction(2, template_exit_handler);//先设置退出的处理函数
+    tlibc_sigaction(SIGINT,  template_exit_handler);
+    tlibc_sigaction(SIGTERM, template_exit_handler);
 
     int pipefd[2];
     __pipe2(pipefd, O_NONBLOCK); 
@@ -37,6 +42,7 @@ int main(int argc, char *argv[])
     }
     else
     {
+        template_child_pid = fork_ret; //记录子进程 pid，退出时杀掉
         //主进程继续执行
     }
 

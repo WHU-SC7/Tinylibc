@@ -15,10 +15,14 @@
 #define PROMPT_LINE_FG_COLOR FG_CYAN
 #define TOP_MAX_PROC 1024//最多能处理的进程数，影响内存分配
 
+static int top_child_pid; //子进程 pid，退出时杀掉
+
 void top_exit_handler(int sig)
 {
     __printf(ALT_SCREEN_OFF); //恢复原终端缓冲区
     tlibc_restore_term(0);
+    if(top_child_pid > 0)
+        __kill(top_child_pid, SIGTERM);
     __exit_group(0);
 }
 
@@ -262,7 +266,8 @@ int main(int argc, char *argv[])
     tlibc_check_term_size(1, TOP_ROW_WANTED, TOP_COL_WANTED);
     tlibc_set_term_raw_and_noecho(0);
 
-    tlibc_sigaction(2, top_exit_handler);//先设置退出的处理函数
+    tlibc_sigaction(SIGINT,  top_exit_handler);
+    tlibc_sigaction(SIGTERM, top_exit_handler);
 
     int pipefd[2];
     __pipe2(pipefd, O_NONBLOCK); 
@@ -274,6 +279,7 @@ int main(int argc, char *argv[])
     }
     else
     {
+        top_child_pid = fork_ret; //记录子进程 pid，退出时杀掉
         //主进程继续执行
     }
 

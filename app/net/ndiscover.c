@@ -145,13 +145,6 @@ struct ifreq {
     unsigned char  ifr_ifru[24];
 };
 
-/* pollfd */
-struct pollfd {
-    int   fd;
-    short events;
-    short revents;
-};
-
 /* IPv4 头部（20 字节，无选项）*/
 struct ip_hdr {
     unsigned char  ver_ihl;

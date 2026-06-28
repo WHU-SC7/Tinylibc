@@ -58,7 +58,7 @@ int main(int argc, char *argv[]){
             }
             ptr = field_end + 1; //跳过冒号
         }
-        munmap(line, line_len + 1); //释放内存
+        tlibc_free(line); //释放内存
         line_start = line_end + 1;
     }
 

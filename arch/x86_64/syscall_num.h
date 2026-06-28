@@ -68,5 +68,13 @@
 
 #define SYS_shutdown    __NR_shutdown
 
+#define SYS_getsockname __NR_getsockname
+
 #define SYS_poll        __NR_poll
 #define SYS_ppoll       __NR_ppoll
+#define SYS_pselect6    __NR_pselect6
+
+#define SYS_epoll_create1   __NR_epoll_create1
+#define SYS_epoll_ctl       __NR_epoll_ctl
+#define SYS_epoll_wait      __NR_epoll_wait
+#define SYS_epoll_pwait     __NR_epoll_pwait

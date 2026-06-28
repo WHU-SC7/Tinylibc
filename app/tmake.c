@@ -369,14 +369,14 @@ int ar_library(char *build_path){
 }
 
 // Fork + execve ld 链接一个.o文件，返回子进程PID
-int link_app_start(char *app_path, char *output_path){
+int link_app_start(const char *app_path, const char *output_path){
     char *ld_flags[1024];
     int flag_num = copy_default_ld_flags(ld_flags);
 //必须把库文件放在应用程序后面，否则连接器会认为库文件没有用到，导致库文件中的函数无法链接成功，出现undefined reference错误
-    ld_flags[flag_num++] = app_path;
+    ld_flags[flag_num++] = (char *)app_path;
     ld_flags[flag_num++] = "build/lib/tlibc.a";
     char output[1024];
-    char *app_name = strrchr(app_path, '/');
+    const char *app_name = strrchr(app_path, '/');
     if(app_name == NULL){
         app_name = app_path;
     }
@@ -413,7 +413,7 @@ int link_app_wait(int pid){
 }
 
 // 串行链接：启动+等待
-int link_app(char *app_path, char *output_path){
+int link_app(const char *app_path, const char *output_path){
     int pid = link_app_start(app_path, output_path);
     if(pid < 0) return -1;
     return link_app_wait(pid);
@@ -543,71 +543,161 @@ int install(char *app_path){
     return 0;
 }
 
-//递归编译指定路径下的所有文件和子目录下的所有文件和子目录的子目录等等
-int compile_recursive_task(char *path){
-    //获取目录下的所有目录
-    int dir_count = tlibc_get_dir_count(path);
-    if(dir_count < 0){
-        printf("compile_recursive_task获取目录数量失败, 路径%s, 跳过路径的编译: %d\n", path, dir_count);
-        return -1;
-    }
-    if(dir_count == 0){//只需要编译这个目录下的文件就行了
-        printf("目录%s下没有子目录，直接编译这个目录下的文件\n", path);
-        compile_task(path);
-        return 0;
-    }
-    printf("目录%s下有%d个子目录，需要递归编译\n", path, dir_count);
-    //有子目录，需要递归编译
-    char **dir_name_list = (char **)tlibc_malloc(dir_count * sizeof(char *));
-    char *dir_name_buf = (char *)tlibc_malloc(dir_count * 256);
-    for(int i = 0; i < dir_count; i++) {
-        dir_name_list[i] = dir_name_buf + i * 256;
-    }
-    tlibc_get_dir_name_list(path, (uint64_t)dir_name_list, dir_count);
-    for(int i=0; i<dir_count; i++){
-        char sub_path[512];
-        snprintf(sub_path, 512, "%s/%s", path, dir_name_list[i]);
-        compile_recursive_task(sub_path);
-    }
-    //再编译可能存在的文件
-    compile_task(path);
-    munmap(dir_name_list, dir_count * sizeof(char *));
-    munmap(dir_name_buf, dir_count * 256);
-    return 0;
+// 从文件路径中提取输出子目录（如 "app/net/ndiscover.c" → "app/net"）
+// 写入 out，返回末尾不含 '/'
+static void
+out_subdir_from_path(const char *file_path, char *out, int out_size)
+{
+    snprintf(out, out_size, "%s", file_path);
+    char *slash = strrchr(out, '/');
+    if(slash) *slash = '\0';
 }
 
-//递归链接指定路径下的所有文件到output_path中
-int link_recursive_task(char *path, char *output_path){
-    //获取目录下的所有目录
-    int dir_count = tlibc_get_dir_count(path);
-    if(dir_count < 0){
-        printf("link_recursive_task获取目录数量失败, 路径%s, 跳过路径的链接: %d\n", path, dir_count);
-        return -1;
-    }
-    if(dir_count == 0){//只需要链接这个目录下的文件就行了
-        printf("目录%s下没有子目录，直接链接这个目录下的文件\n", path);
-        link_task(path, output_path);
+// 递归编译：先收集所有源文件，再统一并行分派
+
+// 前向声明 — collect_files_recursive 定义在后面
+static int collect_files_recursive(const char *path, const char *ext,
+                                   char (*files)[512], int max);
+
+int compile_recursive_task(const char *path){
+#define MAX_FLAT_FILES 4096
+    char (*files)[512] = (char (*)[512])tlibc_malloc(MAX_FLAT_FILES * 512);
+    int total = collect_files_recursive(path, ".c", files, MAX_FLAT_FILES);
+    if(total <= 0){
+        printf("没有找到需要编译的文件 (.c) 路径=%s\n", path);
+        tlibc_free(files);
         return 0;
     }
-    printf("目录%s下有%d个子目录，需要递归链接\n", path, dir_count);
-    //有子目录，需要递归链接
-    char **dir_name_list = (char **)tlibc_malloc(dir_count * sizeof(char *));
-    char *dir_name_buf = (char *)tlibc_malloc(dir_count * 256);
-    for(int i = 0; i < dir_count; i++) {
-        dir_name_list[i] = dir_name_buf + i * 256;
+    printf("共找到 %d 个源文件\n", total);
+
+    // 确保所有 build 子目录存在
+    for(int i = 0; i < total; i++){
+        char out[256];
+        out_subdir_from_path(files[i], out, sizeof(out));
+        char build_dir[512];
+        snprintf(build_dir, 512, "build/%s", out);
+        tlibc_recursive_mkdir(build_dir);
     }
-    tlibc_get_dir_name_list(path, (uint64_t)dir_name_list, dir_count);
-    for(int i=0; i<dir_count; i++){
-        char sub_path[512];
-        snprintf(sub_path, 512, "%s/%s", path, dir_name_list[i]);
-        link_recursive_task(sub_path, output_path);
+
+    if(g_max_jobs <= 1){
+        for(int i = 0; i < total; i++){
+            char out[256];
+            out_subdir_from_path(files[i], out, sizeof(out));
+            printf("编译文件%d: %s\n", i, files[i]);
+            if(compile_file(files[i], out) < 0){
+                tlibc_free(files);
+                return -1;
+            }
+        }
+        tlibc_free(files);
+        return 0;
     }
-    //再链接可能存在的文件
-    link_task(path, output_path);
-    munmap(dir_name_list, dir_count * sizeof(char *));
-    munmap(dir_name_buf, dir_count * 256);
-    return 0;
+
+    // 并行编译：所有文件通过同一个工作池分派
+    int max_jobs = g_max_jobs;
+    if(max_jobs > total) max_jobs = total;
+    int pids[max_jobs];
+    int active = 0, next = 0, failed = 0;
+
+    while(next < total || active > 0){
+        while(active < max_jobs && next < total && !failed){
+            char out[256];
+            out_subdir_from_path(files[next], out, sizeof(out));
+            int pid = compile_file_start(files[next], out);
+            if(pid == -2){
+                printf("跳过文件%d: %s\n", next, files[next]);
+            } else if(pid > 0){
+                printf("编译文件%d: %s\n", next, files[next]);
+                pids[active++] = pid;
+            }
+            next++;
+        }
+        if(active == 0) break;
+
+        int status;
+        int done_pid = waitpid(-1, &status, 0);
+        if(done_pid <= 0) break;
+
+        for(int i = 0; i < active; i++){
+            if(pids[i] == done_pid){
+                pids[i] = pids[active - 1];
+                active--;
+                break;
+            }
+        }
+        if(status != 0){
+            printf("编译失败, 状态码: %d\n", status);
+            failed = 1;
+        }
+    }
+
+    tlibc_free(files);
+    return failed ? -1 : 0;
 }
+
+// 递归链接：先收集 path 下所有 .o，再统一并行分派
+//   path: 搜索目录（如 "build/app"）
+//   output_path: 可执行文件输出目录（如 "build/output"）
+int link_recursive_task(const char *path, const char *output_path){
+    char (*files)[512] = (char (*)[512])tlibc_malloc(MAX_FLAT_FILES * 512);
+    int total = collect_files_recursive(path, ".o", files, MAX_FLAT_FILES);
+    if(total <= 0){
+        printf("没有找到需要链接的 .o 文件 路径=%s\n", path);
+        tlibc_free(files);
+        return 0;
+    }
+    printf("共找到 %d 个目标文件\n", total);
+
+    if(g_max_jobs <= 1){
+        for(int i = 0; i < total; i++){
+            printf("链接文件%d: %s\n", i, files[i]);
+            if(link_app(files[i], output_path) < 0){
+                tlibc_free(files);
+                return -1;
+            }
+        }
+        tlibc_free(files);
+        return 0;
+    }
+
+    // 并行链接
+    int max_jobs = g_max_jobs;
+    if(max_jobs > total) max_jobs = total;
+    int pids[max_jobs];
+    int active = 0, next = 0, failed = 0;
+
+    while(next < total || active > 0){
+        while(active < max_jobs && next < total && !failed){
+            printf("链接文件%d: %s\n", next, files[next]);
+            int pid = link_app_start(files[next], output_path);
+            if(pid > 0)
+                pids[active++] = pid;
+            next++;
+        }
+        if(active == 0) break;
+
+        int status;
+        int done_pid = waitpid(-1, &status, 0);
+        if(done_pid <= 0) break;
+
+        for(int i = 0; i < active; i++){
+            if(pids[i] == done_pid){
+                pids[i] = pids[active - 1];
+                active--;
+                break;
+            }
+        }
+        if(status != 0){
+            printf("链接失败, 状态码: %d\n", status);
+            failed = 1;
+        }
+    }
+
+    tlibc_free(files);
+    return failed ? -1 : 0;
+}
+
+#undef MAX_FLAT_FILES
 
 // 简单字符串转数字（项目无stdlib，自实现）
 static int parse_int(const char *s){
@@ -672,8 +762,111 @@ static long sum_file_sizes(const char *path){
 }
 
 /* ================================================================== */
+/*  递归文件收集                                                       */
+/* ================================================================== */
+
+/* 递归收集 path 下所有扩展名为 ext（如 ".c"）的文件，写入 files[0..max) 中。
+ * files 为二维数组 char files[max][512]。
+ * 返回收集到的文件总数（可能超过 max）。 */
+static int
+collect_files_recursive(const char *path, const char *ext,
+                        char (*files)[512], int max)
+{
+    int total = 0;
+
+    /* 当前目录下的文件 */
+    int n = tlibc_get_file_count(path);
+    if(n > 0){
+        char **names = (char **)tlibc_malloc(n * sizeof(char *));
+        char *buf   = (char *)tlibc_malloc(n * 256);
+        for(int i = 0; i < n; i++) names[i] = buf + i * 256;
+        n = tlibc_get_file_name_list(path, (uint64_t)names, n);
+
+        for(int i = 0; i < n && total < max; i++){
+            char *dot = strrchr(names[i], '.');
+            if(dot && strcmp(dot, ext) == 0)
+                snprintf(files[total++], 512, "%s/%s", path, names[i]);
+        }
+        munmap(names, n * sizeof(char *));
+        munmap(buf, n * 256);
+    }
+
+    /* 递归子目录 */
+    int dir_cnt = tlibc_get_dir_count(path);
+    if(dir_cnt > 0 && total < max){
+        char **dirs = (char **)tlibc_malloc(dir_cnt * sizeof(char *));
+        char *dbuf = (char *)tlibc_malloc(dir_cnt * 256);
+        for(int i = 0; i < dir_cnt; i++) dirs[i] = dbuf + i * 256;
+        dir_cnt = tlibc_get_dir_name_list(path, (uint64_t)dirs, dir_cnt);
+
+        for(int i = 0; i < dir_cnt && total < max; i++){
+            char sub[512];
+            snprintf(sub, 512, "%s/%s", path, dirs[i]);
+            total += collect_files_recursive(sub, ext, files + total, max - total);
+        }
+        munmap(dirs, dir_cnt * sizeof(char *));
+        munmap(dbuf, dir_cnt * 256);
+    }
+
+    return total;
+}
+
+/* ================================================================== */
 /*  单应用构建支持                                                     */
 /* ================================================================== */
+
+/* 递归查找 app/ 下 name.c，写入 rel_path（如 "app/net/old/client.c"） */
+static int
+find_app_source_in_dir(const char *dir, const char *name,
+                       char *rel_path, int size)
+{
+    /* 检查当前目录文件 */
+    int n = tlibc_get_file_count(dir);
+    if(n > 0){
+        char **names = (char **)tlibc_malloc(n * sizeof(char *));
+        char *buf   = (char *)tlibc_malloc(n * 256);
+        for(int i = 0; i < n; i++) names[i] = buf + i * 256;
+        n = tlibc_get_file_name_list(dir, (uint64_t)names, n);
+
+        for(int i = 0; i < n; i++){
+            char *dot = strrchr(names[i], '.');
+            if(dot && strcmp(dot, ".c") == 0){
+                *dot = '\0';
+                int match = (strcmp(names[i], name) == 0);
+                *dot = '.';
+                if(match){
+                    snprintf(rel_path, size, "%s/%s.c", dir, name);
+                    munmap(names, n * sizeof(char *));
+                    munmap(buf, n * 256);
+                    return 0;
+                }
+            }
+        }
+        munmap(names, n * sizeof(char *));
+        munmap(buf, n * 256);
+    }
+
+    /* 递归子目录 */
+    int dir_cnt = tlibc_get_dir_count(dir);
+    if(dir_cnt > 0){
+        char **dirs = (char **)tlibc_malloc(dir_cnt * sizeof(char *));
+        char *dbuf = (char *)tlibc_malloc(dir_cnt * 256);
+        for(int i = 0; i < dir_cnt; i++) dirs[i] = dbuf + i * 256;
+        dir_cnt = tlibc_get_dir_name_list(dir, (uint64_t)dirs, dir_cnt);
+
+        int found = -1;
+        for(int i = 0; i < dir_cnt && found != 0; i++){
+            char sub[512];
+            snprintf(sub, 512, "%s/%s", dir, dirs[i]);
+            found = find_app_source_in_dir(sub, name, rel_path, size);
+        }
+        munmap(dirs, dir_cnt * sizeof(char *));
+        munmap(dbuf, dir_cnt * 256);
+        return found;
+    }
+
+    return -1;
+}
 
 /* 在 app/ 树下递归查找 name.c，将路径写入 rel_path（如 "app/net/ndiscover.c"） */
 static int find_app_source(const char *name, char *rel_path, int size)
@@ -683,28 +876,8 @@ static int find_app_source(const char *name, char *rel_path, int size)
     if(tlibc_is_path_file(rel_path) == 1)
         return 0;
 
-    /* 再扫描 app/ 下所有子目录 */
-    int dir_count = tlibc_get_dir_count("app");
-    if(dir_count <= 0) return -1;
-
-    char **dir_names = (char **)tlibc_malloc(dir_count * sizeof(char *));
-    char *dir_buf = (char *)tlibc_malloc(dir_count * 256);
-    for(int i = 0; i < dir_count; i++)
-        dir_names[i] = dir_buf + i * 256;
-    dir_count = tlibc_get_dir_name_list("app", (uint64_t)dir_names, dir_count);
-
-    int found = -1;
-    for(int i = 0; i < dir_count; i++){
-        snprintf(rel_path, size, "app/%s/%s.c", dir_names[i], name);
-        if(tlibc_is_path_file(rel_path) == 1){
-            found = 0;
-            break;
-        }
-    }
-
-    munmap(dir_names, dir_count * sizeof(char *));
-    munmap(dir_buf, dir_count * 256);
-    return found;
+    /* 递归搜索所有子目录 */
+    return find_app_source_in_dir("app", name, rel_path, size);
 }
 
 /* 只构建一个程序，不碰其他 app */

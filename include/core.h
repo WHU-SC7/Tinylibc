@@ -86,4 +86,27 @@ int tlibc_timespec_get(struct timespec *ts, int base);
 /* main_tid — 主线程 pid（来自 init.h） */
 extern pid_t main_tid;
 
+/* ── I/O 多路复用 ── */
+
+/* poll/ppoll need struct pollfd and nfds_t from poll.h */
+#include "poll.h"
+
+int __poll(struct pollfd *fds, nfds_t nfds, int timeout);
+int __ppoll(struct pollfd *fds, nfds_t nfds,
+            const struct timespec *timeout_ts, const sigset_t *sigmask);
+
+/* pselect6 raw syscall */
+#include "sys/select.h"
+int __pselect6(int nfds, fd_set *readfds, fd_set *writefds,
+               fd_set *exceptfds, const struct timespec *timeout,
+               const sigset_t *sigmask);
+
+/* epoll wrappers */
+#include "sys/epoll.h"
+int __epoll_create1(int flags);
+int __epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
+int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout);
+int __epoll_pwait(int epfd, struct epoll_event *events, int maxevents,
+                  int timeout, const sigset_t *sigmask);
+
 #endif

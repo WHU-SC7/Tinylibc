@@ -219,7 +219,6 @@ int main(int argc, char *argv[]) {
     
     // 清理资源
     destroy_queue(queue);
-    
-    return -1;
+
     return 0;
 }

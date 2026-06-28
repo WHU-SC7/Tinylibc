@@ -30,30 +30,6 @@
 #include "syscall_num.h"
 
 /* ================================================================== */
-/*  poll 支持 — 项目未提供 poll 封装，此处直接通过 syscall 调用       */
-/* ================================================================== */
-
-#ifndef POLLIN
-#define POLLIN    0x001
-#define POLLOUT   0x004
-#define POLLERR   0x008
-#define POLLHUP   0x010
-#define POLLNVAL  0x020
-#endif
-
-struct pollfd {
-    int   fd;
-    short events;
-    short revents;
-};
-
-static int
-__poll(struct pollfd *fds, unsigned long nfds, int timeout_ms)
-{
-    return syscall(SYS_poll, fds, nfds, timeout_ms);
-}
-
-/* ================================================================== */
 /*  常量                                                              */
 /* ================================================================== */
 
@@ -269,7 +245,7 @@ scan_batch(unsigned int ip, int start_port, int count,
         return;
 
     /* 第 2 步：等待连接结果 */
-    int ready = __poll(pfds, (unsigned long)n, TIMEOUT_MS);
+    int ready = poll(pfds, (unsigned long)n, TIMEOUT_MS);
 
     if (ready > 0) {
         for (int i = 0; i < n; i++) {

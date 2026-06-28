@@ -15,13 +15,12 @@ int main(int argc, char *argv[]) {
         printf("Failed to get file count for directory: %s\n", dir_path);
         return 1;
     }
-    
+
     printf("File count in directory '%s': %d\n", dir_path, file_count);
 
-    //根据fcount获取文件名列表
-    // char file_name_list[file_count][256];
-    char **file_name_list = (char **)mmap(0, file_count * sizeof(char *), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-    char *file_name_buf = (char *)mmap(0, file_count * 256, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    // 根据fcount获取文件名列表
+    char **file_name_list = (char **)tlibc_malloc(file_count * sizeof(char *));
+    char *file_name_buf = (char *)tlibc_malloc(file_count * 256);
     for(int i = 0; i < file_count; i++) {
         file_name_list[i] = file_name_buf + i * 256;
     }
@@ -29,7 +28,7 @@ int main(int argc, char *argv[]) {
     for(int i = 0; i < ret; i++) {
         printf("File %d: %s\n", i, file_name_list[i]);
     }
-    munmap(file_name_list, file_count * sizeof(char *));
-    munmap(file_name_buf, file_count * 256);
+    tlibc_free(file_name_list);
+    tlibc_free(file_name_buf);
     return 0;
 }

@@ -425,3 +425,71 @@ void *__memmove(void *dest, const void *src, size_t n)
 int tlibc_timespec_get(struct timespec *ts, int base){
     return __clock_gettime(CLOCK_REALTIME, ts);
 }
+
+/* ── I/O 多路复用 ── */
+
+/* poll() — wait for events on fd set.
+ *   fds: array of struct pollfd, nfds: number of entries
+ *   timeout: milliseconds (-1 = infinite, 0 = immediate return)
+ *   Returns: count of ready fds, 0 on timeout, or -errno. */
+int __poll(struct pollfd *fds, nfds_t nfds, int timeout)
+{
+    return (int)syscall(SYS_poll, fds, nfds, timeout);
+}
+
+/* ppoll() — poll with signal mask.
+ *   Like poll but timeout is a timespec*, and sigmask may be NULL.
+ *   Returns: count of ready fds, 0 on timeout, or -errno. */
+int __ppoll(struct pollfd *fds, nfds_t nfds,
+            const struct timespec *timeout_ts, const sigset_t *sigmask)
+{
+    return (int)syscall(SYS_ppoll, fds, nfds, timeout_ts, sigmask, 8);
+}
+
+/* pselect6() — select with signal mask (raw syscall).
+ *   Returns: count of ready fds, 0 on timeout, or -errno.
+ *   NOTE: sigmask is a struct { sigset_t *ss; size_t ss_len; } pased as two args. */
+int __pselect6(int nfds, fd_set *readfds, fd_set *writefds,
+               fd_set *exceptfds, const struct timespec *timeout,
+               const sigset_t *sigmask)
+{
+    struct {
+        const sigset_t *ss;
+        size_t ss_len;
+    } sigdata = { sigmask, 8 };
+    return (int)syscall(SYS_pselect6, nfds, readfds, writefds,
+                        exceptfds, timeout, &sigdata);
+}
+
+/* epoll_create1() — create an epoll fd.
+ *   flags: 0 or EPOLL_CLOEXEC.
+ *   Returns: epoll fd (>=3), or -errno. */
+int __epoll_create1(int flags)
+{
+    return (int)syscall(SYS_epoll_create1, flags);
+}
+
+/* epoll_ctl() — control interface for epoll fd.
+ *   epfd: epoll fd, op: EPOLL_CTL_ADD/MOD/DEL, fd: target fd, event: event to associate.
+ *   Returns: 0 on success, or -errno. */
+int __epoll_ctl(int epfd, int op, int fd, struct epoll_event *event)
+{
+    return (int)syscall(SYS_epoll_ctl, epfd, op, fd, event);
+}
+
+/* epoll_wait() — wait for events on epoll fd.
+ *   epfd: epoll fd, events: output array, maxevents: array size, timeout: ms (-1 = infinite).
+ *   Returns: number of ready events, 0 on timeout, or -errno. */
+int __epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout)
+{
+    return (int)syscall(SYS_epoll_wait, epfd, events, maxevents, timeout);
+}
+
+/* epoll_pwait() — epoll_wait with signal mask.
+ *   Like epoll_wait but with sigmask (may be NULL).
+ *   Returns: number of ready events, 0 on timeout, or -errno. */
+int __epoll_pwait(int epfd, struct epoll_event *events, int maxevents,
+                  int timeout, const sigset_t *sigmask)
+{
+    return (int)syscall(SYS_epoll_pwait, epfd, events, maxevents, timeout, sigmask, 8);
+}

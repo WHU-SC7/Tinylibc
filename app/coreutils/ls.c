@@ -1,88 +1,169 @@
-#include "core.h"
-#include "tlibc_print.h"
+#include "tlibc_everything.h"
 
 /**
- * @brief 格式化显示getdents64的内容，没有错误处理
+ * @brief 将 st_mode 解码为 "drwxrwxrwx" 权限字符串
  */
-void print_getdents64_buf(struct linux_dirent64 *buf) //要求buf无数据部分是全0
+static void mode_to_str(mode_t mode, char *buf)
+{
+    /* 文件类型 */
+    if (S_ISDIR(mode))       buf[0] = 'd';
+    else if (S_ISCHR(mode))  buf[0] = 'c';
+    else if (S_ISBLK(mode))  buf[0] = 'b';
+    else if (S_ISFIFO(mode)) buf[0] = 'p';
+    else if (S_ISLNK(mode))  buf[0] = 'l';
+    else if (S_ISSOCK(mode)) buf[0] = 's';
+    else                     buf[0] = '-';
+
+    /* 所有者权限 */
+    buf[1] = (mode & 0400) ? 'r' : '-';
+    buf[2] = (mode & 0200) ? 'w' : '-';
+    buf[3] = (mode & 0100) ? 'x' : '-';
+
+    /* 组权限 */
+    buf[4] = (mode & 0040) ? 'r' : '-';
+    buf[5] = (mode & 0020) ? 'w' : '-';
+    buf[6] = (mode & 0010) ? 'x' : '-';
+
+    /* 其他权限 */
+    buf[7] = (mode & 0004) ? 'r' : '-';
+    buf[8] = (mode & 0002) ? 'w' : '-';
+    buf[9] = (mode & 0001) ? 'x' : '-';
+
+    buf[10] = '\0';
+}
+
+/**
+ * @brief 格式化显示一个文件的 ls -l 条目
+ */
+static void print_file_info(const char *dir_path, const char *name)
+{
+    struct stat st;
+    char   full_path[1024];
+    char   mode_str[12];
+    char   time_buf[64];
+    struct tm tm_buf;
+
+    /* 构造完整路径 */
+    int dlen = strlen(dir_path);
+    if (dlen > 0 && dir_path[dlen - 1] == '/')
+        snprintf(full_path, sizeof(full_path), "%s%s", dir_path, name);
+    else
+        snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, name);
+
+    if (stat(full_path, &st) < 0) {
+        __printf("? %s\n", name);
+        return;
+    }
+
+    mode_to_str(st.st_mode, mode_str);
+
+    /* 用 strftime 格式化修改时间 */
+    gmtime_r(&st.st_mtim.tv_sec, &tm_buf);
+    strftime(time_buf, sizeof(time_buf), "%b %d %H:%M", &tm_buf);
+
+    /* 输出：权限  nlink  uid  gid  大小  日期  文件名 */
+    __printf("%s %3u %5d %5d %8ld %s %s\n",
+             mode_str,
+             (unsigned int)st.st_nlink,
+             st.st_uid, st.st_gid,
+             (long)st.st_size,
+             time_buf, name);
+}
+
+/**
+ * @brief 格式化显示 getdents64 的内容（无 -l 模式）
+ */
+static void print_getdents64_buf(struct linux_dirent64 *buf)
 {
     struct linux_dirent64 *data = buf;
-    PRINT_COLOR(BRIGHT_CYAN_COLOR_PRINT, "off\tinode\ttype\tname\t\n");
-    while (data->d_off != 0) //< 检查不严谨，但是考虑到每次list_file会清空ls_buf为0,这样是可以的
-    {
-        // printf("%d\t%d\t%d\t%s\n",data->d_off,data->d_ino,data->d_type,data->d_name);
+    PRINT_COLOR(BRIGHT_CYAN_COLOR_PRINT, "off\tinode\ttype\tname\n");
+    while (data->d_off != 0) {
         __printf("%d\t", data->d_off);
         __printf("%d\t", data->d_ino);
-        switch (data->d_type)
-        {
-        case DT_DIR: //< 目录，蓝色
-            PRINT_COLOR(BLUE_COLOR_PRINT, "DIR\t");
-            PRINT_COLOR(BLUE_COLOR_PRINT, "%s\t", data->d_name);
+        switch (data->d_type) {
+        case DT_DIR:
+            PRINT_COLOR(BLUE_COLOR_PRINT,   "DIR\t");
+            PRINT_COLOR(BLUE_COLOR_PRINT,   "%s\n", data->d_name);
             break;
-        case DT_REG: //< 普通文件，白色
-            __printf("FILE\t");
-            __printf("%s\t", data->d_name);
+        case DT_REG:
+            __printf("FILE\t%s\n", data->d_name);
             break;
-        case DT_CHR: //< 字符设备，如console，黄色
+        case DT_CHR:
             PRINT_COLOR(YELLOW_COLOR_PRINT, "CHA\t");
-            PRINT_COLOR(YELLOW_COLOR_PRINT, "%s\t", data->d_name);
+            PRINT_COLOR(YELLOW_COLOR_PRINT, "%s\n", data->d_name);
             break;
-        case DT_BLK: //< 块设备，黄色
+        case DT_BLK:
             PRINT_COLOR(YELLOW_COLOR_PRINT, "BLK\t");
-            PRINT_COLOR(YELLOW_COLOR_PRINT, "%s\t", data->d_name);
+            PRINT_COLOR(YELLOW_COLOR_PRINT, "%s\n", data->d_name);
             break;
-        case DT_LNK: //< 符号链接，
-            PRINT_COLOR(GREEN_COLOR_PRINT, "LNK\t");
-            PRINT_COLOR(GREEN_COLOR_PRINT, "%s\t", data->d_name);
+        case DT_LNK:
+            PRINT_COLOR(GREEN_COLOR_PRINT,  "LNK\t");
+            PRINT_COLOR(GREEN_COLOR_PRINT,  "%s\n", data->d_name);
             break;
-        default: //< 未知，红色
-            PRINT_COLOR(RED_COLOR_PRINT, "%d\t", data->d_type);
-            PRINT_COLOR(RED_COLOR_PRINT, "%s\t", data->d_name);
+        default:
+            PRINT_COLOR(RED_COLOR_PRINT,    "%d\t", data->d_type);
+            PRINT_COLOR(RED_COLOR_PRINT,    "%s\n", data->d_name);
             break;
         }
-        __printf("\n");
-        // char *s=(char*)data; //<调试时逐个字节显示
-        // for(int i=0;i<data->d_reclen;i++)
-        // {
-        //     printf("%d ",*s++);
-        // }
-        // printf("\n");
-        data = (struct linux_dirent64 *)((char *)data + data->d_reclen); //< 遍历
+        data = (struct linux_dirent64 *)((char *)data + data->d_reclen);
     }
 }
 
-#define LS_BUF_SIZE 4096 //缓冲区大小
+#define LS_BUF_SIZE 4096
+
 int main(int argc, char *argv[])
 {
-    int open_ret;
-    if(argc == 1) //没有给参数
-    {
-        open_ret = __openat(AT_FDCWD,".",O_RDONLY|O_DIRECTORY|O_CLOEXEC,0644);
+    char *path = ".";
+    int use_long = 0;
+
+    /* 解析参数 */
+    for (int i = 1; i < argc; i++) {
+        if (argv[i][0] == '-') {
+            for (char *p = argv[i] + 1; *p; p++) {
+                if (*p == 'l')
+                    use_long = 1;
+            }
+        } else {
+            path = argv[i];
+        }
     }
-    if(argc == 2) //一个参数
-    {
-        char *path = argv[1];
-        __printf("参数: %s\n",path);
-        open_ret = __openat(AT_FDCWD,path,O_RDONLY|O_DIRECTORY|O_CLOEXEC,0644);
+
+    /* 打开目录 */
+    int fd = __openat(AT_FDCWD, path, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0644);
+    if (fd < 0) {
+        __printf("ls: 无法打开 '%s'\n", path);
+        return 1;
     }
-    if(argc > 2)
-    {
-        __printf("参数超过两个，太多了\n");
-        return -1;
+
+    char buf[LS_BUF_SIZE];
+    for (int i = 0; i < LS_BUF_SIZE; i++)
+        buf[i] = 0;
+
+    int nread = __getdents64(fd, (struct linux_dirent64 *)buf, LS_BUF_SIZE);
+    __close(fd);
+
+    if (nread < 0) {
+        __printf("ls: getdents64 失败\n");
+        return 1;
     }
-    char getdent_buf[LS_BUF_SIZE];
-    for(int i=0;i<LS_BUF_SIZE;i++) //必须先清零
-        getdent_buf[i]=0;
-    if(open_ret < 0)
-    {
-        __printf("打开失败\n");
-        return -1;
+
+    if (use_long) {
+        /* ls -l: 逐文件 stat + strftime */
+        struct linux_dirent64 *data = (struct linux_dirent64 *)buf;
+        while (data->d_off != 0) {
+            /* 跳过 . 和 .. */
+            if (strcmp(data->d_name, ".")  == 0 ||
+                strcmp(data->d_name, "..") == 0) {
+                data = (struct linux_dirent64 *)((char *)data + data->d_reclen);
+                continue;
+            }
+            print_file_info(path, data->d_name);
+            data = (struct linux_dirent64 *)((char *)data + data->d_reclen);
+        }
+    } else {
+        /* 默认模式：显示 inode 和类型 */
+        print_getdents64_buf((struct linux_dirent64 *)buf);
     }
-    __getdents64(open_ret,(struct linux_dirent64 *)getdent_buf, LS_BUF_SIZE);
-    __close(open_ret);
-    print_getdents64_buf((struct linux_dirent64 *)getdent_buf);
-#if X86_64_TLIBC == 1
-    LOG("很大off是正常的,可能是文件系统内部使用的哈希值。然后__printf只能输出int的数\n");
-#endif
+
     return 0;
 }

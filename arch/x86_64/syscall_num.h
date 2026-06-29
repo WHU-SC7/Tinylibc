@@ -37,6 +37,7 @@
 
 #define SYS_time        __NR_time
 #define SYS_clock_gettime       __NR_clock_gettime
+#define SYS_gettimeofday        __NR_gettimeofday
 
 #define SYS_readlinkat  __NR_readlinkat
 

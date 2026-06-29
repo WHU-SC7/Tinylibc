@@ -4,8 +4,10 @@
 // Umbrella header for Tinylibc.
 // Note: tlibc_test.h must be included explicitly for test binaries.
 
+#include "assert.h"
 #include "atomic.h"
 #include "core.h"
+#include "ctype.h"
 #include "dirent.h"
 #include "errno.h"
 #include "fcntl.h"

@@ -53,10 +53,10 @@ Tlibc_exe = $(WORKPATH)/build/tlibc_x64
 export WORKPATH = $(shell pwd)
 
 # Phase 1: 仅编译 tmake(+shell) 自举所需的最小集，tmake Phase 2 处理其余 app
-x64_c_srcs := $(wildcard lib/*.c app/tmake.c app/shell.c)
+x64_c_srcs := $(shell find lib -name '*.c') app/tmake.c app/shell.c
 x64_c_objs := $(patsubst %.c,$(WORKPATH)/build/%.o,$(x64_c_srcs))
 
-x64_s_srcs := $(wildcard lib/*.S) 
+x64_s_srcs := $(shell find lib -name '*.S') 
 x64_s_objs := $(patsubst %.S,$(WORKPATH)/build/%.o,$(x64_s_srcs))
 
 all: __x86_64
@@ -80,6 +80,7 @@ __x86_64: clean init_dir
 init_dir:
 	mkdir -p build
 	mkdir -p build/app build/lib build/output
+	mkdir -p build/lib/core build/lib/stdio build/lib/thread build/lib/net build/lib/misc build/lib/init
 	mkdir -p tmp
 	@echo $(x64_c_srcs)
 	@echo $(x64_c_objs)
@@ -131,8 +132,8 @@ setcap:
 	done
 
 # 源文件定义
-lib_c_srcs := $(wildcard lib/*.c)
-lib_s_srcs := $(wildcard lib/*.S)
+lib_c_srcs := $(shell find lib -name '*.c')
+lib_s_srcs := $(shell find lib -name '*.S')
 lib_srcs := $(lib_c_srcs) $(lib_s_srcs)
 
 # 目标文件定义

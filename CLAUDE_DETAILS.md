@@ -27,23 +27,30 @@ tmake -b ndiscover       # 第二次调用：跳过已有 .o（增量）
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
-| `start.S` | 14 | 入口点 `__tlibc_start`，调用 `tlibc_init` 后执行 main |
-| `clone.S` | 27 | clone() 系统调用的汇编封装 |
-| `core.c` | 426 | 所有系统调用包装函数：`__write`、`__read`、`__openat`、`__mmap`、`__fork`、`__futex` 等 |
-| `string.c` | 263 | strcpy/strncpy/strcmp/strcat/strchr/memcpy/itoa/strerror 等 |
-| `printf.c` | 410 | `__printf`/`__fprintf` 实现，支持 `%d` `%s` `%x` `%f` `%l` |
-| `snprintf.c` | 440 | snprintf 实现 |
-| `mempool.c` | 329 | 内存池 + 后台工作线程异步回收线程资源 |
-| `pthread.c` | 137 | pthread_create/pthread_join/pthread_exit |
-| `file.c` | 435 | 文件工具函数：递归删除/创建目录、复制文件、目录列表等 |
-| `path.c` | 139 | 路径规范化（绝对路径计算、./../ 处理） |
-| `tty.c` | 194 | 终端控制：获取终端大小、raw 模式（保存/恢复 termios、完整 cfmakeraw 风格）、光标定位、按键处理（方向键→KEY_UP/DOWN/LEFT/RIGHT、EPIPE 防护） |
-| `net.c` | 133 | socket/connect/bind/listen/accept/recv 等网络 syscall 封装 |
-| `system.c` | 72 | 系统函数：get_user_dir（解析 /etc/passwd） |
-| `envp.c` | 52 | 环境变量处理 |
-| `init.c` | 55 | 初始化：预分配线程栈、初始化内存池、调用 main |
+| `core/io.c` | — | syscall 包装：文件 I/O（read/write/open/close/lseek/pipe/ioctl） |
+| `core/proc.c` | — | syscall 包装：进程控制（fork/exit/wait/execve/gettid/kill） |
+| `core/mem.c` | — | syscall 包装：内存（brk/mmap/munmap）+ tlibc_malloc/tlibc_free |
+| `core/time.c` | — | syscall 包装：时间（nanosleep/clock_gettime）+ msleep/usleep |
+| `core/signal.c` | — | syscall 包装：信号（sigaction/sigprocmask）+ tlibc_sigaction |
+| `core/sync.c` | — | syscall 包装：同步（futex） |
+| `string.c` | 263+ | strcpy/strncpy/strcmp/strcat/strchr/memcpy/itoa/strerror + __memset/__memmove |
+| `stdio/printf.c` | 410 | `__printf`/`__fprintf` 实现 |
+| `stdio/snprintf.c` | 440 | snprintf 实现 |
+| `thread/mempool.c` | 329 | 内存池 + 后台工作线程异步回收线程资源 |
+| `thread/pthread.c` | 137 | pthread_create/pthread_join/pthread_exit |
+| `thread/clone.S` | 27 | clone() 系统调用的汇编封装 |
+| `misc/file.c` | 435 | 文件工具函数：递归删除/创建目录、复制文件、目录列表等 |
+| `misc/path.c` | 139 | 路径规范化（绝对路径计算、./../ 处理） |
+| `misc/envp.c` | 52 | 环境变量处理 |
+| `misc/system.c` | 72 | 系统函数：get_user_dir（解析 /etc/passwd） |
+| `tty.c` | 194 | 终端控制：获取终端大小、raw 模式、光标定位、按键处理（方向键→KEY_UP/DOWN/LEFT/RIGHT） |
+| `net/socket.c` | 133 | socket/connect/bind/listen/accept/recv 等网络 syscall 封装 |
+| `net/dns.c` | 651 | DNS 解析客户端 |
+| `poll.c` | 78 | I/O 多路复用：poll/ppoll/select/pselect/epoll POSIX 封装 |
+| `init/init.c` | 55 | 初始化：预分配线程栈、初始化内存池、调用 main |
+| `init/start.S` | 14 | 入口点 `__tlibc_start`，调用 `tlibc_init` 后执行 main |
 
-**总行数：约 3,126 行**
+**总行数：约 3,500 行（22 个源文件，7 个子目录）**
 
 ### `/app/` — 用户态程序
 

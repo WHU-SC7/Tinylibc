@@ -1,3 +1,4 @@
+#include "tlibc_types.h"
 
 char *strcpy(char *dest, const char *src)
 {
@@ -261,4 +262,30 @@ int snprintf(char *str, unsigned long size, const char *format, ...);
         snprintf(unknown_error, sizeof(unknown_error), "Unknown error %d", errnum);
         return unknown_error;
     }
+}
+
+void *__memset(void *dst, int value, size_t n)
+{
+    char *cdst = (char *)dst;
+    for (size_t i = 0; i < n; i++)
+    {
+        cdst[i] = value;
+    }
+    return dst;
+}
+
+void *__memmove(void *dest, const void *src, size_t n)
+{
+    char *cdest = (char *)dest;
+    char *csrc = (char *)src;
+    char buf[n];
+    for(size_t i = 0; i < n; i++)
+    {
+        buf[i] = csrc[i];
+    }
+    for(size_t i = 0; i < n; i++)
+    {
+        cdest[i] = buf[i];
+    }
+    return dest;
 }

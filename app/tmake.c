@@ -315,57 +315,47 @@ int compile_task(char *path){
 }
 
 //需要知道目标文件所在路径
+static int collect_files_recursive(const char *path, const char *ext,
+                                   char (*files)[512], int max);
+
 int ar_library(char *build_path){
-    int files_count = tlibc_get_file_count(build_path);
-    if(files_count < 0){
-        printf("获取文件数量失败, 路径%s, 跳过库的链接\n", build_path, files_count);
+#define MAX_LIB_O_FILES 4096
+    char (*files)[512] = (char (*)[512])tlibc_malloc(MAX_LIB_O_FILES * 512);
+    int total = collect_files_recursive(build_path, ".o", files, MAX_LIB_O_FILES);
+    if(total <= 0){
+        printf("没有找到 .o 文件, 路径=%s\n", build_path);
+        tlibc_free(files);
         return -1;
     }
-    char **file_name_list = (char **)tlibc_malloc(files_count * sizeof(char *));
-    char *file_name_buf = (char *)tlibc_malloc(files_count * 256);
-    for(int i = 0; i < files_count; i++) {
-        file_name_list[i] = file_name_buf + i * 256;
-    }
-    files_count = tlibc_get_file_name_list(build_path, (uint64_t)file_name_list, files_count);
-    //构建ar的参数（只包含 .o 文件，跳过 .d 等）
+    int prefix_len = strlen(build_path) + 1;
     char *ar_flags[1024];
     int flag_num = copy_default_ar_flags(ar_flags);
-    ar_flags[flag_num++] = LIB_OUTPUT;//输出的库文件路径
-    for(int i=0; i<files_count; i++){
-        char *dot = strrchr(file_name_list[i], '.');
-        if(!dot || strcmp(dot, ".o") != 0) continue;
-        ar_flags[flag_num++] = file_name_list[i];
-    }
+    ar_flags[flag_num++] = LIB_OUTPUT;
+    for(int i = 0; i < total; i++)
+        ar_flags[flag_num++] = files[i] + prefix_len;
     ar_flags[flag_num] = NULL;
-    //打印参数
-    // for(int i=0; ar_flags[i] != NULL; i++){
-    //     printf("ar参数%d: %s\n", i, ar_flags[i]);
-    // }
     int pid = fork();
     if(pid == 0){
-        chdir(build_path); //切换到构建目录下执行ar命令
+        chdir(build_path);
         printf("执行命令:");
         for(int i = 0; ar_flags[i] != NULL; i++){
             printf(" %s", ar_flags[i]);
         }
         printf("\n");
         execve(default_ar_path, ar_flags, default_envp);
+        exit(127);
     }
-    else{
-        int status;
-        waitpid(pid,&status,0);
-        munmap(file_name_list, files_count * sizeof(char *));
-        munmap(file_name_buf, files_count * 256);
-        if(status == 0){
-            printf("链接库文件成功\n");
-            return 0;
-        }
-        else{
-            printf("链接库文件失败, 状态码: %d\n", status);
-            return -1;
-        }
+    int status;
+    waitpid(pid, &status, 0);
+    tlibc_free(files);
+    if(status == 0){
+        printf("链接库文件成功\n");
+        return 0;
+    } else {
+        printf("链接库文件失败, 状态码: %d\n", status);
+        return -1;
     }
-    return 0;
+#undef MAX_LIB_O_FILES
 }
 
 // Fork + execve ld 链接一个.o文件，返回子进程PID
@@ -555,16 +545,15 @@ out_subdir_from_path(const char *file_path, char *out, int out_size)
 
 // 递归编译：先收集所有源文件，再统一并行分派
 
-// 前向声明 — collect_files_recursive 定义在后面
-static int collect_files_recursive(const char *path, const char *ext,
-                                   char (*files)[512], int max);
-
 int compile_recursive_task(const char *path){
 #define MAX_FLAT_FILES 4096
     char (*files)[512] = (char (*)[512])tlibc_malloc(MAX_FLAT_FILES * 512);
     int total = collect_files_recursive(path, ".c", files, MAX_FLAT_FILES);
+    /* 追加 .S 汇编文件（如 clone.S、start.S） */
+    int s_total = collect_files_recursive(path, ".S", files + total, MAX_FLAT_FILES - total);
+    total += s_total;
     if(total <= 0){
-        printf("没有找到需要编译的文件 (.c) 路径=%s\n", path);
+        printf("没有找到需要编译的文件, 路径=%s\n", path);
         tlibc_free(files);
         return 0;
     }
@@ -887,7 +876,7 @@ static int build_single_app(const char *name)
     if(tlibc_is_path_file("build/tlibc.a") != 1){
         printf("Library not found, building lib first...\n");
         tlibc_recursive_mkdir("build/lib");
-        compile_task("lib");
+        compile_recursive_task("lib");
         ar_library("build/lib");
         tlibc_copy_file("build/lib/tlibc.a", "build/tlibc.a");
     }
@@ -1034,7 +1023,7 @@ int main(int argc, char *argv[]){
     t_total = get_ms();
 
     t_start = get_ms();
-    compile_task("lib");
+    compile_recursive_task("lib");
     t_compile_lib = get_ms() - t_start;
 
     t_start = get_ms();
@@ -1060,19 +1049,10 @@ int main(int argc, char *argv[]){
     // 统计信息（只计 .o 文件，排除 .d 等）
     int lib_o_count = 0;
     {
-        int n = tlibc_get_file_count("build/lib");
-        if(n > 0){
-            char **names = (char **)tlibc_malloc(n * sizeof(char *));
-            char *buf = (char *)tlibc_malloc(n * 256);
-            for(int i = 0; i < n; i++) names[i] = buf + i * 256;
-            n = tlibc_get_file_name_list("build/lib", (uint64_t)names, n);
-            for(int i = 0; i < n; i++){
-                char *dot = strrchr(names[i], '.');
-                if(dot && strcmp(dot, ".o") == 0) lib_o_count++;
-            }
-            munmap(names, n * sizeof(char *));
-            munmap(buf, n * 256);
-        }
+        char (*_ofiles)[512] = (char (*)[512])tlibc_malloc(4096 * 512);
+        int n = collect_files_recursive("build/lib", ".o", _ofiles, 4096);
+        lib_o_count = n > 0 ? n : 0;
+        tlibc_free(_ofiles);
     }
     int lib_a_size = tlibc_get_file_len("build/lib/tlibc.a");
     lib_a_size = lib_a_size < 0 ? 0 : lib_a_size;

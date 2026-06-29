@@ -30,7 +30,7 @@ riscv架构待更新
 ### 文件夹结构
 app下是命令行程序的.c文件，包括shell, vim, 吃豆人游戏, 基本文件操作命令
 
-lib下，core.c是库函数的实现，test.c包含入口函数和测试函数
+lib下按领域分组存放核心库函数（core/、stdio/、thread/、net/、misc/、init/），编译为静态库 tlibc.a
 
 下面文件夹中都是.h头文件
 

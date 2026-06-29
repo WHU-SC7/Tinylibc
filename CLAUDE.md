@@ -38,25 +38,19 @@ tmake -j 4 -b cat      # 并行编译单个程序
 
 ## 快速定位
 
-### 核心库 `lib/*.c` → 静态库 `tlibc.a`
+### 核心库 `lib/` → 静态库 `tlibc.a`
 
 | 文件 | 内容 |
 |------|------|
-| `core.c` | 所有 syscall 包装：`__write`, `__read`, `__mmap`, `__fork`, `__futex` 等 |
-| `string.c` | `strcpy`, `strlen`, `memcpy`, `strcmp`, `strerror` |
-| `printf.c` | `__printf` / `__fprintf`（支持 `%d %s %x %f %l`） |
-| `snprintf.c` | `snprintf` |
-| `pthread.c` | `pthread_create` / `pthread_join` / `pthread_exit` |
-| `mempool.c` | 内存池 + 后台线程异步回收线程资源 |
-| `file.c` | `tlibc_get_file_count`, `tlibc_recursive_mkdir`, `tlibc_copy_file` 等 |
-| `path.c` | 路径规范化 |
+| `core/` | syscall 包装按领域拆分：`io.c`（文件I/O/fs）、`proc.c`（进程）、`mem.c`（内存/malloc）、`time.c`（时间）、`signal.c`（信号）、`sync.c`（futex） |
+| `string.c` | `strcpy`, `strlen`, `memcpy`, `strcmp`, `strerror`，`__memset`，`__memmove` |
+| `stdio/` | `printf.c`（`__printf`/`__fprintf`）、`snprintf.c` |
+| `thread/` | `pthread.c`（pthread_create/join/exit）、`mempool.c`（内存池+后台回收）、`clone.S`（clone 汇编） |
+| `net/` | `socket.c`（socket/connect/bind/listen/accept/shutdown）、`dns.c`（DNS 解析） |
+| `poll.c` | I/O 多路复用：poll/ppoll/select/pselect/epoll POSIX 封装 |
 | `tty.c` | 终端大小、raw 模式（保存/恢复 termios、完整 cfmakeraw 风格）、光标定位、按键处理（方向键→自定义键值、EPIPE 防护） |
-| `net.c` | socket / connect / bind / listen / accept / shutdown |
-| `system.c` | `tlibc_get_user_dir`（解析 /etc/passwd） |
-| `envp.c` | 环境变量处理 |
-| `init.c` | `tlibc_init`：预分配线程栈 → 初始化内存池 → 调 main |
-| `start.S` | 入口 `__tlibc_start` → `tlibc_init` → `main` |
-| `clone.S` | clone() 系统调用汇编封装 |
+| `misc/` | `file.c`（文件工具函数）、`path.c`（路径规范化）、`envp.c`（环境变量）、`system.c`（`tlibc_get_user_dir`） |
+| `init/` | `init.c`（`tlibc_init`：预分配线程栈→初始化内存池→调`main`）、`start.S`（入口 `__tlibc_start`→`tlibc_init`→`main`） |
 
 ### 应用 `app/*.c`
 

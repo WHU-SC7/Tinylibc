@@ -127,6 +127,249 @@ char *strstr(const char *haystack, const char *needle) {
 }
 
 //私有实现，把字符串转换成10进制unsigned long
+/* ========== String tokenization ========== */
+
+size_t strspn(const char *s, const char *accept)
+{
+    const char *p = s;
+    while (*p) {
+        const char *a = accept;
+        int matched = 0;
+        while (*a) {
+            if (*p == *a) {
+                matched = 1;
+                break;
+            }
+            a++;
+        }
+        if (!matched)
+            break;
+        p++;
+    }
+    return (size_t)(p - s);
+}
+
+size_t strcspn(const char *s, const char *reject)
+{
+    const char *p = s;
+    while (*p) {
+        const char *r = reject;
+        while (*r) {
+            if (*p == *r)
+                return (size_t)(p - s);
+            r++;
+        }
+        p++;
+    }
+    return (size_t)(p - s);
+}
+
+char *strpbrk(const char *s, const char *accept)
+{
+    while (*s) {
+        const char *a = accept;
+        while (*a) {
+            if (*s == *a)
+                return (char *)s;
+            a++;
+        }
+        s++;
+    }
+    return (void *)0;
+}
+
+char *strtok_r(char *str, const char *delim, char **save_ptr)
+{
+    char *start;
+    if (str)
+        start = str;
+    else
+        start = *save_ptr;
+
+    /* skip leading delimiters */
+    start += strspn(start, delim);
+    if (*start == '\0') {
+        *save_ptr = start;
+        return (void *)0;
+    }
+
+    /* find end of token */
+    char *end = start + strcspn(start, delim);
+    if (*end == '\0') {
+        *save_ptr = end;
+    } else {
+        *end = '\0';
+        *save_ptr = end + 1;
+    }
+    return start;
+}
+
+char *strtok(char *str, const char *delim)
+{
+    static char *next;
+    return strtok_r(str, delim, &next);
+}
+
+/* ========== Memory comparison ========== */
+
+int memcmp(const void *s1, const void *s2, size_t n)
+{
+    const unsigned char *p1 = (const unsigned char *)s1;
+    const unsigned char *p2 = (const unsigned char *)s2;
+    for (size_t i = 0; i < n; i++) {
+        if (p1[i] != p2[i])
+            return (int)(p1[i] - p2[i]);
+    }
+    return 0;
+}
+
+/* ========== String to integer ========== */
+
+/**
+ * strtol - convert string to long integer
+ * @nptr:   pointer to string to convert
+ * @endptr: if non-NULL, set to first character after the number
+ * @base:   numeric base (0 = auto-detect, 2-36)
+ *
+ * Supports hex (0x), octal (0), and decimal prefixes when base=0.
+ * Leading whitespace and an optional sign are skipped.
+ */
+long strtol(const char *nptr, char **endptr, int base)
+{
+    const char *p = nptr;
+    long result = 0;
+    int sign = 1;
+
+    /* skip leading whitespace */
+    while (*p == ' ' || *p == '\t' || *p == '\n'
+           || *p == '\r' || *p == '\f' || *p == '\v')
+        p++;
+
+    /* handle sign */
+    if (*p == '-') {
+        sign = -1;
+        p++;
+    } else if (*p == '+') {
+        p++;
+    }
+
+    /* auto-detect base */
+    if (base == 0) {
+        if (*p == '0') {
+            p++;
+            if (*p == 'x' || *p == 'X') {
+                base = 16;
+                p++;
+            } else {
+                base = 8;
+            }
+        } else {
+            base = 10;
+        }
+    } else if (base == 16 && *p == '0' && (*(p+1) == 'x' || *(p+1) == 'X')) {
+        p += 2;
+    }
+
+    /* convert digits */
+    while (*p) {
+        int digit = -1;
+        if (*p >= '0' && *p <= '9')
+            digit = *p - '0';
+        else if (*p >= 'a' && *p <= 'z')
+            digit = *p - 'a' + 10;
+        else if (*p >= 'A' && *p <= 'Z')
+            digit = *p - 'A' + 10;
+
+        if (digit < 0 || digit >= base)
+            break;
+
+        result = result * base + digit;
+        p++;
+    }
+
+    if (endptr)
+        *endptr = (char *)p;
+
+    return sign * result;
+}
+
+unsigned long strtoul(const char *nptr, char **endptr, int base)
+{
+    const char *p = nptr;
+    unsigned long result = 0;
+
+    /* skip leading whitespace */
+    while (*p == ' ' || *p == '\t' || *p == '\n'
+           || *p == '\r' || *p == '\f' || *p == '\v')
+        p++;
+
+    /* handle optional plus sign (no minus per spec) */
+    if (*p == '+')
+        p++;
+
+    /* auto-detect base */
+    if (base == 0) {
+        if (*p == '0') {
+            p++;
+            if (*p == 'x' || *p == 'X') {
+                base = 16;
+                p++;
+            } else {
+                base = 8;
+            }
+        } else {
+            base = 10;
+        }
+    } else if (base == 16 && *p == '0' && (*(p+1) == 'x' || *(p+1) == 'X')) {
+        p += 2;
+    }
+
+    /* convert digits */
+    while (*p) {
+        int digit = -1;
+        if (*p >= '0' && *p <= '9')
+            digit = *p - '0';
+        else if (*p >= 'a' && *p <= 'z')
+            digit = *p - 'a' + 10;
+        else if (*p >= 'A' && *p <= 'Z')
+            digit = *p - 'A' + 10;
+
+        if (digit < 0 || digit >= base)
+            break;
+
+        result = result * base + digit;
+        p++;
+    }
+
+    if (endptr)
+        *endptr = (char *)p;
+
+    return result;
+}
+
+int atoi(const char *nptr)
+{
+    return (int)strtol(nptr, (void *)0, 10);
+}
+
+long atol(const char *nptr)
+{
+    return strtol(nptr, (void *)0, 10);
+}
+
+/* ========== Absolute value ========== */
+
+int abs(int j)
+{
+    return j < 0 ? -j : j;
+}
+
+long labs(long j)
+{
+    return j < 0 ? -j : j;
+}
+
+// 私有实现，把字符串转换成10进制unsigned long
 unsigned long tlibc_strtoul(char *str)
 {
     unsigned long ret = 0;

@@ -16,6 +16,7 @@
 #include "sched.h"
 #include "signal.h"
 #include "socket.h"
+#include "stdlib.h"
 #include "string.h"
 #include "termios.h"
 #include "terminal_esc.h"

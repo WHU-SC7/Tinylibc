@@ -32,19 +32,6 @@
 #include "tlibc_everything.h"
 
 
-/* memcmp 在该项目中没有实现，在 webserv.c 内自包含 */
-static int
-memcmp(const void *a, const void *b, unsigned long n)
-{
-    const unsigned char *pa = (const unsigned char *)a;
-    const unsigned char *pb = (const unsigned char *)b;
-    for (unsigned long i = 0; i < n; i++) {
-        if (pa[i] != pb[i])
-            return pa[i] - pb[i];
-    }
-    return 0;
-}
-
 #define WEBSERV_PORT     8080
 #define HEADER_BUF_SIZE  16384
 #define FILE_CHUNK_SIZE  4096

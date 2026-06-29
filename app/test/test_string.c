@@ -1,5 +1,6 @@
 #include "tlibc_test.h"
 #include "tlibc_compat.h"
+#include "stdlib.h"
 
 TEST_DEFINE_COUNTERS();
 
@@ -299,6 +300,322 @@ void test_strerror_unknown(void) {
     TEST_PASS();
 }
 
+/* ========== strstr ========== */
+
+void test_strstr_found_start(void) {
+    TEST_START("strstr found at start");
+    char *p = strstr("hello world", "hello");
+    TEST_ASSERT(p != NULL, "strstr should find at start");
+    TEST_ASSERT_STR_EQ(p, "hello world");
+    TEST_PASS();
+}
+
+void test_strstr_found_mid(void) {
+    TEST_START("strstr found in middle");
+    char *p = strstr("hello world", "world");
+    TEST_ASSERT(p != NULL, "strstr should find 'world'");
+    TEST_ASSERT_STR_EQ(p, "world");
+    TEST_PASS();
+}
+
+void test_strstr_notfound(void) {
+    TEST_START("strstr not found");
+    char *p = strstr("hello", "xyz");
+    TEST_ASSERT(p == NULL, "strstr('hello', 'xyz') should return NULL");
+    TEST_PASS();
+}
+
+void test_strstr_empty_needle(void) {
+    TEST_START("strstr empty needle");
+    char *s = "hello";
+    char *p = strstr(s, "");
+    TEST_ASSERT(p != NULL, "strstr with empty needle should return haystack");
+    TEST_ASSERT_EQ((unsigned long)p, (unsigned long)s, "%p");
+    TEST_PASS();
+}
+
+void test_strstr_overlap(void) {
+    TEST_START("strstr overlapping");
+    char *p = strstr("aaaab", "aaab");
+    TEST_ASSERT(p != NULL, "strstr should handle overlapping patterns");
+    TEST_ASSERT_STR_EQ(p, "aaab");
+    TEST_PASS();
+}
+
+/* ========== strtok / strtok_r ========== */
+
+void test_strtok_basic(void) {
+    TEST_START("strtok basic");
+    char buf[] = "a b c d";
+    char *tok = strtok(buf, " ");
+    TEST_ASSERT(tok != NULL, "first token");
+    TEST_ASSERT_STR_EQ(tok, "a");
+    tok = strtok(NULL, " ");
+    TEST_ASSERT(tok != NULL, "second token");
+    TEST_ASSERT_STR_EQ(tok, "b");
+    tok = strtok(NULL, " ");
+    TEST_ASSERT(tok != NULL, "third token");
+    TEST_ASSERT_STR_EQ(tok, "c");
+    tok = strtok(NULL, " ");
+    TEST_ASSERT(tok != NULL, "fourth token");
+    TEST_ASSERT_STR_EQ(tok, "d");
+    tok = strtok(NULL, " ");
+    TEST_ASSERT(tok == NULL, "no more tokens");
+    TEST_PASS();
+}
+
+void test_strtok_multidelim(void) {
+    TEST_START("strtok multiple delimiters");
+    char buf[] = "a,,b,  c";
+    char *tok = strtok(buf, ", ");
+    TEST_ASSERT_STR_EQ(tok, "a");
+    tok = strtok(NULL, ", ");
+    TEST_ASSERT_STR_EQ(tok, "b");
+    tok = strtok(NULL, ", ");
+    TEST_ASSERT_STR_EQ(tok, "c");
+    tok = strtok(NULL, ", ");
+    TEST_ASSERT(tok == NULL, "no more tokens");
+    TEST_PASS();
+}
+
+void test_strtok_nodelim(void) {
+    TEST_START("strtok no delimiter found");
+    char buf[] = "hello";
+    char *tok = strtok(buf, " ");
+    TEST_ASSERT(tok != NULL, "single token");
+    TEST_ASSERT_STR_EQ(tok, "hello");
+    tok = strtok(NULL, " ");
+    TEST_ASSERT(tok == NULL, "no more tokens");
+    TEST_PASS();
+}
+
+void test_strtok_r_basic(void) {
+    TEST_START("strtok_r basic");
+    char buf[] = "x y z";
+    char *save;
+    char *tok = strtok_r(buf, " ", &save);
+    TEST_ASSERT_STR_EQ(tok, "x");
+    tok = strtok_r(NULL, " ", &save);
+    TEST_ASSERT_STR_EQ(tok, "y");
+    tok = strtok_r(NULL, " ", &save);
+    TEST_ASSERT_STR_EQ(tok, "z");
+    tok = strtok_r(NULL, " ", &save);
+    TEST_ASSERT(tok == NULL, "no more tokens");
+    TEST_PASS();
+}
+
+/* ========== strspn ========== */
+
+void test_strspn_all(void) {
+    TEST_START("strspn all match");
+    size_t n = strspn("aaaa", "a");
+    TEST_ASSERT_EQ(n, 4UL, "%zu");
+    TEST_PASS();
+}
+
+void test_strspn_partial(void) {
+    TEST_START("strspn partial match");
+    size_t n = strspn("abcde", "abc");
+    TEST_ASSERT_EQ(n, 3UL, "%zu");
+    TEST_PASS();
+}
+
+void test_strspn_none(void) {
+    TEST_START("strspn no match");
+    size_t n = strspn("xyz", "a");
+    TEST_ASSERT_EQ(n, 0UL, "%zu");
+    TEST_PASS();
+}
+
+void test_strspn_empty(void) {
+    TEST_START("strspn empty string");
+    size_t n = strspn("", "abc");
+    TEST_ASSERT_EQ(n, 0UL, "%zu");
+    TEST_PASS();
+}
+
+/* ========== strcspn ========== */
+
+void test_strcspn_none(void) {
+    TEST_START("strcspn no reject chars");
+    size_t n = strcspn("hello", "xyz");
+    TEST_ASSERT_EQ(n, 5UL, "%zu");
+    TEST_PASS();
+}
+
+void test_strcspn_some(void) {
+    TEST_START("strcspn some reject");
+    size_t n = strcspn("hello world", " ");
+    TEST_ASSERT_EQ(n, 5UL, "%zu");
+    TEST_PASS();
+}
+
+void test_strcspn_first(void) {
+    TEST_START("strcspn reject at first char");
+    size_t n = strcspn("abc", "a");
+    TEST_ASSERT_EQ(n, 0UL, "%zu");
+    TEST_PASS();
+}
+
+/* ========== strpbrk ========== */
+
+void test_strpbrk_found(void) {
+    TEST_START("strpbrk found");
+    char *p = strpbrk("hello world", "wr");
+    TEST_ASSERT(p != NULL, "strpbrk should find 'w'");
+    TEST_ASSERT_EQ(*p, 'w', "%c");
+    TEST_PASS();
+}
+
+void test_strpbrk_notfound(void) {
+    TEST_START("strpbrk not found");
+    char *p = strpbrk("hello", "xyz");
+    TEST_ASSERT(p == NULL, "strpbrk should return NULL");
+    TEST_PASS();
+}
+
+void test_strpbrk_empty(void) {
+    TEST_START("strpbrk empty accept set");
+    char *p = strpbrk("hello", "");
+    TEST_ASSERT(p == NULL, "strpbrk with empty accept should return NULL");
+    TEST_PASS();
+}
+
+/* ========== memcmp ========== */
+
+void test_memcmp_equal(void) {
+    TEST_START("memcmp equal");
+    TEST_ASSERT_EQ(memcmp("abc", "abc", 3), 0, "%d");
+    TEST_PASS();
+}
+
+void test_memcmp_diff(void) {
+    TEST_START("memcmp different");
+    TEST_ASSERT(memcmp("abc", "abd", 3) != 0, "should differ");
+    TEST_ASSERT(memcmp("abc", "abd", 3) < 0, "'c' < 'd'");
+    TEST_PASS();
+}
+
+void test_memcmp_zero(void) {
+    TEST_START("memcmp zero bytes");
+    TEST_ASSERT_EQ(memcmp("abc", "xyz", 0), 0, "%d");
+    TEST_PASS();
+}
+
+/* ========== strtol ========== */
+
+void test_strtol_decimal(void) {
+    TEST_START("strtol decimal");
+    char *end;
+    long val = strtol("12345", &end, 10);
+    TEST_ASSERT_EQ(val, 12345L, "%ld");
+    TEST_ASSERT_EQ(*end, '\0', "%d");
+    TEST_PASS();
+}
+
+void test_strtol_hex(void) {
+    TEST_START("strtol hex 0x");
+    char *end;
+    long val = strtol("0xFF", &end, 0);
+    TEST_ASSERT_EQ(val, 255L, "%ld");
+    TEST_ASSERT_EQ(*end, '\0', "%d");
+    TEST_PASS();
+}
+
+void test_strtol_octal(void) {
+    TEST_START("strtol octal");
+    char *end;
+    long val = strtol("077", &end, 0);
+    TEST_ASSERT_EQ(val, 63L, "%ld");  /* 0+7*8+7=63 */
+    TEST_ASSERT_EQ(*end, '\0', "%d");
+    TEST_PASS();
+}
+
+void test_strtol_negative(void) {
+    TEST_START("strtol negative");
+    long val = strtol("-42", (void *)0, 10);
+    TEST_ASSERT_EQ(val, -42L, "%ld");
+    TEST_PASS();
+}
+
+void test_strtol_auto(void) {
+    TEST_START("strtol auto-detect base=0 => decimal");
+    long val = strtol("99", (void *)0, 0);
+    TEST_ASSERT_EQ(val, 99L, "%ld");
+    TEST_PASS();
+}
+
+void test_strtol_endptr(void) {
+    TEST_START("strtol endptr tracking");
+    char *end;
+    long val = strtol("123abc", &end, 10);
+    TEST_ASSERT_EQ(val, 123L, "%ld");
+    TEST_ASSERT_STR_EQ(end, "abc");
+    TEST_PASS();
+}
+
+/* ========== strtoul ========== */
+
+void test_strtoul_std_basic(void) {
+    TEST_START("strtoul basic");
+    unsigned long val = strtoul("999", (void *)0, 10);
+    TEST_ASSERT_EQ(val, 999UL, "%lu");
+    TEST_PASS();
+}
+
+void test_strtoul_std_hex(void) {
+    TEST_START("strtoul hex");
+    unsigned long val = strtoul("0x100", (void *)0, 0);
+    TEST_ASSERT_EQ(val, 256UL, "%lu");
+    TEST_PASS();
+}
+
+/* ========== atoi / atol ========== */
+
+void test_atoi_basic(void) {
+    TEST_START("atoi basic");
+    TEST_ASSERT_EQ(atoi("42"), 42, "%d");
+    TEST_ASSERT_EQ(atoi("0"), 0, "%d");
+    TEST_ASSERT_EQ(atoi("-1"), -1, "%d");
+    TEST_PASS();
+}
+
+void test_atol_basic(void) {
+    TEST_START("atol basic");
+    TEST_ASSERT_EQ(atol("123456789"), 123456789L, "%ld");
+    TEST_ASSERT_EQ(atol("0"), 0L, "%ld");
+    TEST_ASSERT_EQ(atol("-999"), -999L, "%ld");
+    TEST_PASS();
+}
+
+/* ========== abs / labs ========== */
+
+void test_abs_positive(void) {
+    TEST_START("abs positive");
+    TEST_ASSERT_EQ(abs(42), 42, "%d");
+    TEST_PASS();
+}
+
+void test_abs_negative(void) {
+    TEST_START("abs negative");
+    TEST_ASSERT_EQ(abs(-42), 42, "%d");
+    TEST_PASS();
+}
+
+void test_abs_zero(void) {
+    TEST_START("abs zero");
+    TEST_ASSERT_EQ(abs(0), 0, "%d");
+    TEST_PASS();
+}
+
+void test_labs_basic(void) {
+    TEST_START("labs basic");
+    TEST_ASSERT_EQ(labs(-123456L), 123456L, "%ld");
+    TEST_ASSERT_EQ(labs(123456L), 123456L, "%ld");
+    TEST_ASSERT_EQ(labs(0L), 0L, "%ld");
+    TEST_PASS();
+}
+
 /* ========== tlibc_strtoul ========== */
 
 void test_strtoul_basic(void) {
@@ -363,6 +680,52 @@ int main(void) {
     test_strerror_zero();
     test_strerror_known();
     test_strerror_unknown();
+
+    test_strstr_found_start();
+    test_strstr_found_mid();
+    test_strstr_notfound();
+    test_strstr_empty_needle();
+    test_strstr_overlap();
+
+    test_strtok_basic();
+    test_strtok_multidelim();
+    test_strtok_nodelim();
+    test_strtok_r_basic();
+
+    test_strspn_all();
+    test_strspn_partial();
+    test_strspn_none();
+    test_strspn_empty();
+
+    test_strcspn_none();
+    test_strcspn_some();
+    test_strcspn_first();
+
+    test_strpbrk_found();
+    test_strpbrk_notfound();
+    test_strpbrk_empty();
+
+    test_memcmp_equal();
+    test_memcmp_diff();
+    test_memcmp_zero();
+
+    test_strtol_decimal();
+    test_strtol_hex();
+    test_strtol_octal();
+    test_strtol_negative();
+    test_strtol_auto();
+    test_strtol_endptr();
+
+    test_strtoul_std_basic();
+    test_strtoul_std_hex();
+
+    test_atoi_basic();
+    test_atol_basic();
+
+    test_abs_positive();
+    test_abs_negative();
+    test_abs_zero();
+    test_labs_basic();
 
     test_strtoul_basic();
     test_strtoul_large();

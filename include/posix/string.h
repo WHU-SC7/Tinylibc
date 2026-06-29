@@ -20,6 +20,15 @@ size_t tlibc_strtoul(char *str);
 void *memcpy(void *dest, const void *src, size_t n);
 char *itoa(int num, char *str, int radix);
 
+char *strtok_r(char *str, const char *delim, char **save_ptr);
+char *strtok(char *str, const char *delim);
+
+size_t strspn(const char *s, const char *accept);
+size_t strcspn(const char *s, const char *reject);
+char *strpbrk(const char *s, const char *accept);
+
+int memcmp(const void *s1, const void *s2, size_t n);
+
 char *strerror(int errnum);
 
 void *__memset(void *dst, int value, size_t n);

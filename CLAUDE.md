@@ -10,10 +10,17 @@
 make all       # 两阶段：先 Makefile 编译 tmake+shell，再用 tmake -j 递归构建所有 app
 make run       # 编译后进入 shell
 make clean     # rm -rf build/
+make debug     # make all + strace
+make disassemb # 反汇编 tlibc_x64 到 build/dis_tlibc
+make glibc     # 用 glibc 编译 app/paper/exp.c 做对比实验
+make tlibc     # 用 Tinylibc 编译 app/paper/exp.c 做对比实验
+make setcap    # 手动设置 CAP_NET_RAW（ndiscover/netprobe/sniffer 免 sudo）
 make init-hooks # 初始化 Git hooks（make all 自动配置，通常不需手动）
+make check-hooks # 检查 Git hooks 配置状态
 ```
 
 > 新机器只需 `git clone && make all` 即可。Git hooks（commit-msg 格式校验）由构建流程自动设置。
+> `make all` 构建后会自动打印 CAP_NET_RAW 安装提示，按提示操作可免 sudo 运行网络探测工具。
 
 ### 快速迭代
 
@@ -21,10 +28,11 @@ make init-hooks # 初始化 Git hooks（make all 自动配置，通常不需手�
 tmake -b ndiscover     # 只编译+链接 ndiscover（跳过 lib，秒级完成）
 tmake -b shell         # 只编译 shell（根级 app/*.c 也支持）
 tmake -j 4 -b cat      # 并行编译单个程序
+tmake -j               # 自动检测 CPU 核数并行编译全部
 ```
 
 `app/tmake.c` 是自托管构建工具，支持 `-j [N]` 并行编译和 `-b <程序名>` 单应用构建。
-第二次调用 `tmake -b` 会跳过未修改的源文件（增量构建）。
+不传 N 时自动检测 CPU 核数；第二次调用 `tmake -b` 会跳过未修改的源文件（增量构建）。
 
 ### 构建产物
 
@@ -56,13 +64,15 @@ tmake -j 4 -b cat      # 并行编译单个程序
 
 | 文件 | 内容 |
 |------|------|
-| `shell.c` | 交互式 shell |
-| `tmake.c` | 自托管构建工具（并行编译、增量构建、`-b` 单目标编译） |
-| `coreutils/` | cat, cp, echo, ls, mkdir, mv, pwd, rm, rmdir, touch, hexdump |
-| `net/` | ndiscover, webserv, sniffer, netprobe, portscan, ssh, sshd, tclient, tserver, client, server, http |
+| `shell.c` | 交互式 shell（PATH 查找、tab 补全、配置文件） |
+| `tmake.c` | 自托管构建工具（并行编译 `-j`、单目标 `-b`、增量构建） |
+| `coreutils/` | cat, cp, echo, fcount, hexdump, ls, mkdir, mv, pwd, rm, rmdir, touch |
+| `net/` | ndiscover（网络发现）, webserv（HTTP 服务器）, sniffer（抓包）, netprobe（延迟探测）, portscan（端口扫描）, http（HTTP 客户端）, dnsquery（DNS 查询） |
+| `net/old/` | 旧版：ssh, sshd, tclient, tserver, client, server（保留但不再编译） |
 | `term/` | vim, top, __game_pacman, template |
-| `test/` | 内部测试 |
-| `paper/` | 与 glibc 对比实验 |
+| `compiler/` | elf_reader（ELF 文件读取器）, elf_maker（ELF 生成器） |
+| `test/` | test_string, test_smoke（冒烟测试）, test_iomux（poll/select/epoll 测试）, test_printf（格式化测试）, test_filelist（文件列表测试）, thread（线程测试）, tlibc_free（释放测试）, passwd, quene |
+| `paper/` | exp, mempool, memtest, pthread（与 glibc 对比实验） |
 
 ### 头文件（三层结构：核心 → POSIX → 项目自定义）
 
@@ -85,11 +95,14 @@ tmake -j 4 -b cat      # 并行编译单个程序
 | `errno.h` | 错误码 (EPERM, ENOENT, ESRCH 等) |
 | `fcntl.h` | O_RDONLY / O_WRONLY / O_RDWR, O_CREAT, AT_FDCWD |
 | `mman.h` | PROT_READ / PROT_WRITE, MAP_PRIVATE / MAP_ANONYMOUS |
+| `poll.h` | POLLIN/OUT/ERR/HUP 标志, `struct pollfd`, `poll()` / `ppoll()` 声明 |
 | `pthread.h` | pthread_t, pthread_attr_t, pthread_mutex_t, create/join/exit/lock |
 | `sched.h` | CLONE_VM / CLONE_THREAD / CLONE_SETTLS 等 clone 标志 |
 | `signal.h` | 信号编号 (SIGHUP–SIGSYS), sigset_t, struct sigaction |
 | `socket.h` | struct sockaddr_in, in_addr, AF_INET / AF_INET6 |
 | `string.h` | strlen, strcpy, strcmp, memcpy, strchr, itoa 等声明 |
+| `sys/epoll.h` | EPOLL_CTL_ADD/DEL/MOD, `struct epoll_event`, `epoll_create1/ctl/wait` |
+| `sys/select.h` | fd_set, FD_SET/CLR/ISSET/ZERO, `select()` / `pselect()` 声明 |
 | `termios.h` | struct termios, TCGETS/TCSETS, ICANON/ECHO/ISIG/CS8 等标志 |
 | `time.h` | struct timespec, CLOCK_REALTIME / CLOCK_MONOTONIC |
 | `unistd.h` | SEEK_SET/CUR/END, STDIN/STDOUT/STDERR, PIPE_READ/WRITE, O_NONBLOCK |
@@ -110,7 +123,9 @@ tmake -j 4 -b cat      # 并行编译单个程序
 ### 架构 `arch/`
 
 - `arch/x86_64/` — 当前支持：syscall 内联汇编 (`__syscall0`–`6`), syscall 号, stat 结构
+- `arch/riscv64/` — 待支持（syscall 号 + stat 结构体）
 - `arch/syscall.h` — 自动根据参数个数分发到 `__syscallN`
+- `arch/pthread_arch.h` — 架构相关 TLS 访问（`__tlibc_thread_self`：x86_64 用 `%fs:0`，aarch64 用 `tpidr_el0`）
 
 ## 关键约定
 
@@ -154,8 +169,8 @@ tmake -j 4 -b cat      # 并行编译单个程序
 
 ### 编程规则
 - 不要保留注释掉的代码块，直接删除
-- 多线程共享的全局变量标 `volatile`（`pre_alloc_stack`, `remain_thread_stack_num`）
+- 多线程共享的全局变量标 `volatile`
 - 外部输入字符串用 `snprintf` / `strncpy` + 手动 null 终止，不用裸 `strcpy`/`strcat`
 - 通用缓冲区大小用 `TLIBC_BUF_SIZE`（`tlibc_everything.h`），不硬编码魔数
-- 无 FILE 结构体，所有 I/O 基于裸 fd
+- 无 `FILE` 结构体，所有 I/O 基于裸 fd
 - 类型定义在 `tlibc_types.h`，枚举 `tlibc_`前缀 + `_t`后缀，值 `TLIBC_`前缀

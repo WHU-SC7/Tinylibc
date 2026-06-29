@@ -10,14 +10,18 @@ Tinylibc 是一个轻量级、独立的部分 C 标准库实现，运行于 x86_
 make all       # 两阶段编译：先编译 tmake + shell，再用 tmake -j 递归构建所有 app
 make run       # 编译并进入 shell
 make clean     # 删除 build/
-make glibc     # 用 glibc 编译 app/paper/exp.c 做对比实验
-make tlibc     # 用 Tinylibc 编译 app/paper/exp.c 做对比实验
 make debug     # make all + strace
 make disassemb # 反汇编 tlibc_x64 到 build/dis_tlibc
+make glibc     # 用 glibc 编译 app/paper/exp.c 做对比实验
+make tlibc     # 用 Tinylibc 编译 app/paper/exp.c 做对比实验
+make setcap    # 手动设置 CAP_NET_RAW（ndiscover/netprobe/sniffer 免 sudo）
+make init-hooks # 初始化 Git hooks（make all 自动配置）
+make check-hooks # 检查 Git hooks 配置状态
 
 # 快速迭代（修改单个 app 后）
 tmake -b ndiscover       # 只编译+链接 ndiscover，跳过 lib
 tmake -j 4 -b cat        # 并行编译单个程序
+tmake -j                 # 自动检测 CPU 核数并行编译全部
 tmake -b ndiscover       # 第二次调用：跳过已有 .o（增量）
 ```
 
@@ -27,13 +31,13 @@ tmake -b ndiscover       # 第二次调用：跳过已有 .o（增量）
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
-| `core/io.c` | — | syscall 包装：文件 I/O（read/write/open/close/lseek/pipe/ioctl） |
-| `core/proc.c` | — | syscall 包装：进程控制（fork/exit/wait/execve/gettid/kill） |
-| `core/mem.c` | — | syscall 包装：内存（brk/mmap/munmap）+ tlibc_malloc/tlibc_free |
-| `core/time.c` | — | syscall 包装：时间（nanosleep/clock_gettime）+ msleep/usleep |
-| `core/signal.c` | — | syscall 包装：信号（sigaction/sigprocmask）+ tlibc_sigaction |
-| `core/sync.c` | — | syscall 包装：同步（futex） |
-| `string.c` | 263+ | strcpy/strncpy/strcmp/strcat/strchr/memcpy/itoa/strerror + __memset/__memmove |
+| `core/io.c` | 199 | syscall 包装：文件 I/O（read/write/open/close/lseek/pipe/ioctl） |
+| `core/proc.c` | 78 | syscall 包装：进程控制（fork/exit/wait/execve/gettid/kill） |
+| `core/mem.c` | 65 | syscall 包装：内存（brk/mmap/munmap）+ tlibc_malloc/tlibc_free |
+| `core/time.c` | 65 | syscall 包装：时间（nanosleep/clock_gettime）+ msleep/usleep |
+| `core/signal.c` | 50 | syscall 包装：信号（sigaction/sigprocmask）+ tlibc_sigaction |
+| `core/sync.c` | 18 | syscall 包装：同步（futex） |
+| `string.c` | 290 | strcpy/strncpy/strcmp/strcat/strchr/memcpy/itoa/strerror + __memset/__memmove |
 | `stdio/printf.c` | 410 | `__printf`/`__fprintf` 实现 |
 | `stdio/snprintf.c` | 440 | snprintf 实现 |
 | `thread/mempool.c` | 329 | 内存池 + 后台工作线程异步回收线程资源 |
@@ -43,27 +47,28 @@ tmake -b ndiscover       # 第二次调用：跳过已有 .o（增量）
 | `misc/path.c` | 139 | 路径规范化（绝对路径计算、./../ 处理） |
 | `misc/envp.c` | 52 | 环境变量处理 |
 | `misc/system.c` | 72 | 系统函数：get_user_dir（解析 /etc/passwd） |
-| `tty.c` | 194 | 终端控制：获取终端大小、raw 模式、光标定位、按键处理（方向键→KEY_UP/DOWN/LEFT/RIGHT） |
-| `net/socket.c` | 133 | socket/connect/bind/listen/accept/recv 等网络 syscall 封装 |
+| `tty.c` | 192 | 终端控制：获取终端大小、raw 模式、光标定位、按键处理（方向键→KEY_UP/DOWN/LEFT/RIGHT） |
+| `net/socket.c` | 145 | socket/connect/bind/listen/accept/recv 等网络 syscall 封装 |
 | `net/dns.c` | 651 | DNS 解析客户端 |
 | `poll.c` | 78 | I/O 多路复用：poll/ppoll/select/pselect/epoll POSIX 封装 |
 | `init/init.c` | 55 | 初始化：预分配线程栈、初始化内存池、调用 main |
 | `init/start.S` | 14 | 入口点 `__tlibc_start`，调用 `tlibc_init` 后执行 main |
 
-**总行数：约 3,500 行（22 个源文件，7 个子目录）**
+**总行数：约 3,927 行（22 个源文件，7 个子目录）**
 
 ### `/app/` — 用户态程序
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
-| `shell.c` | 770 | 交互式 shell：命令解析、PATH 查找、tab 补全、程序执行 |
-| `tmake.c` | 928 | 自托管构建工具：递归编译 app/ 下所有子目录的 .c 文件，支持 -j 并行、-b 单目标构建、增量跳过 .o |
-| `coreutils/` | 528 | cat、cp、echo、ls、mkdir、mv、pwd、rm、rmdir、touch、hexdump |
-| `net/` | 5,731 | 网络工具：ndiscover（网络发现）、webserv（HTTP 服务器）、sniffer（抓包）、netprobe（探测）、portscan（端口扫描）、ssh/sshd、tclient/tserver、client/server、http |
-| `term/` | 1,531 | 终端程序：vim（文本查看器）、top（进程监视器）、__game_pacman（吃豆人）、template（模板） |
-| `test/` | 1,645 | 内部测试：string、printf、snprintf、fcount、float、madv、passwd、queue 等 |
-| `paper/` | 187 | 与 glibc 对比实验：exp、mempool、memtest、pthread |
-| `compiler/` | 76 | ELF 读写器 |
+| `shell.c` | 801 | 交互式 shell：命令解析、PATH 查找、tab 补全、配置文件、程序执行 |
+| `tmake.c` | 1,081 | 自托管构建工具：递归编译 app/ 下所有子目录的 .c 文件，支持 -j 并行（含自动 CPU 检测）、-b 单目标构建、增量跳过 .o |
+| `coreutils/` | 561 | cat（59）、cp（49）、echo（53）、fcount（33）、hexdump（111）、ls（87）、mkdir（34）、mv（23）、pwd（15）、rm（39）、rmdir（37）、touch（21） |
+| `net/` | 5,256 | ndiscover（1,622，网络发现）、webserv（1,343，HTTP 服务器）、sniffer（793，抓包）、netprobe（488，延迟探测）、portscan（377，端口扫描）、http（163，HTTP 客户端）、dnsquery（470，DNS 查询）|
+| `net/old/` | 1,034 | 旧版实现（client、server、ssh、sshd、tclient、tserver），保留但不再由 tmake 编译 |
+| `term/` | 1,543 | vim（546，文本查看器）、top（650，进程监视器）、__game_pacman（271，吃豆人）、template（76，模板） |
+| `compiler/` | 76 | elf_reader（62，ELF 文件读取器）、elf_maker（14，ELF 生成器） |
+| `test/` | 3,158 | test_smoke（816，冒烟测试）、test_iomux（705，poll/select/epoll 测试）、test_string（371，字符串测试）、test_printf（318，格式化测试）、thread（282，线程测试）、tlibc_free（237，释放测试）、quene（223，队列测试）、test_filelist（141，文件列表测试）、passwd（65，passwd 解析测试） |
+| `paper/` | 182 | exp（60）、memtest（55）、mempool（35）、pthread（32），与 glibc 对比实验 |
 
 ### `/include/` — 头文件（三层结构）
 
@@ -88,11 +93,14 @@ tmake -b ndiscover       # 第二次调用：跳过已有 .o（增量）
 | `errno.h` | POSIX 错误码：EPERM / ENOENT / ESRCH / EINTR / EIO / ENXIO / E2BIG / EAGAIN / ENOMEM 等 |
 | `fcntl.h` | 文件控制：O_RDONLY / O_WRONLY / O_RDWR、O_CREAT / O_TRUNC / O_APPEND、O_DIRECTORY、O_CLOEXEC、AT_FDCWD |
 | `mman.h` | 内存映射：PROT_READ / PROT_WRITE / PROT_EXEC、MAP_SHARED / MAP_PRIVATE / MAP_ANONYMOUS、MAP_FAILED |
+| `poll.h` | I/O 多路复用：POLLIN/OUT/ERR/HUP 标志、struct pollfd、poll() / ppoll() 声明 |
 | `pthread.h` | pthread 类型 + 函数：pthread_t、pthread_mutex_t、pthread_create/join/detach/exit/self、mutex lock/unlock/trylock/destroy |
 | `sched.h` | clone 标志：CSIGNAL、CLONE_VM/FS/FILES/SIGHAND/THREAD/SETTLS/CHILD_CLEARTID 等 |
 | `signal.h` | 信号：SIGHUP–SIGSYS 编号、sigset_t、struct sigaction、siginfo_t、sigaltstack |
 | `socket.h` | socket 类型：in_port_t、sa_family_t、in_addr、sockaddr_in、AF_INET / AF_INET6 / AF_UNIX |
 | `string.h` | 字符串/内存函数声明：strcpy/strncpy/strlen/strcat/strcmp/memcpy/itoa/tlibc_strtoul |
+| `sys/epoll.h` | epoll：EPOLL_CTL_ADD/DEL/MOD、struct epoll_event（含 data 联合体）、epoll_create1/ctl/wait/pwait |
+| `sys/select.h` | select：fd_set 位图实现（FD_SETSIZE=1024）、FD_SET/CLR/ISSET/ZERO 宏、select() / pselect() 声明 |
 | `termios.h` | 终端 I/O：struct termios、TCGETS/TCSETS/TCSETSW/TCSETSF、ICANON/ECHO/ISIG/ECHOE/IXON/CS8/CREAD |
 | `time.h` | 时间类型：struct timespec、clockid_t（CLOCK_REALTIME/MONOTONIC 等）|
 | `unistd.h` | POSIX 常量：SEEK_SET/CUR/END、STDIN_FILENO/STDOUT_FILENO/STDERR_FILENO、PIPE_READ/PIPE_WRITE、O_NONBLOCK |
@@ -111,9 +119,10 @@ tmake -b ndiscover       # 第二次调用：跳过已有 .o（增量）
 
 | 路径 | 内容 |
 |------|------|
-| `arch/x86_64/` | 当前支持的架构：syscall 内联汇编（__syscall0-6）、syscall 号、stat 结构体 |
-| `arch/riscv64/` | 待支持的架构：stat 结构体、syscall 号 |
-| `arch/syscall.h` | 通用 syscall 分发宏：根据参数个数自动选择 __syscall0~6 |
+| `arch/x86_64/` | **当前支持的架构**：syscall 内联汇编（`__syscall0`–`6`）、syscall 号、stat 结构体、syscall_arch.h |
+| `arch/riscv64/` | **待支持**：stat 结构体、syscall 号 |
+| `arch/syscall.h` | 通用 syscall 分发宏：根据参数个数自动选择 `__syscall0`~`6` |
+| `arch/pthread_arch.h` | 架构相关 TLS 访问：`__tlibc_thread_self()` — x86_64 用 `%fs:0`、aarch64 用 `tpidr_el0` |
 
 ### 其他文件
 
@@ -121,8 +130,11 @@ tmake -b ndiscover       # 第二次调用：跳过已有 .o（增量）
 |------|------|
 | `Makefile` | 顶层构建，Phase 1 仅编译 boot 必需（lib + tmake + shell） |
 | `ld.script` | 链接脚本：.text 起始于 0x400000，无复杂段布局 |
-| `CLAUDE.md` | 本文件，项目手册 |
+| `CLAUDE.md` | 项目手册（快速定位） |
+| `CLAUDE_DETAILS.md` | 本文件，详细文档 |
+| `README.md` | 面向读者的介绍（英文） |
 | `项目计划.md` | 开发计划 |
+| `tlibc_commit_log.md` | 提交历史汇总 |
 
 ## 关键架构决策
 
@@ -157,12 +169,20 @@ tmake -b ndiscover       # 第二次调用：跳过已有 .o（增量）
 - 后台工作线程定期扫描已退出线程，回收其线程栈和未释放内存
 - 初始化时预分配 100 个线程栈（每个 4MB，共 400MB）
 - 使用自旋锁（atomic compare-exchange）保护全局内存列表
+- `tlibc_free` 接口：支持提前释放内存池中的资源，默认关闭自动回收
 
 ### 6. 构建方式
 两阶段构建，可执行文件统一输出到 `build/output/`：
 1. **Phase 1 (Makefile):** 只编译 boot 必需文件（lib/* + app/tmake.c + app/shell.c），创建 tlibc.a，链接 tmake、shell
-2. **Phase 2 (tmake -j):** 递归编译 `app/` 下所有子目录，链接全部可执行文件并安装到 `~/tlibc/bin/`
+2. **Phase 2 (tmake -j):** 递归编译 `app/` 下所有子目录（跳过 `net/old/`），链接全部可执行文件并安装到 `~/tlibc/bin/`
 3. **快速迭代:** `tmake -b ndiscover` 只编译+链接单个程序，跳过 lib；重复调用跳过已有 `.o`
+4. **CAP_NET_RAW:** ndiscover/netprobe/sniffer 需要原始套接字权限，`make setcap` 自动设置；安装 sudoers 免密规则可全自动完成
+
+### 7. POSIX 多路复用 I/O
+- `posix/poll.h` — poll/ppoll 类型和常量
+- `posix/sys/epoll.h` — epoll_create1/ctl/wait/pwait 封装
+- `posix/sys/select.h` — select/pselect（fd_set 位图实现）
+- `lib/poll.c` — 底层实现，统一封装为 POSIX 接口
 
 ## 编程约定
 
@@ -248,7 +268,15 @@ echo "Exit: $?"          # 0=全通过 1=有失败
 ### 现有测试
 
 ```
-app/test/test_string.c     — 35 用例：strlen/strcpy/strcmp/memcpy/strchr/itoa/strerror...
+app/test/test_string.c     — 字符串函数：strlen/strcpy/strcmp/memcpy/strchr/itoa/strerror（31 用例）
+app/test/test_smoke.c      — 功能冒烟测试：逐一运行各程序，验证退出码/stdout（11+ 用例，支持分组）
+app/test/test_iomux.c      — I/O 多路复用：poll/select/epoll LT/ET/TCP 场景（30+ 用例）
+app/test/test_printf.c     — printf/snprintf 格式化测试
+app/test/thread.c          — 线程创建/join/分离/互斥锁/malloc 压力测试
+app/test/tlibc_free.c      — tlibc_free 接口测试
+app/test/test_filelist.c   — 文件列表工具函数测试
+app/test/quene.c           — 队列数据结构测试
+app/test/passwd.c          — /etc/passwd 解析测试
 ```
 
 ### 约定

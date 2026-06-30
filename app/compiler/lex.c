@@ -38,6 +38,7 @@ static Keyword keywords[] = {
     {"__builtin_va_list",         TOK__BUILTIN_VA_LIST},
     {"__builtin_va_start",        TOK__BUILTIN_VA_START},
     {"__const__",                 TOK_CONST},
+    {"__inline",                  TOK_INLINE},
     {"__inline__",                TOK_INLINE},
     {"__restrict__",              TOK_RESTRICT},
     {"__signed__",                TOK_SIGNED},
@@ -270,6 +271,12 @@ Token lexer_next(Lexer *lx) {
                 skip_comment(lx, n);
                 continue;
             }
+        }
+        /* 跳过预处理器行（# 行号 "file"） */
+        if (c == '#' && lx->col <= 2) {
+            while (input_peek(lx) != '\n' && input_peek(lx) != INPUT_END)
+                advance(lx);
+            continue;
         }
         if (is_ws(c)) {
             advance(lx);

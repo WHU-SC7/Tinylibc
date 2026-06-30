@@ -326,7 +326,6 @@ static AstNode *parse_unary(Parser *p) {
     if (t.kind == TOK_SIZEOF) {
         consume(p);
         AstNode *n = new_ast(p, AST_CONSTANT);
-        /* sizeof(int) = 4, Phase 3+ 支持更复杂类型 */
         if (peek(p).kind == TOK_LPAREN) {
             consume(p);
             int sz = parse_type_specifier(p);
@@ -334,9 +333,29 @@ static AstNode *parse_unary(Parser *p) {
             expect(p, TOK_RPAREN);
             n->ival = sz;
         } else {
-            n->ival = 4;  /* 默认 sizeof(expr) = 4 */
+            n->ival = 4;
         }
         return n;
+    }
+
+    /* (type)expr — 类型转换 */
+    if (t.kind == TOK_LPAREN) {
+        const char *save_pos = p->lexer->pos;
+        int save_line = p->lexer->line;
+        int save_col = p->lexer->col;
+        Token save_tok = p->tok;
+
+        consume(p);
+        int csz = parse_type_specifier(p);
+        if (csz >= 0 && peek(p).kind == TOK_RPAREN) {
+            consume(p);
+            return parse_unary(p);  /* 跳过转换，返回内部表达式 */
+        }
+        /* 不是类型转换，回溯 */
+        p->lexer->pos = save_pos;
+        p->lexer->line = save_line;
+        p->lexer->col = save_col;
+        p->tok = save_tok;
     }
 
     return parse_postfix(p);
@@ -526,7 +545,18 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
         int sz = parse_type_specifier(p);
         if (sz < 0) { error_at(p, "invalid struct member type"); break; }
 
-        while (peek(p).kind == TOK_STAR) { consume(p); sz = 8; }  /* 指针 */
+        /* 指针 */
+        while (peek(p).kind == TOK_STAR) { consume(p); sz = 8; }
+
+        /* 函数指针 (*name)(params) */
+        if (peek(p).kind == TOK_LPAREN) {
+            consume(p);
+            if (peek(p).kind == TOK_STAR) {
+                consume(p); sz = 8;
+            } else {
+                /* 不是 (*name)，无法处理 */
+            }
+        }
 
         Token id = peek(p);
         if (id.kind == TOK_IDENT) {
@@ -540,9 +570,33 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
             }
         }
 
-        /* 可能的位域或数组 — 跳过 */
+        /* 关闭函数指针的 ) 和参数列表 */
+        if (sz == 8 && peek(p).kind == TOK_RPAREN) {
+            consume(p);
+            if (peek(p).kind == TOK_LPAREN) {
+                int depth = 1; consume(p);
+                while (depth > 0 && peek(p).kind != TOK_EOF) {
+                    if (peek(p).kind == TOK_LPAREN) depth++;
+                    if (peek(p).kind == TOK_RPAREN) depth--;
+                    if (depth) consume(p);
+                }
+                if (peek(p).kind == TOK_RPAREN) consume(p);
+            }
+        }
+
+        /* 跳过位域 :N */
         if (peek(p).kind == TOK_COLON) { consume(p);
             while (peek(p).kind != TOK_SEMI && peek(p).kind != TOK_EOF) consume(p); }
+        /* 跳过数组 [...] */
+        if (peek(p).kind == TOK_LBRACKET) { consume(p);
+            int d = 1;
+            while (d > 0 && peek(p).kind != TOK_EOF) {
+                if (peek(p).kind == TOK_LBRACKET) d++;
+                if (peek(p).kind == TOK_RBRACKET) d--;
+                if (d) consume(p);
+            }
+            if (peek(p).kind == TOK_RBRACKET) consume(p);
+        }
 
         expect(p, TOK_SEMI);
     }
@@ -621,9 +675,10 @@ int parse_type_specifier(Parser *p) {
     case TOK__BUILTIN_VA_LIST: consume(p); return 24;  /* va_list = 4+4+8+8 bytes */
     case TOK_LONG:
         consume(p);
-        if (peek(p).kind == TOK_LONG) { consume(p); return 8; }
-        return 8;
-    case TOK_STRUCT: {
+        if (peek(p).kind == TOK_LONG) { consume(p); if (peek(p).kind == TOK_INT) { consume(p); } return 8; }
+        if (peek(p).kind == TOK_INT) { consume(p); } return 8;
+    case TOK_STRUCT:
+    case TOK_UNION: {
         consume(p);
         StructType st;
         int sz = parse_struct_type(p, &st);
@@ -633,22 +688,22 @@ int parse_type_specifier(Parser *p) {
     case TOK_UNSIGNED:
         consume(p);
         if (peek(p).kind == TOK_CHAR) { consume(p); return 1; }
-        if (peek(p).kind == TOK_SHORT) { consume(p); return 2; }
+        if (peek(p).kind == TOK_SHORT) { consume(p); if (peek(p).kind == TOK_INT) { consume(p); } return 2; }
         if (peek(p).kind == TOK_LONG) {
             consume(p);
-            if (peek(p).kind == TOK_LONG) { consume(p); return 8; }
-            return 8;
+            if (peek(p).kind == TOK_LONG) { consume(p); if (peek(p).kind == TOK_INT) { consume(p); } return 8; }
+            if (peek(p).kind == TOK_INT) { consume(p); } return 8;
         }
         if (peek(p).kind == TOK_INT) { consume(p); return 4; }
         return 4;
     case TOK_SIGNED:
         consume(p);
         if (peek(p).kind == TOK_CHAR) { consume(p); return 1; }
-        if (peek(p).kind == TOK_SHORT) { consume(p); return 2; }
+        if (peek(p).kind == TOK_SHORT) { consume(p); if (peek(p).kind == TOK_INT) { consume(p); } return 2; }
         if (peek(p).kind == TOK_LONG) {
             consume(p);
-            if (peek(p).kind == TOK_LONG) { consume(p); return 8; }
-            return 8;
+            if (peek(p).kind == TOK_LONG) { consume(p); if (peek(p).kind == TOK_INT) { consume(p); } return 8; }
+            if (peek(p).kind == TOK_INT) { consume(p); } return 8;
         }
         if (peek(p).kind == TOK_INT) { consume(p); return 4; }
         return 4;
@@ -661,6 +716,9 @@ int parse_type_specifier(Parser *p) {
 
 static const char *parse_declarator(Parser *p) {
     while (match(p, TOK_STAR)) ;
+    /* 跳过星号后的限定符（如 *const name） */
+    while (peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
+           peek(p).kind == TOK_RESTRICT) consume(p);
     Token t = peek(p);
     if (t.kind == TOK_IDENT) {
         consume(p);
@@ -671,6 +729,8 @@ static const char *parse_declarator(Parser *p) {
         consume(p);
         if (peek(p).kind == TOK_STAR) {
             consume(p);
+            while (peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
+                   peek(p).kind == TOK_RESTRICT) consume(p);
             Token nt = peek(p);
             const char *name = "";
             if (nt.kind == TOK_IDENT) { consume(p); name = arena_strdup(p->arena, nt.start, nt.len); }
@@ -947,8 +1007,21 @@ static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
                 if (is_variadic) *is_variadic = 1;
                 break;
             }
+            /* 跳过限定符 */
+            while (peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
+                   peek(p).kind == TOK_RESTRICT) consume(p);
             int psz = parse_type_specifier(p);
             const char *pname = parse_declarator(p);
+            /* 跳过参数上的 [...] 后缀 */
+            while (peek(p).kind == TOK_LBRACKET) {
+                int d = 1; consume(p);
+                while (d > 0 && peek(p).kind != TOK_EOF) {
+                    if (peek(p).kind == TOK_LBRACKET) d++;
+                    if (peek(p).kind == TOK_RBRACKET) d--;
+                    if (d) consume(p);
+                }
+                if (peek(p).kind == TOK_RBRACKET) consume(p);
+            }
             if (pname && *pname) {
                 AstNode *pd = new_ast(p, AST_VAR_DECL);
                 pd->name = pname;
@@ -963,32 +1036,6 @@ static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
     return head;
 }
 
-/* ─── 函数定义 ─── */
-
-static AstNode *parse_function_definition(Parser *p, int ret_size) {
-    (void)ret_size;
-    const char *name = parse_declarator(p);
-    int is_variadic = 0;
-    AstNode *params = parse_parameter_list(p, &is_variadic);
-    AstNode *body = parse_compound_statement(p);
-    /* 在 params 被链接到 block 之前记录参数个数 */
-    int pcount = 0;
-    { AstNode *pp; for (pp = params; pp; pp = pp->next) pcount++; }
-    /* 将参数声明前置到函数体开头 */
-    if (params) {
-        AstNode *last = params;
-        while (last->next) last = last->next;
-        last->next = body->stmts;
-        body->stmts = params;
-    }
-    AstNode *func = new_ast(p, AST_FUNC_DEF);
-    func->name = name;
-    func->params = params;
-    func->body = body;
-    func->is_static = is_variadic;
-    func->ival = pcount;  /* 实际参数个数 */
-    return func;
-}
 
 /* ─── 顶层解析入口 ─── */
 
@@ -1040,6 +1087,25 @@ AstNode *parse_program(Parser *p) {
         }
 
         /* 跳过存储类和限定符 */
+        /* 处理 enum 定义 */
+        if (peek(p).kind == TOK_ENUM) {
+            consume(p);
+            if (peek(p).kind == TOK_IDENT) consume(p);
+            if (peek(p).kind == TOK_LBRACE) {
+                int depth = 1; consume(p);
+                while (depth > 0 && peek(p).kind != TOK_EOF) {
+                    if (peek(p).kind == TOK_LBRACE) depth++;
+                    if (peek(p).kind == TOK_RBRACE) depth--;
+                    if (depth) consume(p);
+                }
+                if (peek(p).kind == TOK_RBRACE) consume(p);
+            }
+            /* 跳过可选的变量名和 , 初始化器 */
+            if (peek(p).kind == TOK_IDENT) consume(p);
+            if (peek(p).kind == TOK_COMMA) consume(p);
+            expect(p, TOK_SEMI);
+            continue;
+        }
         while (peek(p).kind == TOK_STATIC || peek(p).kind == TOK_EXTERN ||
                peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
                peek(p).kind == TOK_RESTRICT || peek(p).kind == TOK_REGISTER ||
@@ -1096,9 +1162,33 @@ AstNode *parse_program(Parser *p) {
         p->tok = saved_tok;
 
         if (is_func) {
-            AstNode *func = parse_function_definition(p, typesize);
-            *tail = func;
-            tail = &func->next;
+            /* 先解析声明符 + 参数列表，看是定义还是声明 */
+            const char *fname = parse_declarator(p);
+            int is_variadic_f = 0;
+            AstNode *fparams = parse_parameter_list(p, &is_variadic_f);
+            if (peek(p).kind == TOK_SEMI) {
+                /* 函数原型：只声明不定义 */
+                consume(p);
+            } else {
+                /* 函数定义 */
+                AstNode *fbody = parse_compound_statement(p);
+                /* 将参数声明前置到函数体 */
+                if (fparams) {
+                    AstNode *last_p = fparams;
+                    while (last_p->next) last_p = last_p->next;
+                    last_p->next = fbody->stmts;
+                    fbody->stmts = fparams;
+                }
+                int pcount = 0; { AstNode *pp; for (pp = fparams; pp; pp = pp->next) pcount++; }
+                AstNode *func = new_ast(p, AST_FUNC_DEF);
+                func->name = fname;
+                func->params = fparams;
+                func->body = fbody;
+                func->is_static = is_variadic_f;
+                func->ival = pcount;
+                *tail = func;
+                tail = &func->next;
+            }
         } else {
             while (peek(p).kind == TOK_STAR) consume(p);
             if (peek(p).kind == TOK_IDENT) consume(p);

@@ -176,6 +176,8 @@ typedef struct AstNode {
     const char *member_name;
     /* AST_ASM: asm_template = 汇编模板字符串 */
     const char *asm_template;
+    /* AST_FUNC_DEF: params = 参数声明链表 */
+    struct AstNode *params;
     /* AST_UNARY / AST_BINOP 操作符标记 */
     int op;
     /* 修饰标记 */

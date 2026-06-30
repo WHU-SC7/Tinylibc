@@ -642,6 +642,30 @@ static const char *parse_declarator(Parser *p) {
         consume(p);
         return arena_strdup(p->arena, t.start, t.len);
     }
+    /* 处理 (*name)(params) — 函数指针 */
+    if (t.kind == TOK_LPAREN) {
+        consume(p);
+        if (peek(p).kind == TOK_STAR) {
+            consume(p);
+            Token nt = peek(p);
+            const char *name = "";
+            if (nt.kind == TOK_IDENT) { consume(p); name = arena_strdup(p->arena, nt.start, nt.len); }
+            expect(p, TOK_RPAREN);
+            if (peek(p).kind == TOK_LPAREN) {
+                int d = 1; consume(p);
+                while (d > 0 && peek(p).kind != TOK_EOF) {
+                    if (peek(p).kind == TOK_LPAREN) d++;
+                    if (peek(p).kind == TOK_RPAREN) d--;
+                    if (d) consume(p);
+                }
+                if (peek(p).kind == TOK_RPAREN) { consume(p); }
+            }
+            return name;
+        }
+        /* 不是 (*name) — 回退 */
+        error_at(p, "expected identifier");
+        return "";
+    }
     error_at(p, "expected identifier");
     return "";
 }
@@ -776,23 +800,16 @@ AstNode *parse_compound_statement(Parser *p) {
         if (ts >= 0) {
             AstNode *decl = new_ast(p, AST_VAR_DECL);
             decl->ival = ts;
-            while (peek(p).kind == TOK_STAR)
-                consume(p);
-            Token id = peek(p);
-            if (id.kind == TOK_IDENT) {
-                consume(p);
-                decl->name = arena_strdup(p->arena, id.start, id.len);
-                if (decl->name) {
-                    if (last_struct_tag || last_struct_member_count > 0) {
-                        pvar_add(decl->name, last_struct_tag ? last_struct_tag : "");
-                    } else {
-                        /* 可能是 typedef 名（如 Point p;） */
-                        int ti;
-                        for (ti = 0; ti < typedef_count; ti++) {
-                            if (typedef_table[ti].member_count > 0 && ts == typedef_table[ti].size) {
-                                pvar_add(decl->name, typedef_table[ti].name);
-                                break;
-                            }
+            decl->name = parse_declarator(p);
+            if (decl->name && *decl->name) {
+                if (last_struct_tag || last_struct_member_count > 0) {
+                    pvar_add(decl->name, last_struct_tag ? last_struct_tag : "");
+                } else {
+                    int ti;
+                    for (ti = 0; ti < typedef_count; ti++) {
+                        if (typedef_table[ti].member_count > 0 && ts == typedef_table[ti].size) {
+                            pvar_add(decl->name, typedef_table[ti].name);
+                            break;
                         }
                     }
                 }
@@ -886,21 +903,31 @@ static AstNode *parse_statement(Parser *p) {
 
 /* ─── 参数列表 ─── */
 
-static void parse_parameter_list(Parser *p) {
+static AstNode *parse_parameter_list(Parser *p) {
     expect(p, TOK_LPAREN);
+    AstNode *head = NULL;
+    AstNode **tail = &head;
     if (peek(p).kind == TOK_VOID)
         consume(p);
     else if (peek(p).kind == TOK_RPAREN) {
         /* 空 */
     } else {
         while (peek(p).kind != TOK_RPAREN && peek(p).kind != TOK_EOF) {
-            parse_type_specifier(p);
-            parse_declarator(p);
+            int psz = parse_type_specifier(p);
+            const char *pname = parse_declarator(p);
+            if (pname && *pname) {
+                AstNode *pd = new_ast(p, AST_VAR_DECL);
+                pd->name = pname;
+                pd->ival = psz > 0 ? psz : 4;
+                *tail = pd;
+                tail = &pd->next;
+            }
             if (peek(p).kind == TOK_COMMA) consume(p);
             else if (peek(p).kind == TOK_ELLIPSIS) { consume(p); break; }
         }
     }
     expect(p, TOK_RPAREN);
+    return head;
 }
 
 /* ─── 函数定义 ─── */
@@ -908,10 +935,18 @@ static void parse_parameter_list(Parser *p) {
 static AstNode *parse_function_definition(Parser *p, int ret_size) {
     (void)ret_size;
     const char *name = parse_declarator(p);
-    parse_parameter_list(p);
+    AstNode *params = parse_parameter_list(p);
     AstNode *body = parse_compound_statement(p);
+    /* 将参数声明前置到函数体开头 */
+    if (params) {
+        AstNode *last = params;
+        while (last->next) last = last->next;
+        last->next = body->stmts;
+        body->stmts = params;
+    }
     AstNode *func = new_ast(p, AST_FUNC_DEF);
     func->name = name;
+    func->params = params;
     func->body = body;
     return func;
 }

@@ -31,12 +31,12 @@ static int build_shstrtab(unsigned char *buf, const char *names[], int n) {
 
 int elf_write_object(const char *path) {
     /* ── 节区总数 ── */
-    int num_sections = 5;
+    int num_sections = 6;
 
     /* ── 构建 .shstrtab ── */
     unsigned char shstrtab_buf[256];
-    const char *sec_names[] = {".text", ".symtab", ".strtab", ".shstrtab"};
-    int shstrtab_sz = build_shstrtab(shstrtab_buf, sec_names, 4);
+    const char *sec_names[] = {".text", ".rela.text", ".symtab", ".strtab", ".shstrtab"};
+    int shstrtab_sz = build_shstrtab(shstrtab_buf, sec_names, 5);
 
     /* ── 构建 .strtab ── */
     static unsigned char strtab_buf[4096];
@@ -56,7 +56,9 @@ int elf_write_object(const char *path) {
     int shdr_ofs = 64;
     int text_ofs = (shdr_ofs + num_sections * 64 + 15) & ~15;
     int text_sz  = code_size;
-    int sym_ofs  = (text_ofs + text_sz + 7) & ~7;
+    int rela_ofs = (text_ofs + text_sz + 7) & ~7;
+    int rela_sz  = rel_count * 24;
+    int sym_ofs  = (rela_ofs + rela_sz + 7) & ~7;
     int sym_sz   = (sym_count + 1) * 24;
     int str_ofs  = sym_ofs + sym_sz;
     int shstr_ofs = str_ofs + strtab_sz;
@@ -106,7 +108,7 @@ int elf_write_object(const char *path) {
     b[p++] = num_sections; b[p++] = 0;
 
     /* e_shstrndx (2) */
-    b[p++] = 4; b[p++] = 0;
+    b[p++] = 5; b[p++] = 0;
 
     /* ── Section header table (占位，后面填充) ── */
     int shdr_start = p;
@@ -115,6 +117,25 @@ int elf_write_object(const char *path) {
     /* ── .text data ── */
     while (p < text_ofs) b[p++] = 0;
     for (ei = 0; ei < code_size; ei++) b[p++] = code_buf[ei];
+
+    /* ── .rela.text data ── */
+    while (p < rela_ofs) b[p++] = 0;
+    for (ei = 0; ei < rel_count; ei++) {
+        int ro = rels[ei].r_offset;
+        b[p++] = (ro)&0xFF; b[p++] = (ro>>8)&0xFF;
+        b[p++] = (ro>>16)&0xFF; b[p++] = (ro>>24)&0xFF;
+        for (int z=0;z<4;z++) b[p++] = 0;
+        long ri = rels[ei].r_info;
+        b[p++] = (ri)&0xFF; b[p++] = (ri>>8)&0xFF;
+        b[p++] = (ri>>16)&0xFF; b[p++] = (ri>>24)&0xFF;
+        b[p++] = (ri>>32)&0xFF; b[p++] = (ri>>40)&0xFF;
+        b[p++] = (ri>>48)&0xFF; b[p++] = (ri>>56)&0xFF;
+        long ra = rels[ei].r_addend;
+        b[p++] = (ra)&0xFF; b[p++] = (ra>>8)&0xFF;
+        b[p++] = (ra>>16)&0xFF; b[p++] = (ra>>24)&0xFF;
+        b[p++] = (ra>>32)&0xFF; b[p++] = (ra>>40)&0xFF;
+        b[p++] = (ra>>48)&0xFF; b[p++] = (ra>>56)&0xFF;
+    }
 
     /* ── .symtab data ── */
     while (p < sym_ofs) b[p++] = 0;
@@ -152,74 +173,68 @@ int elf_write_object(const char *path) {
     for (ei = 0; ei < shstrtab_sz; ei++) b[p++] = shstrtab_buf[ei];
 
     /* ── 回填节区头表 ── */
-    /* 这是按字节布局手工编码的节区头，每个 64 字节 */
+    /* sh_name 索引：1=.text, 7=.rela.text, 18=.symtab, 26=.strtab, 34=.shstrtab */
 
-    /* 节区 0: NULL */
-    /* 全 0，b[shdr_start..shdr_start+63] 已经为 0 */
-
-    /* 节区 1: .text */
+    /* 节区 1: .text (offset +64) */
+    b[shdr_start+64]=1; b[shdr_start+68]=1; b[shdr_start+72]=6;
     {
         int off = shdr_start + 64;
-        /* sh_name(4) + sh_type(4) + sh_flags(8) */
-        b[off+0]=1; b[off+4]=1; b[off+8]=6; b[off+10]=0;
-        /* sh_addr(8) = 0 */
-        /* sh_offset(8) at +24 */
+        /* sh_offset at +24 */
         b[off+24]=(text_ofs)&0xFF; b[off+25]=(text_ofs>>8)&0xFF;
         b[off+26]=(text_ofs>>16)&0xFF; b[off+27]=(text_ofs>>24)&0xFF;
-        /* sh_size(8) at +32 */
+        /* sh_size at +32 */
         b[off+32]=(text_sz)&0xFF; b[off+33]=(text_sz>>8)&0xFF;
         b[off+34]=(text_sz>>16)&0xFF; b[off+35]=(text_sz>>24)&0xFF;
-        /* sh_link(4)+sh_info(4) at +40 — zero */
-        /* sh_addralign(8) at +48 */
         b[off+48]=16;
-        /* sh_entsize(8) at +56 — zero */
     }
 
-    /* 节区 2: .symtab */
+    /* 节区 2: .rela.text (offset +128) */
+    b[shdr_start+128]=7; b[shdr_start+132]=4;  /* sh_name, SHT_RELA */
     {
         int off = shdr_start + 128;
-        b[off+0]=7; b[off+4]=2;
-        /* sh_offset(8) at +24 */
+        b[off+24]=(rela_ofs)&0xFF; b[off+25]=(rela_ofs>>8)&0xFF;
+        b[off+26]=(rela_ofs>>16)&0xFF; b[off+27]=(rela_ofs>>24)&0xFF;
+        b[off+32]=(rela_sz)&0xFF; b[off+33]=(rela_sz>>8)&0xFF;
+        b[off+34]=(rela_sz>>16)&0xFF; b[off+35]=(rela_sz>>24)&0xFF;
+        b[off+40]=3;    /* sh_link = .symtab */
+        b[off+44]=1;    /* sh_info = .text */
+        b[off+48]=8;
+        b[off+56]=24;   /* sh_entsize = Elf64_Rela size */
+    }
+
+    /* 节区 3: .symtab (offset +192) */
+    b[shdr_start+192]=18; b[shdr_start+196]=2;
+    {
+        int off = shdr_start + 192;
         b[off+24]=(sym_ofs)&0xFF; b[off+25]=(sym_ofs>>8)&0xFF;
         b[off+26]=(sym_ofs>>16)&0xFF; b[off+27]=(sym_ofs>>24)&0xFF;
-        /* sh_size(8) at +32 */
         b[off+32]=(sym_sz)&0xFF; b[off+33]=(sym_sz>>8)&0xFF;
         b[off+34]=(sym_sz>>16)&0xFF; b[off+35]=(sym_sz>>24)&0xFF;
-        /* sh_link(4) at +40 */
-        b[off+40]=3;
-        /* sh_info(4) at +44 */
+        b[off+40]=4;    /* sh_link = .strtab */
         b[off+44]=1;
-        /* sh_addralign(8) at +48 */
         b[off+48]=8;
-        /* sh_entsize(8) at +56 */
         b[off+56]=24;
     }
 
-    /* 节区 3: .strtab */
+    /* 节区 4: .strtab (offset +256) */
+    b[shdr_start+256]=26; b[shdr_start+260]=3;
     {
-        int off = shdr_start + 192;
-        b[off+0]=15; b[off+4]=3;
-        /* sh_offset(8) at +24 */
+        int off = shdr_start + 256;
         b[off+24]=(str_ofs)&0xFF; b[off+25]=(str_ofs>>8)&0xFF;
         b[off+26]=(str_ofs>>16)&0xFF; b[off+27]=(str_ofs>>24)&0xFF;
-        /* sh_size(8) at +32 */
         b[off+32]=(strtab_sz)&0xFF; b[off+33]=(strtab_sz>>8)&0xFF;
         b[off+34]=(strtab_sz>>16)&0xFF; b[off+35]=(strtab_sz>>24)&0xFF;
-        /* sh_addralign(8) at +48 */
         b[off+48]=1;
     }
 
-    /* 节区 4: .shstrtab */
+    /* 节区 5: .shstrtab (offset +320) */
+    b[shdr_start+320]=34; b[shdr_start+324]=3;
     {
-        int off = shdr_start + 256;
-        b[off+0]=23; b[off+4]=3;
-        /* sh_offset(8) at +24 */
+        int off = shdr_start + 320;
         b[off+24]=(shstr_ofs)&0xFF; b[off+25]=(shstr_ofs>>8)&0xFF;
         b[off+26]=(shstr_ofs>>16)&0xFF; b[off+27]=(shstr_ofs>>24)&0xFF;
-        /* sh_size(8) at +32 */
         b[off+32]=(shstrtab_sz)&0xFF; b[off+33]=(shstrtab_sz>>8)&0xFF;
         b[off+34]=(shstrtab_sz>>16)&0xFF; b[off+35]=(shstrtab_sz>>24)&0xFF;
-        /* sh_addralign(8) at +48 */
         b[off+48]=1;
     }
 

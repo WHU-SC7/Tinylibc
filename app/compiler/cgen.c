@@ -359,6 +359,32 @@ static void cgen_func_def(AstNode *func) {
     int func_start = code_size;
 
     emit_prologue();
+
+    /* 保存参数寄存器到局部变量槽 */
+    {
+        int arg_reg = 0;
+        AstNode *p;
+        for (p = func->params; p && arg_reg < 6; p = p->next) {
+            if (p->kind == AST_VAR_DECL && p->name) {
+                int i;
+                for (i = 0; i < local_count; i++) {
+                    if (strcmp(locals[i].name, p->name) == 0) {
+                        /* mov [rbp+offset], arg_reg */
+                        switch (arg_reg) {
+                        case 0: e1(0x89); e1(0x7D); e1(locals[i].offset & 0xFF); break; /* mov [rbp+off], edi */
+                        case 1: e1(0x89); e1(0x75); e1(locals[i].offset & 0xFF); break; /* mov [rbp+off], esi */
+                        case 2: e1(0x89); e1(0x55); e1(locals[i].offset & 0xFF); break; /* mov [rbp+off], edx */
+                        case 3: e1(0x89); e1(0x4D); e1(locals[i].offset & 0xFF); break; /* mov [rbp+off], ecx */
+                        case 4: e1(0x44); e1(0x89); e1(0x45); e1(locals[i].offset & 0xFF); break; /* mov [rbp+off], r8d */
+                        case 5: e1(0x44); e1(0x89); e1(0x4D); e1(locals[i].offset & 0xFF); break; /* mov [rbp+off], r9d */
+                        }
+                        break;
+                    }
+                }
+            }
+            arg_reg++;
+        }
+    }
     cgen_block(func->body);
 
     /* 如果函数体没有 return（空函数），加隐式 return */

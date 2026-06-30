@@ -27,11 +27,6 @@ static void mov_eax_imm(int v) { e1(0xB8); e4(v); }
 static void load_eax_from_rbp(int disp8) {
     e1(0x8B); e1(0x45); e1(disp8 & 0xFF);
 }
-/* mov [rbp+disp8], eax */
-static void store_eax_to_rbp(int disp8) {
-    e1(0x89); e1(0x45); e1(disp8 & 0xFF);
-}
-
 /* ─── 二元运算（ecx OP eax → eax） ─── */
 
 static void binop_add(void) { e1(0x01); e1(0xC8); }  /* add eax, ecx → eax = eax+ecx */
@@ -93,8 +88,8 @@ static void emit_call(const char *name) {
     /* 记录重定位 */
     if (rel_count >= MAX_RELS) return;
     Elf64_Rela *r = &rels[rel_count++];
-    r->r_offset = code_size;      /* 偏移在 .text 中 */
-    r->r_info = ELF64_R_INFO(sym_idx, R_X86_64_PLT32);
+    r->r_offset = code_size;
+    r->r_info = ELF64_R_INFO(sym_idx + 1, R_X86_64_PLT32);
     r->r_addend = -4;
 
     /* e8 00 00 00 00: call rel32（占位重定位） */
@@ -192,7 +187,41 @@ void cgen_expr(AstNode *node) {
             /* *ptr — Phase 3+ */
             break;
         case TOK_AMPERSAND:
-            /* &var — Phase 3+ */
+            if (node->expr && node->expr->kind == AST_VAR) {
+                int found = 0;
+                int i;
+                for (i = 0; i < local_count; i++) {
+                    if (strcmp(locals[i].name, node->expr->name) == 0) {
+                        e1(0x8D); e1(0x45); e1(locals[i].offset & 0xFF);
+                        found = 1;
+                        break;
+                    }
+                }
+                if (!found && node->expr->name) {
+                    /* 函数/全局符号 — 插入重定位 R_X86_64_32 */
+                    int sym_idx = -1;
+                    for (i = 0; i < sym_count; i++) {
+                        if (syms[i].name && strcmp(syms[i].name, node->expr->name) == 0)
+                            { sym_idx = i; break; }
+                    }
+                    if (sym_idx < 0 && sym_count < MAX_SYMS) {
+                        sym_idx = sym_count;
+                        CgenSym *s = &syms[sym_count++];
+                        s->name = node->expr->name;
+                        s->offset = 0; s->size = 0;
+                        s->is_global = 1; s->is_func = 1;
+                        s->sym_idx = -1;
+                    }
+                    int reloc_off = code_size;
+                    e1(0xB8); e4(0);
+                    if (sym_idx >= 0 && rel_count < MAX_RELS) {
+                        Elf64_Rela *r = &rels[rel_count++];
+                        r->r_offset = reloc_off + 1;
+                        r->r_info = ELF64_R_INFO(sym_idx + 1, R_X86_64_32);
+                        r->r_addend = 0;
+                    }
+                }
+            }
             break;
         default: break;
         }
@@ -206,19 +235,18 @@ void cgen_expr(AstNode *node) {
             int i;
             for (i = 0; i < local_count; i++) {
                 if (strcmp(locals[i].name, vname) == 0) {
-                    store_eax_to_rbp(locals[i].offset);
+                    e1(0x89); e1(0x45); e1(locals[i].offset & 0xFF);
                     break;
                 }
             }
         } else if (node->left && node->left->kind == AST_MEMBER) {
-            /* s.member = expr */
             int moff = node->left->ival;
             if (node->left->op == TOK_DOT && node->left->left->kind == AST_VAR) {
                 const char *vname = node->left->left->name;
                 int i;
                 for (i = 0; i < local_count; i++) {
                     if (strcmp(locals[i].name, vname) == 0) {
-                        store_eax_to_rbp(locals[i].offset + moff);
+                        e1(0x89); e1(0x45); e1((locals[i].offset + moff) & 0xFF);
                         break;
                     }
                 }
@@ -228,40 +256,59 @@ void cgen_expr(AstNode *node) {
     }
 
     case AST_CALL: {
-        /* 计算参数 */
         int argc = 0;
         AstNode *arg = node->args;
         while (arg) { argc++; arg = arg->next; }
-
-        /* 限制参数数量 */
         if (argc > 6) argc = 6;
 
-        /* 逐个求值参数并移入寄存器 */
+        /* 检查是否为函数指针调用 */
+        int is_fptr = 0;
+        int fptr_offset = 0;
+        if (node->name) {
+            int i;
+            for (i = 0; i < local_count; i++) {
+                if (strcmp(locals[i].name, node->name) == 0) {
+                    is_fptr = 1;
+                    fptr_offset = locals[i].offset;
+                    break;
+                }
+            }
+        }
+
+        if (is_fptr) {
+            load_eax_from_rbp(fptr_offset);  /* 32-bit load, zero-extends to rax */
+            push_rax();
+        }
+
+        /* 求值参数 */
         arg = node->args;
         int ai;
         for (ai = 0; ai < argc; ai++) {
             if (!arg) break;
             cgen_expr(arg);
-            /* 保存 eax 到栈（因为后续参数求值会覆盖 eax） */
             push_rax();
             arg = arg->next;
         }
 
-        /* 从栈取出参数逆序入寄存器 */
+        /* 参数入寄存器 */
         for (ai = argc - 1; ai >= 0; ai--) {
-            pop_rcx();  /* eax 的值在 ecx 中 */
-            /* 从 ecx 移到参数寄存器 */
+            pop_rcx();
             switch (ai) {
-            case 0: e1(0x89); e1(0xCF); break;  /* mov edi, ecx */
-            case 1: e1(0x89); e1(0xCE); break;  /* mov esi, ecx */
-            case 2: e1(0x89); e1(0xCA); break;  /* mov edx, ecx */
-            case 3: e1(0x89); e1(0xCB); break;  /* mov ecx, ecx? 实际上要保留ECX给移位... */
-            case 4: e1(0x41); e1(0x89); e1(0xC8); break;  /* mov r8d, ecx */
-            case 5: e1(0x41); e1(0x89); e1(0xC9); break;  /* mov r9d, ecx */
+            case 0: e1(0x89); e1(0xCF); break;
+            case 1: e1(0x89); e1(0xCE); break;
+            case 2: e1(0x89); e1(0xCA); break;
+            case 3: e1(0x89); e1(0xCB); break;
+            case 4: e1(0x41); e1(0x89); e1(0xC8); break;
+            case 5: e1(0x41); e1(0x89); e1(0xC9); break;
             }
         }
 
-        emit_call(node->name);
+        if (is_fptr) {
+            pop_rcx();
+            e1(0xFF); e1(0xD1); /* call *rcx */
+        } else {
+            emit_call(node->name);
+        }
         break;
     }
 

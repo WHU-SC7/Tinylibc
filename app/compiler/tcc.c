@@ -156,18 +156,17 @@ int main(int argc, char *argv[]) {
     }
 
     if (debug) {
-        Lexer dlx;
-        lexer_init(&dlx, pp_src, pp_len);
-        while (1) {
-            Token t = lexer_next(&dlx);
-            if (t.kind == TOK_EOF) break;
-            switch (t.kind) {
-            case TOK_IDENT: __printf("ident:"); { int ii; for (ii=0; ii<t.len; ii++) __printf("%c", t.start[ii]); } __printf("\n"); break;
-            case TOK_NUMBER: __printf("number:%d\n", t.ival); break;
-            case TOK_STRING: __printf("string\n"); break;
-            default: __printf("token:%d\n", t.kind); break;
+        int pp_i;
+        int line_n = 1;
+        __printf("--- PREPROCESSED OUTPUT (first 300 lines) ---\n");
+        for (pp_i = 0; pp_i < pp_len && line_n <= 3000; pp_i++) {
+            if (pp_src[pp_i] == '\n') {
+                __printf("\n"); line_n++;
+            } else {
+                __printf("%c", pp_src[pp_i]);
             }
         }
+        __printf("\n--- END (shown %d lines) ---\n", line_n - 1);
         tlibc_free(pp_src);
         return 0;
     }

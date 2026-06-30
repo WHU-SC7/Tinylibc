@@ -67,6 +67,7 @@ static char *pp_read(const char *path, int *out_len) {
     b[sz] = '\0'; *out_len = sz; return b;
 }
 
+static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had_nl);
 static void pp_buf(const char *s, int len, OutBuf *out, int depth);
 
 static void do_include(const char *s, int *pos, int len, OutBuf *out, int depth) {
@@ -121,6 +122,11 @@ static void do_directive(const char *s, int ls, int le, OutBuf *out, int depth) 
         while (p < le && pp_ws(s[p])) p++;
         int vs = p; int vl = le - p;
         while (vl > 0 && pp_ws(s[vs+vl-1])) vl--;
+        /* 从宏值中去除尾部注释 */
+        { int ci; for (ci = 0; ci < vl - 1; ci++) {
+            if (s[vs+ci] == '/' && s[vs+ci+1] == '*') { vl = ci; break; }
+            if (s[vs+ci] == '/' && s[vs+ci+1] == '/') { vl = ci; break; }
+        } }
         char *n = (char *)tlibc_malloc(mnl+1); get_name(s, ms, ms+mnl, n, mnl+1);
         char *v = 0; if (vl > 0) { v = (char *)tlibc_malloc(vl+1); int ci; for (ci=0;ci<vl;ci++) v[ci]=s[vs+ci]; v[vl]='\0'; }
         add_macro(n, v, vl); return;
@@ -156,24 +162,24 @@ static void do_directive(const char *s, int ls, int le, OutBuf *out, int depth) 
     }
 }
 
+static char *strip_all_comments(const char *src, int len, int *out_len);
+/* pp_buf 内部实现，comments_stripped 表示已去除了注释 */
+static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had_nl);
+
 static void pp_buf(const char *s, int len, OutBuf *out, int depth) {
     if (depth > 32) return;
     if (depth == 0) {
         add_macro("__x86_64__", 0, 0); add_macro("X86_64_TLIBC", "1", 1);
     }
+    /* 先清除注释 */
+    int nlen; char *n = strip_all_comments(s, len, &nlen);
+    pp_buf_impl(n, nlen, out, depth, NULL);
+    tlibc_free(n);
+}
+
+static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had_nl) {
     int i = 0;
     while (i < len) {
-        if (s[i] == '/' && i+1 < len && (s[i+1]=='/'||s[i+1]=='*')) {
-            if (s[i+1] == '/') {
-                i += 2; while (i < len && s[i] != '\n') i++;
-            } else {
-                i += 2; while (i < len) {
-                    if (s[i]=='*' && i+1 < len && s[i+1]=='/') { i += 2; break; }
-                    i++;
-                }
-            }
-            continue;
-        }
         if (s[i] == '#' && (i == 0 || s[i-1] == '\n')) {
             int ls = i; int le = i;
             while (le < len && s[le] != '\n') {
@@ -188,10 +194,43 @@ static void pp_buf(const char *s, int len, OutBuf *out, int depth) {
     }
 }
 
+/* 预处理前清除所有注释（替换为空格） */
+static char *strip_all_comments(const char *src, int len, int *out_len) {
+    OutBuf out = { 0, 0, 0 };
+    int i = 0;
+    while (i < len) {
+        if (src[i] == '/' && i+1 < len) {
+            if (src[i+1] == '/') {
+                i += 2; while (i < len && src[i] != '\n') { out_putc(&out, ' '); i++; }
+                continue;
+            }
+            if (src[i+1] == '*') {
+                i += 2;
+                while (i < len) {
+                    if (src[i]=='*' && i+1<len && src[i+1]=='/') { i+=2; break; }
+                    if (src[i] == '\n') out_putc(&out, '\n');
+                    else out_putc(&out, ' ');
+                    i++;
+                }
+                continue;
+            }
+        }
+        out_putc(&out, src[i]);
+        i++;
+    }
+    out_putc(&out, '\0');
+    *out_len = out.len - 1;
+    return out.data;
+}
+
 char *preprocess(const char *src, int len, const char *fname, int *out_len) {
     (void)fname;
+    /* 先清除所有注释 */
+    int clean_len;
+    char *clean = strip_all_comments(src, len, &clean_len);
     OutBuf out = { 0, 0, 0 };
-    pp_buf(src, len, &out, 0);
+    pp_buf(clean, clean_len, &out, 0);
+    tlibc_free(clean);
     out_putc(&out, '\0');
     *out_len = out.len > 0 ? out.len - 1 : 0;
     return out.data;

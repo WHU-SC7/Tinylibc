@@ -121,7 +121,7 @@ static int add_struct_tag(const char *tag, StructType *st) {
 /* ─── 错误报告 ─── */
 
 void error_at(Parser *p, const char *msg) {
-    __printf("error [line %d]: %s\n", p->lexer->line, msg);
+    __printf("error [line %d tok=%d]: %s\n", p->lexer->line, p->tok.kind, msg);
     p->had_error = 1;
 }
 

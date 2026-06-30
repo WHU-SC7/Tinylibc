@@ -299,6 +299,13 @@ int is_typedef_name(const char *name);
 /* 查找 struct 标签 */
 StructType *find_struct_tag(const char *tag);
 
+/* ─── 预处理器 ─── */
+
+#define MAX_INCLUDE_PATHS 16
+
+void add_include_path(const char *path);
+char *preprocess(const char *src, int len, const char *fname, int *out_len);
+
 /* ─── 代码生成 ─── */
 
 void cgen_init(void);

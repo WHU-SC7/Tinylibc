@@ -28,6 +28,7 @@
 #include "elf.h"
 #include "lex.c"
 #include "parse.c"
+#include "preproc.c"
 #include "cgen_asm.c"
 #include "cgen_expr.c"
 #include "cgen.c"
@@ -101,31 +102,6 @@ static void make_output_path(const char *input, const char *output,
     out_buf[j + 2] = '\0';
 }
 
-/* ─── 打印 Token 序列（调试用） ─── */
-
-static void debug_tokens(const char *src, int len) {
-    Lexer lx;
-    lexer_init(&lx, src, len);
-    while (1) {
-        Token t = lexer_next(&lx);
-        switch (t.kind) {
-        case TOK_EOF:   __printf("EOF\n"); return;
-        case TOK_INT:   __printf("int\n"); break;
-        case TOK_VOID:  __printf("void\n"); break;
-        case TOK_RETURN: __printf("return\n"); break;
-        case TOK_IDENT:
-            __printf("ident:%.*s\n", t.len, t.start);
-            break;
-        case TOK_NUMBER: __printf("number:%d\n", t.ival); break;
-        case TOK_LBRACE: __printf("{\n"); break;
-        case TOK_RBRACE: __printf("}\n"); break;
-        case TOK_LPAREN: __printf("(\n"); break;
-        case TOK_RPAREN: __printf(")\n"); break;
-        case TOK_SEMI:   __printf(";\n"); break;
-        default:         __printf("token:%d\n", t.kind); break;
-        }
-    }
-}
 
 /* ─── 主入口 ─── */
 
@@ -157,28 +133,57 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    /* 设置 include 路径 */
+    add_include_path(".");
+    add_include_path("./include");
+    add_include_path("./include/posix");
+    add_include_path("./include/tlibc");
+    add_include_path("./arch");
+    add_include_path("./arch/x86_64");
+
     int src_len;
     char *src = read_file(input_path, &src_len);
     if (!src)
         return 1;
 
+    /* 预处理 */
+    int pp_len;
+    char *pp_src = preprocess(src, src_len, input_path, &pp_len);
+    tlibc_free(src);
+    if (!pp_src) {
+        __printf("tcc: preprocessing failed\n");
+        return 1;
+    }
+
     if (debug) {
-        debug_tokens(src, src_len);
-        tlibc_free(src);
+        /* 预处理后进行词法分析 */
+        Lexer dlx;
+        lexer_init(&dlx, pp_src, pp_len);
+        while (1) {
+            Token t = lexer_next(&dlx);
+            if (t.kind == TOK_EOF) break;
+            switch (t.kind) {
+            case TOK_IDENT: __printf("ident:"); { int ii; for (ii=0; ii<t.len; ii++) __printf("%c", t.start[ii]); } __printf("\n"); break;
+            case TOK_NUMBER: __printf("number:%d\n", t.ival); break;
+            case TOK_STRING: __printf("string\n"); break;
+            default: __printf("token:%d\n", t.kind); break;
+            }
+        }
+        tlibc_free(pp_src);
         return 0;
     }
 
     Arena *arena = (Arena *)tlibc_malloc(sizeof(Arena) + ARENA_SIZE);
     if (!arena) {
         __printf("tcc: out of memory\n");
-        tlibc_free(src);
+        tlibc_free(pp_src);
         return 1;
     }
     arena->ptr = (char *)arena + sizeof(Arena);
     arena->end = arena->ptr + ARENA_SIZE;
 
     Lexer lexer;
-    lexer_init(&lexer, src, src_len);
+    lexer_init(&lexer, pp_src, pp_len);
 
     Parser parser;
     parser_init(&parser, &lexer, arena);
@@ -186,7 +191,7 @@ int main(int argc, char *argv[]) {
 
     if (parser.had_error) {
         __printf("tcc: parse error\n");
-        tlibc_free(src);
+        tlibc_free(pp_src);
         tlibc_free(arena);
         return 1;
     }
@@ -199,7 +204,7 @@ int main(int argc, char *argv[]) {
 
     if (elf_write_object(out_path) != 0) {
         __printf("tcc: cannot write '%s'\n", out_path);
-        tlibc_free(src);
+        tlibc_free(pp_src);
         tlibc_free(arena);
         return 1;
     }
@@ -207,7 +212,7 @@ int main(int argc, char *argv[]) {
     __printf("tcc: wrote %s (%d bytes code, %d symbols)\n",
              out_path, code_size, sym_count);
 
-    tlibc_free(src);
+    tlibc_free(pp_src);
     tlibc_free(arena);
     return 0;
 }

@@ -58,6 +58,7 @@ typedef enum {
     TOK_WHILE,
     TOK_FOR,
     TOK_DO,
+    TOK_DOUBLE,
     TOK_BREAK,
     TOK_CONTINUE,
     TOK_SWITCH,
@@ -251,6 +252,7 @@ typedef struct {
 extern LocalVar locals[MAX_LOCALS];
 extern int local_count;
 extern int frame_size;
+extern int reg_save_offset;
 
 /* ─── 类型系统（Phase 3） ─── */
 

@@ -50,7 +50,7 @@ static Keyword keywords[] = {
     {"continue",                  TOK_CONTINUE},
     {"default",                   TOK_DEFAULT},
     {"do",                        TOK_DO},
-    {"double",                    TOK_IDENT},
+    {"double",                    TOK_DOUBLE},
     {"else",                      TOK_ELSE},
     {"enum",                      TOK_ENUM},
     {"extern",                    TOK_EXTERN},

@@ -41,6 +41,9 @@ LocalVar locals[MAX_LOCALS];
 int local_count;
 int frame_size;
 
+/* 可变参数函数：寄存器保存区在栈中的偏移 */
+int reg_save_offset;  /* 从 rbp 向下的偏移（负值） */
+
 /* ─── 标签和回填 ─── */
 
 #define MAX_LABELS 256
@@ -353,6 +356,11 @@ static void cgen_stmt(AstNode *stmt) {
 /* ─── 函数代码生成 ─── */
 
 static void cgen_func_def(AstNode *func) {
+    int is_variadic = func->is_static;  /* is_static 存储 variadic 标志 */
+
+    /* 可变参数函数：在 frame 中包含 48 字节寄存器保存区 */
+    if (is_variadic) frame_size += 48;
+
     reset_labels();
     collect_locals(func);
 
@@ -369,14 +377,13 @@ static void cgen_func_def(AstNode *func) {
                 int i;
                 for (i = 0; i < local_count; i++) {
                     if (strcmp(locals[i].name, p->name) == 0) {
-                        /* mov [rbp+offset], arg_reg */
                         switch (arg_reg) {
-                        case 0: e1(0x89); e1(0x7D); e1(locals[i].offset & 0xFF); break; /* mov [rbp+off], edi */
-                        case 1: e1(0x89); e1(0x75); e1(locals[i].offset & 0xFF); break; /* mov [rbp+off], esi */
-                        case 2: e1(0x89); e1(0x55); e1(locals[i].offset & 0xFF); break; /* mov [rbp+off], edx */
-                        case 3: e1(0x89); e1(0x4D); e1(locals[i].offset & 0xFF); break; /* mov [rbp+off], ecx */
-                        case 4: e1(0x44); e1(0x89); e1(0x45); e1(locals[i].offset & 0xFF); break; /* mov [rbp+off], r8d */
-                        case 5: e1(0x44); e1(0x89); e1(0x4D); e1(locals[i].offset & 0xFF); break; /* mov [rbp+off], r9d */
+                        case 0: e1(0x89); e1(0x7D); e1(locals[i].offset & 0xFF); break;
+                        case 1: e1(0x89); e1(0x75); e1(locals[i].offset & 0xFF); break;
+                        case 2: e1(0x89); e1(0x55); e1(locals[i].offset & 0xFF); break;
+                        case 3: e1(0x89); e1(0x4D); e1(locals[i].offset & 0xFF); break;
+                        case 4: e1(0x44); e1(0x89); e1(0x45); e1(locals[i].offset & 0xFF); break;
+                        case 5: e1(0x44); e1(0x89); e1(0x4D); e1(locals[i].offset & 0xFF); break;
                         }
                         break;
                     }
@@ -385,6 +392,26 @@ static void cgen_func_def(AstNode *func) {
             arg_reg++;
         }
     }
+
+    /* 可变参数函数：保存 6 个 GP 寄存器到寄存器保存区 */
+    reg_save_offset = 0;
+    if (is_variadic) {
+        reg_save_offset = -(frame_size + 16);  /* 保存区从 rbp-(frame_size+16) 开始 */
+        int save_base = reg_save_offset;
+        /* mov [rbp+save_base], rdi */
+        e1(0x48); e1(0x89); e1(0x7D); e1(save_base & 0xFF);
+        /* mov [rbp+save_base+8], rsi */
+        e1(0x48); e1(0x89); e1(0x75); e1((save_base + 8) & 0xFF);
+        /* mov [rbp+save_base+16], rdx */
+        e1(0x48); e1(0x89); e1(0x55); e1((save_base + 16) & 0xFF);
+        /* mov [rbp+save_base+24], rcx */
+        e1(0x48); e1(0x89); e1(0x4D); e1((save_base + 24) & 0xFF);
+        /* mov [rbp+save_base+32], r8 */
+        e1(0x4C); e1(0x89); e1(0x45); e1((save_base + 32) & 0xFF);
+        /* mov [rbp+save_base+40], r9 */
+        e1(0x4C); e1(0x89); e1(0x4D); e1((save_base + 40) & 0xFF);
+    }
+
     cgen_block(func->body);
 
     /* 如果函数体没有 return（空函数），加隐式 return */
@@ -408,6 +435,7 @@ void cgen_init(void) {
     rel_count = 0;
     local_count = 0;
     frame_size = 0;
+    reg_save_offset = 0;
     strtab_len = 0;
     strtab[strtab_len++] = '\0';
 }

@@ -595,6 +595,8 @@ int parse_type_specifier(Parser *p) {
     case TOK_INT:      consume(p); return 4;
     case TOK_CHAR:     consume(p); return 1;
     case TOK_SHORT:    consume(p); return 2;
+    case TOK_DOUBLE:   consume(p); return 8;
+    case TOK__BUILTIN_VA_LIST: consume(p); return 24;  /* va_list = 4+4+8+8 bytes */
     case TOK_LONG:
         consume(p);
         if (peek(p).kind == TOK_LONG) { consume(p); return 8; }
@@ -902,10 +904,12 @@ static AstNode *parse_statement(Parser *p) {
 }
 
 /* ─── 参数列表 ─── */
+/* is_variadic: 输出，表示是否有 ... */
 
-static AstNode *parse_parameter_list(Parser *p) {
+static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
     expect(p, TOK_LPAREN);
     AstNode *head = NULL;
+    if (is_variadic) *is_variadic = 0;
     AstNode **tail = &head;
     if (peek(p).kind == TOK_VOID)
         consume(p);
@@ -923,7 +927,11 @@ static AstNode *parse_parameter_list(Parser *p) {
                 tail = &pd->next;
             }
             if (peek(p).kind == TOK_COMMA) consume(p);
-            else if (peek(p).kind == TOK_ELLIPSIS) { consume(p); break; }
+            else if (peek(p).kind == TOK_ELLIPSIS) {
+                consume(p);
+                if (is_variadic) *is_variadic = 1;
+                break;
+            }
         }
     }
     expect(p, TOK_RPAREN);
@@ -935,7 +943,8 @@ static AstNode *parse_parameter_list(Parser *p) {
 static AstNode *parse_function_definition(Parser *p, int ret_size) {
     (void)ret_size;
     const char *name = parse_declarator(p);
-    AstNode *params = parse_parameter_list(p);
+    int is_variadic = 0;
+    AstNode *params = parse_parameter_list(p, &is_variadic);
     AstNode *body = parse_compound_statement(p);
     /* 将参数声明前置到函数体开头 */
     if (params) {
@@ -948,6 +957,7 @@ static AstNode *parse_function_definition(Parser *p, int ret_size) {
     func->name = name;
     func->params = params;
     func->body = body;
+    func->is_static = is_variadic;  /* 用 is_static 存储 variadic 标志 */
     return func;
 }
 

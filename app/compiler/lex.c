@@ -61,7 +61,7 @@ static Keyword keywords[] = {
     {"inline",                    TOK_INLINE},
     {"int",                       TOK_INT},
     {"long",                      TOK_LONG},
-    {"register",                  TOK_IDENT},
+    {"register",                  TOK_REGISTER},
     {"restrict",                  TOK_RESTRICT},
     {"return",                    TOK_RETURN},
     {"short",                     TOK_SHORT},

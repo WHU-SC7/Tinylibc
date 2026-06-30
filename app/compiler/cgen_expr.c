@@ -13,13 +13,6 @@
 
 #include "tcc.h"
 
-/* ─── 字节发射 ─── */
-
-static void e1(int b) { code_buf[code_size++] = b & 0xFF; }
-static void e4(int v) {
-    e1(v); e1(v>>8); e1(v>>16); e1(v>>24);
-}
-
 /* ─── push/pop ─── */
 
 static void push_rax(void) { e1(0x50); }  /* push rax */

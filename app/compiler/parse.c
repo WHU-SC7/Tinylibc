@@ -646,6 +646,25 @@ static const char *parse_declarator(Parser *p) {
     return "";
 }
 
+/* 解析变量声明（支持 register __asm__ 扩展） */
+static void skip_register_asm(Parser *p) {
+    /* register int x __asm__("reg") = val; */
+    if (peek(p).kind == TOK_REGISTER) {
+        consume(p);
+        int ts = parse_type_specifier(p);
+        (void)ts;
+        if (peek(p).kind == TOK_IDENT) consume(p);
+        if (peek(p).kind == TOK__ASM__) {
+            consume(p);
+            expect(p, TOK_LPAREN);
+            if (peek(p).kind == TOK_STRING) consume(p);
+            expect(p, TOK_RPAREN);
+        }
+        if (match(p, TOK_EQ)) parse_expr(p);
+        expect(p, TOK_SEMI);
+    }
+}
+
 /* ─── 语句 ─── */
 
 static AstNode *parse_return_statement(Parser *p) {
@@ -748,6 +767,11 @@ AstNode *parse_compound_statement(Parser *p) {
     AstNode **tail = &head;
 
     while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+        /* 处理 register __asm__ 变量声明 */
+        if (peek(p).kind == TOK_REGISTER) {
+            skip_register_asm(p);
+            continue;
+        }
         int ts = parse_type_specifier(p);
         if (ts >= 0) {
             AstNode *decl = new_ast(p, AST_VAR_DECL);
@@ -807,6 +831,46 @@ static AstNode *parse_statement(Parser *p) {
     case TOK_DO:      return parse_do_while(p);
     case TOK_BREAK:   return parse_break(p);
     case TOK_CONTINUE: return parse_continue(p);
+    case TOK__ASM__: {
+        consume(p);
+        if (peek(p).kind == TOK_VOLATILE) consume(p);
+        expect(p, TOK_LPAREN);
+        AstNode *n = new_ast(p, AST_ASM);
+        n->asm_template = NULL;
+        if (peek(p).kind == TOK_STRING) {
+            Token s = consume(p);
+            /* 复制模板字符串（去掉引号） */
+            int slen = s.len - 2;
+            if (slen > 0) {
+                char *buf = arena_alloc(p->arena, slen + 1);
+                int ci;
+                for (ci = 0; ci < slen; ci++) buf[ci] = s.start[ci + 1];
+                buf[slen] = '\0';
+                n->asm_template = buf;
+            }
+        }
+        /* 跳过 :输出 :输入 :破坏列表 */
+        while (peek(p).kind != TOK_RPAREN && peek(p).kind != TOK_EOF) {
+            if (peek(p).kind == TOK_COLON) { consume(p); continue; }
+            if (peek(p).kind == TOK_STRING) { consume(p); continue; }
+            if (peek(p).kind == TOK_LPAREN) {
+                int depth = 1;
+                consume(p);
+                while (depth > 0 && peek(p).kind != TOK_EOF) {
+                    if (peek(p).kind == TOK_LPAREN) depth++;
+                    if (peek(p).kind == TOK_RPAREN) depth--;
+                    if (depth) consume(p);
+                }
+                if (depth == 0) consume(p);
+                continue;
+            }
+            /* 跳过标识符和数字 */
+            consume(p);
+        }
+        expect(p, TOK_RPAREN);
+        expect(p, TOK_SEMI);
+        return n;
+    }
     case TOK_LBRACE:  return parse_compound_statement(p);
     case TOK_SEMI:    consume(p); return new_ast(p, AST_NULL_STMT);
     default: {
@@ -859,6 +923,12 @@ AstNode *parse_program(Parser *p) {
     AstNode **tail = &head;
 
     while (peek(p).kind != TOK_EOF) {
+        /* 处理顶层 __asm__ */
+        if (peek(p).kind == TOK__ASM__) {
+            AstNode *asm_node = parse_statement(p);
+            if (asm_node) { *tail = asm_node; tail = &asm_node->next; }
+            continue;
+        }
         /* 处理 typedef */
         if (peek(p).kind == TOK_TYPEDEF) {
             consume(p);
@@ -898,8 +968,8 @@ AstNode *parse_program(Parser *p) {
         /* 跳过存储类和限定符 */
         while (peek(p).kind == TOK_STATIC || peek(p).kind == TOK_EXTERN ||
                peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
-               peek(p).kind == TOK_RESTRICT || peek(p).kind == TOK_INLINE ||
-               peek(p).kind == TOK__ATTRIBUTE__) {
+               peek(p).kind == TOK_RESTRICT || peek(p).kind == TOK_REGISTER ||
+               peek(p).kind == TOK_INLINE || peek(p).kind == TOK__ATTRIBUTE__) {
             if (peek(p).kind == TOK__ATTRIBUTE__) {
                 consume(p);
                 expect(p, TOK_LPAREN);

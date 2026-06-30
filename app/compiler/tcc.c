@@ -28,6 +28,7 @@
 #include "elf.h"
 #include "lex.c"
 #include "parse.c"
+#include "cgen_asm.c"
 #include "cgen_expr.c"
 #include "cgen.c"
 #include "elf_write.c"

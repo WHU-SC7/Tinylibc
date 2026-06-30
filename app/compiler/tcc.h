@@ -72,6 +72,7 @@ typedef enum {
     TOK_CONST,
     TOK_VOLATILE,
     TOK_RESTRICT,
+    TOK_REGISTER,
     TOK_STATIC,
     TOK_EXTERN,
     TOK_INLINE,
@@ -145,6 +146,7 @@ typedef enum {
     AST_NULL_STMT,     /* 空语句 */
     AST_MEMBER,        /* s.member 或 p->member */
     AST_STRUCT_DEF,    /* struct 定义（顶层） */
+    AST_ASM,           /* __asm__ 内联汇编 */
 } AstKind;
 
 /* ─── AST 节点 ─── */
@@ -172,6 +174,8 @@ typedef struct AstNode {
     struct AstNode *args;
     /* AST_MEMBER: member_name = 成员名字 */
     const char *member_name;
+    /* AST_ASM: asm_template = 汇编模板字符串 */
+    const char *asm_template;
     /* AST_UNARY / AST_BINOP 操作符标记 */
     int op;
     /* 修饰标记 */
@@ -295,6 +299,7 @@ StructType *find_struct_tag(const char *tag);
 void cgen_init(void);
 void cgen_program(AstNode *prog);
 void cgen_expr(AstNode *node);
+void cgen_asm(AstNode *node);
 
 /* ─── ELF 写入 ─── */
 
@@ -305,6 +310,10 @@ int elf_write_object(const char *path);
 static inline int align_up(int offset, int align) {
     return (offset + align - 1) & ~(align - 1);
 }
+
+/* 代码生成共享辅助（所有 cgen_*.c 文件共用） */
+static inline void e1(int b) { code_buf[code_size++] = b & 0xFF; }
+static inline void e4(int v) { e1(v); e1(v>>8); e1(v>>16); e1(v>>24); }
 
 static inline const char *arena_strdup(Arena *a, const char *start, int len) {
     char *p = arena_alloc(a, len + 1);

@@ -331,6 +331,10 @@ static void cgen_stmt(AstNode *stmt) {
         break;
     case AST_NULL_STMT:
         break;
+    case AST_ASM:
+        if (stmt->asm_template)
+            cgen_asm(stmt);
+        break;
     case AST_VAR_DECL:
         /* 初始化 */
         if (stmt->expr) {

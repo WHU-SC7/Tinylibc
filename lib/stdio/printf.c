@@ -42,10 +42,15 @@ parse_fmt(const char *p, struct fmt_spec *spec)
 
     if (*p == '.') {
         p++;
-        spec->precision = 0;
-        while (*p >= '0' && *p <= '9') {
-            spec->precision = spec->precision * 10 + (*p - '0');
+        if (*p == '*') {
+            spec->precision = -2;   /* 标记：精度从参数列表取 */
             p++;
+        } else {
+            spec->precision = 0;
+            while (*p >= '0' && *p <= '9') {
+                spec->precision = spec->precision * 10 + (*p - '0');
+                p++;
+            }
         }
     }
 
@@ -358,6 +363,12 @@ vfprintf_core(int fd, const char *fmt, my_va_list args)
         /* ---- 格式说明符 ---- */
         struct fmt_spec spec;
         p = parse_fmt(p + 1, &spec);
+
+        /* `.*` 精度：从参数列表取 int */
+        if (spec.precision == -2) {
+            int prec = my_va_arg(args, int);
+            spec.precision = prec >= 0 ? prec : -1;
+        }
 
         /* 长度修饰符：l / ll */
         int l_cnt = 0;

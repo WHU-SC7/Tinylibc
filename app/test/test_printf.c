@@ -283,6 +283,27 @@ test_edge_cases(void)
     CHECK_SNPRINTF("文本+%%",           "hello%",       "hello%%");
 }
 
+static void
+test_precision_s(void)
+{
+    printf("\n" COLOR_CYAN "=== %%.*s 精度格式 ===" COLOR_RESET "\n");
+
+    CHECK_SNPRINTF("%%.*s, len=3",          "hel",          "%.*s", 3, "hello");
+    CHECK_SNPRINTF("%%.*s, len=5",          "hello",        "%.*s", 5, "hello");
+    CHECK_SNPRINTF("%%.*s, len=0",          "",             "%.*s", 0, "hello");
+    CHECK_SNPRINTF("%%.*s, len>strlen",     "hello",        "%.*s", 10, "hello");
+    CHECK_SNPRINTF("%%.*s, NULL, len=3",    "(nu",          "%.*s", 3, (char *)NULL);
+    CHECK_SNPRINTF("%%.*s, NULL, len=6",    "(null)",       "%.*s", 6, (char *)NULL);
+    CHECK_SNPRINTF("%%.*s, NULL, len=0",    "",             "%.*s", 0, (char *)NULL);
+    CHECK_SNPRINTF("%%.*s, len=1",          "a",            "%.*s", 1, "abc");
+    CHECK_SNPRINTF("%%.*s, len=100",        "abc",          "%.*s", 100, "abc");
+
+    CHECK_SNPRINTF("%%10.*s, len=3",        "       hel",   "%10.*s", 3, "hello");
+    CHECK_SNPRINTF("%%-10.*s, len=3",       "hel       ",   "%-10.*s", 3, "hello");
+    CHECK_SNPRINTF("%%5.*s, len=5",         "hello",        "%5.*s", 5, "hello");
+    CHECK_SNPRINTF("%%-5.*s, len=3",        "hel  ",        "%-5.*s", 3, "hello");
+}
+
 /* ================================================================== */
 /*  主函数                                                             */
 /* ================================================================== */
@@ -300,6 +321,7 @@ int main(int argc, char *argv[])
     test_unsigned();
     test_float();
     test_combined();
+    test_precision_s();
     test_retval();
     test_snprintf_truncation();
     test_edge_cases();

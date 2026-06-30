@@ -253,6 +253,7 @@ extern LocalVar locals[MAX_LOCALS];
 extern int local_count;
 extern int frame_size;
 extern int reg_save_offset;
+extern int func_nparams;
 
 /* ─── 类型系统（Phase 3） ─── */
 

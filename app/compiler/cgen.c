@@ -43,6 +43,7 @@ int frame_size;
 
 /* 可变参数函数：寄存器保存区在栈中的偏移 */
 int reg_save_offset;  /* 从 rbp 向下的偏移（负值） */
+int func_nparams;      /* 当前函数的命名参数个数（供 va_start 使用） */
 
 /* ─── 标签和回填 ─── */
 
@@ -369,6 +370,8 @@ static void cgen_func_def(AstNode *func) {
         reg_save_offset = -(frame_size);
     } else reg_save_offset = 0;
 
+    func_nparams = func->ival;
+
     emit_prologue();
 
     /* 保存参数寄存器到局部变量槽 */
@@ -432,6 +435,7 @@ void cgen_init(void) {
     local_count = 0;
     frame_size = 0;
     reg_save_offset = 0;
+    func_nparams = 0;
     strtab_len = 0;
     strtab[strtab_len++] = '\0';
 }

@@ -280,9 +280,9 @@ void cgen_expr(AstNode *node) {
                     cgen_expr(node->args);
                 }
                 push_rax();
-                /* 设置 gp_offset = 0 */
+                /* gp_offset = 8 * 命名参数个数 */
                 pop_rcx();
-                e1(0xC7); e1(0x01); e4(0);  /* mov dword [rcx], 0 */
+                e1(0xC7); e1(0x01); e4(func_nparams * 8);
                 /* 设置 fp_offset = 48 */
                 e1(0xC7); e1(0x41); e1(0x04); e4(48);  /* mov dword [rcx+4], 48 */
                 /* 设置 overflow_arg_area = rbp+16 */

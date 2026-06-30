@@ -228,10 +228,24 @@ typedef struct {
 void parser_init(Parser *p, Lexer *lx, Arena *a);
 AstNode *parse_program(Parser *p);
 
+/* ─── 局部变量表 ─── */
+
+#define MAX_LOCALS 256
+typedef struct {
+    const char *name;
+    int offset;  /* 距 rbp 的偏移（负值） */
+    int size;    /* 类型大小 */
+} LocalVar;
+
+extern LocalVar locals[MAX_LOCALS];
+extern int local_count;
+extern int frame_size;
+
 /* ─── 代码生成 ─── */
 
 void cgen_init(void);
 void cgen_program(AstNode *prog);
+void cgen_expr(AstNode *node);
 
 /* ─── ELF 写入 ─── */
 

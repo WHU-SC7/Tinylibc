@@ -28,6 +28,7 @@
 #include "elf.h"
 #include "lex.c"
 #include "parse.c"
+#include "cgen_expr.c"
 #include "cgen.c"
 #include "elf_write.c"
 
@@ -112,9 +113,7 @@ static void debug_tokens(const char *src, int len) {
         case TOK_VOID:  __printf("void\n"); break;
         case TOK_RETURN: __printf("return\n"); break;
         case TOK_IDENT:
-            __printf("ident:");
-            { int ii; for (ii = 0; ii < t.len; ii++) __printf("%c", t.start[ii]); }
-            __printf("\n");
+            __printf("ident:%.*s\n", t.len, t.start);
             break;
         case TOK_NUMBER: __printf("number:%d\n", t.ival); break;
         case TOK_LBRACE: __printf("{\n"); break;

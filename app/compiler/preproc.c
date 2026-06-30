@@ -171,7 +171,7 @@ static void pp_buf(const char *s, int len, OutBuf *out, int depth) {
             i = le; if (i < len && s[i] == '\n') i++;
             continue;
         }
-        out_putc(out, s[i]); i++;
+        if (s[i] != 13) { out_putc(out, s[i]); } i++;
     }
 }
 

@@ -356,23 +356,27 @@ static void cgen_stmt(AstNode *stmt) {
 /* ─── 函数代码生成 ─── */
 
 static void cgen_func_def(AstNode *func) {
-    int is_variadic = func->is_static;  /* is_static 存储 variadic 标志 */
-
-    /* 可变参数函数：在 frame 中包含 48 字节寄存器保存区 */
-    if (is_variadic) frame_size += 48;
+    int is_variadic = func->is_static;
 
     reset_labels();
     collect_locals(func);
 
+    /* 可变参数函数：在帧底追加 48 字节寄存器保存区（局部变量之后） */
+    if (is_variadic) frame_size += 48;
+
     int func_start = code_size;
+    if (is_variadic) {
+        reg_save_offset = -(frame_size);
+    } else reg_save_offset = 0;
 
     emit_prologue();
 
     /* 保存参数寄存器到局部变量槽 */
     {
         int arg_reg = 0;
+        int nparams = func->ival;
         AstNode *p;
-        for (p = func->params; p && arg_reg < 6; p = p->next) {
+        for (p = func->params; p && arg_reg < 6 && arg_reg < nparams; p = p->next) {
             if (p->kind == AST_VAR_DECL && p->name) {
                 int i;
                 for (i = 0; i < local_count; i++) {
@@ -394,22 +398,14 @@ static void cgen_func_def(AstNode *func) {
     }
 
     /* 可变参数函数：保存 6 个 GP 寄存器到寄存器保存区 */
-    reg_save_offset = 0;
     if (is_variadic) {
-        reg_save_offset = -(frame_size + 16);  /* 保存区从 rbp-(frame_size+16) 开始 */
-        int save_base = reg_save_offset;
-        /* mov [rbp+save_base], rdi */
-        e1(0x48); e1(0x89); e1(0x7D); e1(save_base & 0xFF);
-        /* mov [rbp+save_base+8], rsi */
-        e1(0x48); e1(0x89); e1(0x75); e1((save_base + 8) & 0xFF);
-        /* mov [rbp+save_base+16], rdx */
-        e1(0x48); e1(0x89); e1(0x55); e1((save_base + 16) & 0xFF);
-        /* mov [rbp+save_base+24], rcx */
-        e1(0x48); e1(0x89); e1(0x4D); e1((save_base + 24) & 0xFF);
-        /* mov [rbp+save_base+32], r8 */
-        e1(0x4C); e1(0x89); e1(0x45); e1((save_base + 32) & 0xFF);
-        /* mov [rbp+save_base+40], r9 */
-        e1(0x4C); e1(0x89); e1(0x4D); e1((save_base + 40) & 0xFF);
+        int sb = reg_save_offset;
+        e1(0x48); e1(0x89); e1(0x7D); e1(sb & 0xFF);
+        e1(0x48); e1(0x89); e1(0x75); e1((sb + 8) & 0xFF);
+        e1(0x48); e1(0x89); e1(0x55); e1((sb + 16) & 0xFF);
+        e1(0x48); e1(0x89); e1(0x4D); e1((sb + 24) & 0xFF);
+        e1(0x4C); e1(0x89); e1(0x45); e1((sb + 32) & 0xFF);
+        e1(0x4C); e1(0x89); e1(0x4D); e1((sb + 40) & 0xFF);
     }
 
     cgen_block(func->body);

@@ -177,10 +177,22 @@ static AstNode *parse_primary(Parser *p) {
         return n;
     }
 
-    if (t.kind == TOK_IDENT) {
+    if (t.kind == TOK_IDENT ||
+        t.kind == TOK__BUILTIN_VA_START || t.kind == TOK__BUILTIN_VA_ARG ||
+        t.kind == TOK__BUILTIN_VA_END || t.kind == TOK__BUILTIN_VA_LIST ||
+        t.kind == TOK__ASM__ || t.kind == TOK__ATTRIBUTE__) {
         consume(p);
         AstNode *n = new_ast(p, AST_VAR);
         n->name = arena_strdup(p->arena, t.start, t.len);
+        return n;
+    }
+
+    /* 类型关键字在表达式中当作常量（兼容 __builtin_va_arg(ap, int)） */
+    if (t.kind == TOK_INT || t.kind == TOK_CHAR || t.kind == TOK_SHORT ||
+        t.kind == TOK_LONG || t.kind == TOK_VOID || t.kind == TOK_DOUBLE) {
+        consume(p);
+        AstNode *n = new_ast(p, AST_CONSTANT);
+        n->ival = 4;
         return n;
     }
 
@@ -219,7 +231,17 @@ static AstNode *parse_postfix(Parser *p) {
             AstNode **tail = &call->args;
             while (peek(p).kind != TOK_RPAREN && peek(p).kind != TOK_EOF) {
                 *tail = parse_expr(p);
-                tail = &(*tail)->next;
+                if (*tail == NULL && call->name) {
+                    /* __builtin_va_arg(ap, type) — 类型参数 */
+                    int tsz = parse_type_specifier(p);
+                    if (tsz > 0) {
+                        *tail = new_ast(p, AST_CONSTANT);
+                        (*tail)->ival = tsz;
+                    }
+                }
+                if (*tail) {
+                    tail = &(*tail)->next;
+                }
                 if (peek(p).kind == TOK_COMMA) consume(p);
                 else break;
             }
@@ -793,6 +815,7 @@ AstNode *parse_compound_statement(Parser *p) {
     AstNode **tail = &head;
 
     while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+        const char *prev_pos = p->lexer->pos;  /* 防死循环 */
         /* 处理 register __asm__ 变量声明 */
         if (peek(p).kind == TOK_REGISTER) {
             skip_register_asm(p);
@@ -827,6 +850,8 @@ AstNode *parse_compound_statement(Parser *p) {
             if (stmt) {
                 *tail = stmt;
                 tail = &stmt->next;
+            } else if (p->lexer->pos == prev_pos) {
+                break;  /* 没有消耗任何 token，防死循环 */
             }
         }
     }
@@ -917,6 +942,11 @@ static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
         /* 空 */
     } else {
         while (peek(p).kind != TOK_RPAREN && peek(p).kind != TOK_EOF) {
+            if (peek(p).kind == TOK_ELLIPSIS) {
+                consume(p);
+                if (is_variadic) *is_variadic = 1;
+                break;
+            }
             int psz = parse_type_specifier(p);
             const char *pname = parse_declarator(p);
             if (pname && *pname) {
@@ -927,11 +957,6 @@ static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
                 tail = &pd->next;
             }
             if (peek(p).kind == TOK_COMMA) consume(p);
-            else if (peek(p).kind == TOK_ELLIPSIS) {
-                consume(p);
-                if (is_variadic) *is_variadic = 1;
-                break;
-            }
         }
     }
     expect(p, TOK_RPAREN);
@@ -946,6 +971,9 @@ static AstNode *parse_function_definition(Parser *p, int ret_size) {
     int is_variadic = 0;
     AstNode *params = parse_parameter_list(p, &is_variadic);
     AstNode *body = parse_compound_statement(p);
+    /* 在 params 被链接到 block 之前记录参数个数 */
+    int pcount = 0;
+    { AstNode *pp; for (pp = params; pp; pp = pp->next) pcount++; }
     /* 将参数声明前置到函数体开头 */
     if (params) {
         AstNode *last = params;
@@ -957,7 +985,8 @@ static AstNode *parse_function_definition(Parser *p, int ret_size) {
     func->name = name;
     func->params = params;
     func->body = body;
-    func->is_static = is_variadic;  /* 用 is_static 存储 variadic 标志 */
+    func->is_static = is_variadic;
+    func->ival = pcount;  /* 实际参数个数 */
     return func;
 }
 

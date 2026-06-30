@@ -90,7 +90,8 @@ static void emit_call(const char *name) {
     /* 记录重定位 */
     if (rel_count >= MAX_RELS) return;
     Elf64_Rela *r = &rels[rel_count++];
-    r->r_offset = code_size;
+    int call_off = code_size;
+    r->r_offset = call_off + 1;
     r->r_info = ELF64_R_INFO(sym_idx + 1, R_X86_64_PLT32);
     r->r_addend = -4;
 
@@ -266,9 +267,18 @@ void cgen_expr(AstNode *node) {
         /* 处理 __builtin_va_* */
         if (node->name && node->name[0] == '_' && node->name[1] == '_') {
             if (strcmp(node->name, "__builtin_va_start") == 0 && node->args) {
-                /* va_start(ap, last_param) — 初始化 va_list */
-                cgen_expr(node->args);  /* 计算 ap 地址 → eax */
-                /* eax = 指向 va_list 的指针 */
+                /* va_start(ap, last_param) — 需要 ap 的地址 */
+                if (node->args->kind == AST_VAR) {
+                    int vi;
+                    for (vi = 0; vi < local_count; vi++) {
+                        if (strcmp(locals[vi].name, node->args->name) == 0) {
+                            e1(0x48); e1(0x8D); e1(0x45); e1(locals[vi].offset & 0xFF);
+                            break;
+                        }
+                    }
+                } else {
+                    cgen_expr(node->args);
+                }
                 push_rax();
                 /* 设置 gp_offset = 0 */
                 pop_rcx();
@@ -278,12 +288,8 @@ void cgen_expr(AstNode *node) {
                 /* 设置 overflow_arg_area = rbp+16 */
                 e1(0x48); e1(0x8D); e1(0x45); e1(0x10);  /* lea rax, [rbp+16] */
                 e1(0x48); e1(0x89); e1(0x41); e1(0x08);  /* mov [rcx+8], rax */
-                /* 设置 reg_save_area = rbp + reg_save_offset */
-                if (reg_save_offset) {
-                    e1(0x48); e1(0x8D); e1(0x45); e1(reg_save_offset & 0xFF);  /* lea rax, [rbp+off] */
-                } else {
-                    e1(0x48); e1(0x8D); e1(0x45); e1(0);  /* lea rax, [rbp] (回退) */
-                }
+                /* 设置 reg_save_area = rsp （寄存器保存区在栈底） */
+                e1(0x48); e1(0x89); e1(0xE0);  /* mov rax, rsp */
                 e1(0x48); e1(0x89); e1(0x41); e1(0x10);  /* mov [rcx+16], rax */
                 break;
             }
@@ -347,7 +353,7 @@ void cgen_expr(AstNode *node) {
             case 0: e1(0x89); e1(0xCF); break;
             case 1: e1(0x89); e1(0xCE); break;
             case 2: e1(0x89); e1(0xCA); break;
-            case 3: e1(0x89); e1(0xCB); break;
+            case 3: /* ecx */ break;
             case 4: e1(0x41); e1(0x89); e1(0xC8); break;
             case 5: e1(0x41); e1(0x89); e1(0xC9); break;
             }

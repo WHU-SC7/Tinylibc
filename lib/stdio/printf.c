@@ -18,14 +18,16 @@ typedef __builtin_va_list my_va_list;
 struct fmt_spec {
     int flags;
     int width;
+    int precision;   /* -1 = 未指定 */
 };
 
-/* 解析 flags（-, 0）和 width，返回指向格式字符的指针 */
+/* 解析 flags（-, 0）、width、.precision，返回指向格式字符的指针 */
 static const char *
 parse_fmt(const char *p, struct fmt_spec *spec)
 {
     spec->flags = 0;
     spec->width = 0;
+    spec->precision = -1;
 
     for (;;) {
         if      (*p == '-') { spec->flags |= FMT_FLAG_MINUS; p++; }
@@ -36,6 +38,15 @@ parse_fmt(const char *p, struct fmt_spec *spec)
     while (*p >= '0' && *p <= '9') {
         spec->width = spec->width * 10 + (*p - '0');
         p++;
+    }
+
+    if (*p == '.') {
+        p++;
+        spec->precision = 0;
+        while (*p >= '0' && *p <= '9') {
+            spec->precision = spec->precision * 10 + (*p - '0');
+            p++;
+        }
     }
 
     return p;
@@ -52,15 +63,6 @@ pad_output(int fd, int count, char c)
         __write(fd, buf, n);
         count -= n;
     }
-}
-
-/* 字符串长度 */
-static int
-str_len(const char *s)
-{
-    int n = 0;
-    while (s[n]) n++;
-    return n;
 }
 
 /* 将 long 转换为字符串缓冲区，返回长度（buf[0] = '-' 表示负数） */
@@ -208,12 +210,15 @@ static int double_to_str(double d, char *buf, int dec) {
 /*  带宽度/对齐的填充输出函数                                         */
 /* ================================================================== */
 
-/* 输出字符串，支持宽度和左对齐 */
+/* 输出字符串，支持宽度、左对齐、精度截断 */
 static void
 fprint_string_padded(int fd, const char *s, const struct fmt_spec *spec)
 {
     if (!s) s = "(null)";
-    int len = str_len(s);
+    int len = 0;
+    while (s[len]) len++;
+    if (spec->precision >= 0 && spec->precision < len)
+        len = spec->precision;
     int pad = spec->width > len ? spec->width - len : 0;
 
     if (pad > 0 && !(spec->flags & FMT_FLAG_MINUS))
@@ -223,32 +228,50 @@ fprint_string_padded(int fd, const char *s, const struct fmt_spec *spec)
         pad_output(fd, pad, ' ');
 }
 
-/* 输出整数，支持宽度、左对齐、零填充 */
+/* 输出整数，支持宽度、左对齐、零填充、精度最小位数 */
 static void
 fprint_int_padded(int fd, long num, const struct fmt_spec *spec)
 {
     char buf[32];
     int len = long_to_buf(num, buf);
-    int pad = spec->width > len ? spec->width - len : 0;
+    int sign = (len > 0 && buf[0] == '-') ? 1 : 0;
+    int digits = len - sign;
+
+    /* %.0d 且值为 0 → 不输出 */
+    if (spec->precision == 0 && num == 0) {
+        digits = 0; sign = 0;
+    }
+    /* 精度指定了最小数字位数 */
+    int prec_zeros = 0;
+    if (spec->precision > digits)
+        prec_zeros = spec->precision - digits;
+
+    int content = sign + prec_zeros + digits;
+    int pad = spec->width > content ? spec->width - content : 0;
+    int zero_flag = (spec->flags & FMT_FLAG_ZERO) && (spec->precision < 0);
 
     if (pad > 0 && (spec->flags & FMT_FLAG_MINUS)) {
-        /* 左对齐：内容后补空格 */
-        __write(fd, buf, len);
-        pad_output(fd, pad, ' ');
-    } else if (pad > 0 && (spec->flags & FMT_FLAG_ZERO)) {
-        /* 零填充右对齐：负号在前，零在后 */
-        int offset = (buf[0] == '-') ? 1 : 0;
-        if (offset) __write(fd, "-", 1);
-        pad_output(fd, pad, '0');
-        __write(fd, buf + offset, len - offset);
+        /* 左对齐 */
+        if (sign) __write(fd, "-", 1);
+        if (prec_zeros) pad_output(fd, prec_zeros, '0');
+        if (digits) __write(fd, buf + sign, digits);
+        if (pad) pad_output(fd, pad, ' ');
+    } else if (pad > 0 && zero_flag) {
+        /* 零填充：符号先，然后补零到宽度 */
+        if (sign) __write(fd, "-", 1);
+        if (prec_zeros) pad_output(fd, prec_zeros, '0');
+        if (pad) pad_output(fd, pad, '0');
+        if (digits) __write(fd, buf + sign, digits);
     } else {
-        /* 空格填充右对齐（或无需填充） */
-        if (pad > 0) pad_output(fd, pad, ' ');
-        __write(fd, buf, len);
+        /* 空格填充右对齐 */
+        if (pad) pad_output(fd, pad, ' ');
+        if (sign) __write(fd, "-", 1);
+        if (prec_zeros) pad_output(fd, prec_zeros, '0');
+        if (digits) __write(fd, buf + sign, digits);
     }
 }
 
-/* 输出十六进制，支持宽度、对齐、零填充 */
+/* 输出十六进制，支持宽度、对齐、零填充、精度 */
 static void
 fprint_hex_padded(int fd, unsigned long val, int prefix,
                   const struct fmt_spec *spec)
@@ -275,13 +298,36 @@ fprint_hex_padded(int fd, unsigned long val, int prefix,
         }
     }
 
+    int hex_start = prefix ? 2 : 0;
+    int hex_digits = pos - hex_start;
+
+    /* 精度：最小十六进制位数 */
+    if (spec->precision == 0 && val == 0) {
+        pos = prefix ? 2 : 0;
+        hex_digits = 0;
+    }
+    if (spec->precision > hex_digits) {
+        int extra = spec->precision - hex_digits;
+        for (int i = pos - 1; i >= hex_start; i--)
+            buf[i + extra] = buf[i];
+        for (int i = 0; i < extra; i++)
+            buf[hex_start + i] = '0';
+        pos += extra;
+    }
+
     int pad = spec->width > pos ? spec->width - pos : 0;
-    char pc = (spec->flags & FMT_FLAG_ZERO) ? '0' : ' ';
+    int zero_flag = (spec->flags & FMT_FLAG_ZERO) && (spec->precision < 0);
 
     if (pad > 0 && (spec->flags & FMT_FLAG_MINUS)) {
         __write(fd, buf, pos);
         pad_output(fd, pad, ' ');
+    } else if (pad > 0 && zero_flag && prefix) {
+        /* 0x 前缀 + 零填充：先输出 "0x"，剩下的补零 */
+        __write(fd, buf, 2);
+        pad_output(fd, pad, '0');
+        __write(fd, buf + 2, pos - 2);
     } else if (pad > 0) {
+        char pc = zero_flag ? '0' : ' ';
         pad_output(fd, pad, pc);
         __write(fd, buf, pos);
     } else {
@@ -311,27 +357,27 @@ vfprintf_core(int fd, const char *fmt, my_va_list args)
 
         /* ---- 格式说明符 ---- */
         struct fmt_spec spec;
-        p = parse_fmt(p + 1, &spec);  /* p 指向格式字符 */
+        p = parse_fmt(p + 1, &spec);
+
+        /* 长度修饰符：l / ll */
+        int l_cnt = 0;
+        while (*p == 'l') { if (l_cnt < 2) l_cnt++; p++; }
 
         switch (*p) {
-            case 'd': {
-                /* %d 读取 int（4 字节），符合 x86_64 可变参数传参约定 */
-                int n = my_va_arg(args, int);
-                fprint_int_padded(fd, (long)n, &spec);
-                break;
-            }
-            case 'l':
-                if (*(p + 1) == 'd') {
-                    p++;
+            case 'd':
+            case 'i': {
+                if (l_cnt >= 2) {
+                    long long n = my_va_arg(args, long long);
+                    fprint_int_padded(fd, (long)n, &spec);
+                } else if (l_cnt == 1) {
                     long n = my_va_arg(args, long);
                     fprint_int_padded(fd, n, &spec);
                 } else {
-                    /* 裸 %l（无 d），容错 */
-                    p--;
-                    long n = my_va_arg(args, long);
-                    fprint_int_padded(fd, n, &spec);
+                    int n = my_va_arg(args, int);
+                    fprint_int_padded(fd, (long)n, &spec);
                 }
                 break;
+            }
             case 's': {
                 char *s = my_va_arg(args, char*);
                 fprint_string_padded(fd, s, &spec);
@@ -348,8 +394,9 @@ vfprintf_core(int fd, const char *fmt, my_va_list args)
             }
             case 'f': {
                 double d = my_va_arg(args, double);
+                int dec = spec.precision >= 0 ? spec.precision : 6;
                 char buf[128];
-                int len = double_to_str(d, buf, 6);
+                int len = double_to_str(d, buf, dec);
                 int pad = spec.width > len ? spec.width - len : 0;
                 if (pad > 0 && !(spec.flags & FMT_FLAG_MINUS))
                     pad_output(fd, pad, ' ');
@@ -358,8 +405,15 @@ vfprintf_core(int fd, const char *fmt, my_va_list args)
                     pad_output(fd, pad, ' ');
                 break;
             }
-            case 'x': {
-                unsigned long n = my_va_arg(args, unsigned long);
+            case 'x':
+            case 'X': {
+                unsigned long n;
+                if (l_cnt >= 2) {
+                    unsigned long long nn = my_va_arg(args, unsigned long long);
+                    n = (unsigned long)nn;
+                } else {
+                    n = my_va_arg(args, unsigned long);
+                }
                 fprint_hex_padded(fd, n, 0, &spec);
                 break;
             }
@@ -369,19 +423,33 @@ vfprintf_core(int fd, const char *fmt, my_va_list args)
                 break;
             }
             case 'u': {
-                unsigned long n = my_va_arg(args, unsigned long);
+                unsigned long n;
+                if (l_cnt >= 2) {
+                    unsigned long long nn = my_va_arg(args, unsigned long long);
+                    n = (unsigned long)nn;
+                } else {
+                    n = my_va_arg(args, unsigned long);
+                }
                 char buf[32];
                 int len = ulong_to_str(n, buf);
-                int pad = spec.width > len ? spec.width - len : 0;
-                char pc = (spec.flags & FMT_FLAG_ZERO) ? '0' : ' ';
+                if (spec.precision == 0 && n == 0) len = 0;
+                int prec_zeros = spec.precision > len ? spec.precision - len : 0;
+                int content = prec_zeros + len;
+                int pad = spec.width > content ? spec.width - content : 0;
+                int zero_flag = (spec.flags & FMT_FLAG_ZERO) && (spec.precision < 0);
+                char pc = zero_flag ? '0' : ' ';
                 if (pad > 0 && (spec.flags & FMT_FLAG_MINUS)) {
-                    __write(fd, buf, len);
-                    pad_output(fd, pad, ' ');
-                } else if (pad > 0) {
-                    pad_output(fd, pad, pc);
-                    __write(fd, buf, len);
+                    if (prec_zeros) pad_output(fd, prec_zeros, '0');
+                    if (len) __write(fd, buf, len);
+                    if (pad) pad_output(fd, pad, ' ');
+                } else if (pad > 0 && zero_flag) {
+                    if (pad) pad_output(fd, pad, '0');
+                    if (prec_zeros) pad_output(fd, prec_zeros, '0');
+                    if (len) __write(fd, buf, len);
                 } else {
-                    __write(fd, buf, len);
+                    if (pad) pad_output(fd, pad, pc);
+                    if (prec_zeros) pad_output(fd, prec_zeros, '0');
+                    if (len) __write(fd, buf, len);
                 }
                 break;
             }

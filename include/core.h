@@ -67,6 +67,8 @@ void __exit_group(int status);
 uid_t tlibc_getuid(void);
 int tlibc_chmod(const char *pathname, mode_t mode);
 int tlibc_stat(const char *pathname, struct stat *statbuf);
+int __statfs(const char *pathname, struct statfs *buf);
+int __fstatfs(int fd, struct statfs *buf);
 int __fcntl(int fd, int cmd, unsigned long arg);
 int __dup(int oldfd);
 int __dup2(int oldfd, int newfd);

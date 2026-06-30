@@ -66,6 +66,8 @@
 
 #define SYS_chmod       __NR_chmod
 #define SYS_stat        __NR_stat
+#define SYS_statfs      __NR_statfs
+#define SYS_fstatfs     __NR_fstatfs
 
 #define SYS_shutdown    __NR_shutdown
 

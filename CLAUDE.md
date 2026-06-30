@@ -62,13 +62,15 @@ tmake -j               # 自动检测 CPU 核数并行编译全部
 |------|------|
 | `core/` | syscall 包装按领域拆分：`io.c`（文件I/O/fs）、`proc.c`（进程）、`mem.c`（内存/malloc）、`time.c`（时间）、`signal.c`（信号）、`sync.c`（futex） |
 | `string.c` | `strcpy`, `strlen`, `memcpy`, `strcmp`, `strerror`，`__memset`，`__memmove` |
-| `stdio/` | `printf.c`（`__printf`/`__fprintf`）、`snprintf.c` |
+| `stdio/` | `printf.c`（`__printf`/`__fprintf`）、`snprintf.c`；支持 `%.Nf`/`%.Ns`/`%.Nd`/`%.Nu`/`%.Nx` 精度格式 |
 | `thread/` | `pthread.c`（pthread_create/join/exit）、`mempool.c`（内存池+后台回收）、`clone.S`（clone 汇编） |
 | `net/` | `socket.c`（socket/connect/bind/listen/accept/shutdown）、`dns.c`（DNS 解析） |
 | `poll.c` | I/O 多路复用：poll/ppoll/select/pselect/epoll POSIX 封装 |
 | `tty.c` | 终端大小、raw 模式（保存/恢复 termios、完整 cfmakeraw 风格）、光标定位、按键处理（方向键→自定义键值、EPIPE 防护） |
 | `misc/` | `file.c`（文件工具函数）、`path.c`（路径规范化）、`envp.c`（环境变量）、`system.c`（`tlibc_get_user_dir`） |
+| `procfs.c` | `/proc` 解析公共库：`tlibc_list_pids`、`tlibc_read_proc_status`、`tlibc_read_proc_stat` |
 | `init/` | `init.c`（`tlibc_init`：预分配线程栈→初始化内存池→调`main`）、`start.S`（入口 `__tlibc_start`→`tlibc_init`→`main`） |
+| `math/` | `math.c`（sqrt/fabs/ceil/floor/round/trunc/fmod + sin/cos/tan/atan/atan2 + exp/log/log10/pow + isqrt，泰勒/牛顿 ~1e-10 精度） |
 
 ### 应用 `app/*.c`
 
@@ -76,12 +78,12 @@ tmake -j               # 自动检测 CPU 核数并行编译全部
 |------|------|
 | `shell.c` | 交互式 shell（PATH 查找、tab 补全、配置文件） |
 | `tmake.c` | 自托管构建工具（并行编译 `-j`、单目标 `-b`、增量构建） |
-| `coreutils/` | cat, cp, echo, fcount, hexdump, ls, mkdir, mv, pwd, rm, rmdir, touch |
-| `net/` | ndiscover（网络发现）, webserv（HTTP 服务器）, sniffer（抓包）, netprobe（延迟探测）, portscan（端口扫描）, http（HTTP 客户端）, dnsquery（DNS 查询） |
+| `coreutils/` | cat, cp, echo, fcount, free, grep, hexdump, ls, mkdir, mv, ps, pwd, rm, rmdir, touch, df |
+| `net/` | ndiscover（网络发现）, webserv（HTTP 服务器）, sniffer（抓包）, netprobe（延迟探测）, ping（ICMP 探测）, portscan（端口扫描）, http（HTTP 客户端）, dnsquery（DNS 查询） |
 | `net/old/` | 旧版：ssh, sshd, tclient, tserver, client, server（保留但不再编译） |
 | `term/` | vim, top, __game_pacman, template |
 | `compiler/` | elf_reader（ELF 文件读取器）, elf_maker（ELF 生成器） |
-| `test/` | test_string, test_smoke（冒烟测试）, test_iomux（poll/select/epoll 测试）, test_printf（格式化测试）, test_filelist（文件列表测试）, thread（线程测试）, tlibc_free（释放测试）, passwd, quene |
+| `test/` | test_string, test_smoke（冒烟测试）, test_iomux（poll/select/epoll 测试）, test_printf（格式化、精度测试）, test_filelist（文件列表测试）, thread（线程测试）, tlibc_free（释放测试）, passwd, quene, test_math（sqrt/sin/cos/exp/log/pow 等 23 个用例） |
 | `paper/` | exp, mempool, memtest, pthread（与 glibc 对比实验） |
 
 ### 头文件（三层结构：核心 → POSIX → 项目自定义）
@@ -91,6 +93,7 @@ tmake -j               # 自动检测 CPU 核数并行编译全部
 | 文件 | 内容 |
 |------|------|
 | `core.h` | 所有 syscall 包装声明 + 核心公共头文件引用 |
+| `procfs.h` | `/proc` 解析 API：`tlibc_list_pids`, `tlibc_read_proc_status`, `tlibc_read_proc_stat` |
 | `atomic.h` | x86_64 原子操作：lock cmpxchg / lock xadd |
 | `mempool.h` | 内存池 API |
 | `net.h` | socket / bind / listen / accept 等网络 API |
@@ -110,6 +113,7 @@ tmake -j               # 自动检测 CPU 核数并行编译全部
 | `sched.h` | CLONE_VM / CLONE_THREAD / CLONE_SETTLS 等 clone 标志 |
 | `signal.h` | 信号编号 (SIGHUP–SIGSYS), sigset_t, struct sigaction |
 | `socket.h` | struct sockaddr_in, in_addr, AF_INET / AF_INET6 |
+| `math.h` | sqrt/fabs/ceil/floor/round/trunc/fmod, sin/cos/tan/atan/atan2, exp/log/log10/pow, isqrt 整数平方根 |
 | `string.h` | strlen, strcpy, strcmp, memcpy, strchr, itoa 等声明 |
 | `sys/epoll.h` | EPOLL_CTL_ADD/DEL/MOD, `struct epoll_event`, `epoll_create1/ctl/wait` |
 | `sys/select.h` | fd_set, FD_SET/CLR/ISSET/ZERO, `select()` / `pselect()` 声明 |
@@ -196,20 +200,15 @@ tmake -j               # 自动检测 CPU 核数并行编译全部
  */
 ```
 
-**2. 索引** — 紧跟文件头，给出关键函数或代码段的位置和意义，帮助读者快速定位核心逻辑。
+**2. 索引** — 紧跟文件头，列出关键函数和调用链，帮助读者快速定位核心逻辑。不标注行号（代码会更新，行号易过时）。
 
 ```c
 /*
  * 索引：
  *   main             入口：循环处理每个文件
- *     dump_file      行 42：打开 → 读取 → 写入循环
- *     resolve_path   行 78：处理 "-" 为 stdin
+ *     dump_file      打开 → 读取 → 写入循环
+ *     resolve_path   处理 "-" 为 stdin
  */
- *
- * 或者对于简单程序（系统调用是核心）：
- *
- * 关键路径：
- *   openat → read → write → close    行 30-55
  */
 ```
 

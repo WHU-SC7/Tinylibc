@@ -18,6 +18,7 @@ typedef __builtin_va_list my_va_list;
 struct fmt_spec {
     int flags;
     int width;
+    int precision;   /* -1 = 未指定 */
 };
 
 static const char *
@@ -25,6 +26,7 @@ parse_fmt(const char *p, struct fmt_spec *spec)
 {
     spec->flags = 0;
     spec->width = 0;
+    spec->precision = -1;
     for (;;) {
         if      (*p == '-') { spec->flags |= FMT_FLAG_MINUS; p++; }
         else if (*p == '0') { spec->flags |= FMT_FLAG_ZERO;  p++; }
@@ -33,6 +35,14 @@ parse_fmt(const char *p, struct fmt_spec *spec)
     while (*p >= '0' && *p <= '9') {
         spec->width = spec->width * 10 + (*p - '0');
         p++;
+    }
+    if (*p == '.') {
+        p++;
+        spec->precision = 0;
+        while (*p >= '0' && *p <= '9') {
+            spec->precision = spec->precision * 10 + (*p - '0');
+            p++;
+        }
     }
     return p;
 }
@@ -242,6 +252,8 @@ strbuf_write_string_padded(strbuf_t *sb, const char *s, const struct fmt_spec *s
     if (!s) s = "(null)";
     int len = 0;
     while (s[len]) len++;
+    if (spec->precision >= 0 && spec->precision < len)
+        len = spec->precision;
     int pad = spec->width > len ? spec->width - len : 0;
     if (pad > 0 && !(spec->flags & FMT_FLAG_MINUS))
         strbuf_pad(sb, pad, ' ');
@@ -255,19 +267,35 @@ strbuf_write_int_padded(strbuf_t *sb, long num, const struct fmt_spec *spec)
 {
     char buf[32];
     int len = long_to_buf(num, buf);
-    int pad = spec->width > len ? spec->width - len : 0;
+    int sign = (len > 0 && buf[0] == '-') ? 1 : 0;
+    int digits = len - sign;
+
+    if (spec->precision == 0 && num == 0) {
+        digits = 0; sign = 0;
+    }
+    int prec_zeros = 0;
+    if (spec->precision > digits)
+        prec_zeros = spec->precision - digits;
+
+    int content = sign + prec_zeros + digits;
+    int pad = spec->width > content ? spec->width - content : 0;
+    int zero_flag = (spec->flags & FMT_FLAG_ZERO) && (spec->precision < 0);
 
     if (pad > 0 && (spec->flags & FMT_FLAG_MINUS)) {
-        strbuf_write(sb, buf, len);
-        strbuf_pad(sb, pad, ' ');
-    } else if (pad > 0 && (spec->flags & FMT_FLAG_ZERO)) {
-        int offset = (buf[0] == '-') ? 1 : 0;
-        if (offset) strbuf_write_char(sb, '-');
-        strbuf_pad(sb, pad, '0');
-        strbuf_write(sb, buf + offset, len - offset);
+        if (sign) strbuf_write_char(sb, '-');
+        if (prec_zeros) strbuf_pad(sb, prec_zeros, '0');
+        if (digits) strbuf_write(sb, buf + sign, digits);
+        if (pad) strbuf_pad(sb, pad, ' ');
+    } else if (pad > 0 && zero_flag) {
+        if (sign) strbuf_write_char(sb, '-');
+        if (prec_zeros) strbuf_pad(sb, prec_zeros, '0');
+        if (pad) strbuf_pad(sb, pad, '0');
+        if (digits) strbuf_write(sb, buf + sign, digits);
     } else {
-        if (pad > 0) strbuf_pad(sb, pad, ' ');
-        strbuf_write(sb, buf, len);
+        if (pad) strbuf_pad(sb, pad, ' ');
+        if (sign) strbuf_write_char(sb, '-');
+        if (prec_zeros) strbuf_pad(sb, prec_zeros, '0');
+        if (digits) strbuf_write(sb, buf + sign, digits);
     }
 }
 
@@ -297,13 +325,34 @@ strbuf_write_hex_padded(strbuf_t *sb, unsigned long val, int prefix,
         }
     }
 
+    int hex_start = prefix ? 2 : 0;
+    int hex_digits = pos - hex_start;
+
+    if (spec->precision == 0 && val == 0) {
+        pos = prefix ? 2 : 0;
+        hex_digits = 0;
+    }
+    if (spec->precision > hex_digits) {
+        int extra = spec->precision - hex_digits;
+        for (int i = pos - 1; i >= hex_start; i--)
+            buf[i + extra] = buf[i];
+        for (int i = 0; i < extra; i++)
+            buf[hex_start + i] = '0';
+        pos += extra;
+    }
+
     int pad = spec->width > pos ? spec->width - pos : 0;
-    char pc = (spec->flags & FMT_FLAG_ZERO) ? '0' : ' ';
+    int zero_flag = (spec->flags & FMT_FLAG_ZERO) && (spec->precision < 0);
 
     if (pad > 0 && (spec->flags & FMT_FLAG_MINUS)) {
         strbuf_write(sb, buf, pos);
         strbuf_pad(sb, pad, ' ');
+    } else if (pad > 0 && zero_flag && prefix) {
+        strbuf_write(sb, buf, 2);
+        strbuf_pad(sb, pad, '0');
+        strbuf_write(sb, buf + 2, pos - 2);
     } else if (pad > 0) {
+        char pc = zero_flag ? '0' : ' ';
         strbuf_pad(sb, pad, pc);
         strbuf_write(sb, buf, pos);
     } else {
@@ -327,23 +376,25 @@ static void vsnprintf_core(strbuf_t *sb, const char *fmt, my_va_list args) {
         struct fmt_spec spec;
         p = parse_fmt(p + 1, &spec);
 
+        /* 长度修饰符：l / ll */
+        int l_cnt = 0;
+        while (*p == 'l') { if (l_cnt < 2) l_cnt++; p++; }
+
         switch (*p) {
-            case 'd': {
-                int n = my_va_arg(args, int);
-                strbuf_write_int_padded(sb, (long)n, &spec);
-                break;
-            }
-            case 'l':
-                if (*(p + 1) == 'd') {
-                    p++;
+            case 'd':
+            case 'i': {
+                if (l_cnt >= 2) {
+                    long long n = my_va_arg(args, long long);
+                    strbuf_write_int_padded(sb, (long)n, &spec);
+                } else if (l_cnt == 1) {
                     long n = my_va_arg(args, long);
                     strbuf_write_int_padded(sb, n, &spec);
                 } else {
-                    p--;
-                    long n = my_va_arg(args, long);
-                    strbuf_write_int_padded(sb, n, &spec);
+                    int n = my_va_arg(args, int);
+                    strbuf_write_int_padded(sb, (long)n, &spec);
                 }
                 break;
+            }
             case 's': {
                 char *s = my_va_arg(args, char*);
                 strbuf_write_string_padded(sb, s, &spec);
@@ -360,20 +411,28 @@ static void vsnprintf_core(strbuf_t *sb, const char *fmt, my_va_list args) {
             }
             case 'f': {
                 double d = my_va_arg(args, double);
+                int dec = spec.precision >= 0 ? spec.precision : 6;
                 /* 先用 null 缓冲区预计算长度 */
                 strbuf_t tmp = {NULL, 0, 0, 0};
-                strbuf_write_double(&tmp, d, 6);
+                strbuf_write_double(&tmp, d, dec);
                 int len = (int)tmp.pos;
                 int pad = spec.width > len ? spec.width - len : 0;
                 if (pad > 0 && !(spec.flags & FMT_FLAG_MINUS))
                     strbuf_pad(sb, pad, ' ');
-                strbuf_write_double(sb, d, 6);
+                strbuf_write_double(sb, d, dec);
                 if (pad > 0 && (spec.flags & FMT_FLAG_MINUS))
                     strbuf_pad(sb, pad, ' ');
                 break;
             }
-            case 'x': {
-                unsigned long n = my_va_arg(args, unsigned long);
+            case 'x':
+            case 'X': {
+                unsigned long n;
+                if (l_cnt >= 2) {
+                    unsigned long long nn = my_va_arg(args, unsigned long long);
+                    n = (unsigned long)nn;
+                } else {
+                    n = my_va_arg(args, unsigned long);
+                }
                 strbuf_write_hex_padded(sb, n, 0, &spec);
                 break;
             }
@@ -383,19 +442,33 @@ static void vsnprintf_core(strbuf_t *sb, const char *fmt, my_va_list args) {
                 break;
             }
             case 'u': {
-                unsigned long n = my_va_arg(args, unsigned long);
+                unsigned long n;
+                if (l_cnt >= 2) {
+                    unsigned long long nn = my_va_arg(args, unsigned long long);
+                    n = (unsigned long)nn;
+                } else {
+                    n = my_va_arg(args, unsigned long);
+                }
                 char buf[32];
                 int len = ulong_to_str(n, buf);
-                int pad = spec.width > len ? spec.width - len : 0;
-                char pc = (spec.flags & FMT_FLAG_ZERO) ? '0' : ' ';
+                if (spec.precision == 0 && n == 0) len = 0;
+                int prec_zeros = spec.precision > len ? spec.precision - len : 0;
+                int content = prec_zeros + len;
+                int pad = spec.width > content ? spec.width - content : 0;
+                int zero_flag = (spec.flags & FMT_FLAG_ZERO) && (spec.precision < 0);
+                char pc = zero_flag ? '0' : ' ';
                 if (pad > 0 && (spec.flags & FMT_FLAG_MINUS)) {
-                    strbuf_write(sb, buf, len);
-                    strbuf_pad(sb, pad, ' ');
-                } else if (pad > 0) {
-                    strbuf_pad(sb, pad, pc);
-                    strbuf_write(sb, buf, len);
+                    if (prec_zeros) strbuf_pad(sb, prec_zeros, '0');
+                    if (len) strbuf_write(sb, buf, len);
+                    if (pad) strbuf_pad(sb, pad, ' ');
+                } else if (pad > 0 && zero_flag) {
+                    if (pad) strbuf_pad(sb, pad, '0');
+                    if (prec_zeros) strbuf_pad(sb, prec_zeros, '0');
+                    if (len) strbuf_write(sb, buf, len);
                 } else {
-                    strbuf_write(sb, buf, len);
+                    if (pad) strbuf_pad(sb, pad, pc);
+                    if (prec_zeros) strbuf_pad(sb, prec_zeros, '0');
+                    if (len) strbuf_write(sb, buf, len);
                 }
                 break;
             }

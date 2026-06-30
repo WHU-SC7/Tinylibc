@@ -71,7 +71,7 @@ __x86_64: clean init_dir
 		$(MAKE) setcap; \
 	else \
 		echo ""; \
-		echo "  ℹ ndiscover/netprobe/sniffer 需要 CAP_NET_RAW 才能免 sudo 运行。"; \
+		echo "  ℹ ndiscover/netprobe/sniffer/ping 需要 CAP_NET_RAW 才能免 sudo 运行。"; \
 		echo "    安装 sudo 免密规则后会自动设置："; \
 		echo "    sudo cp sudoers.d-tlibc-setcap /etc/sudoers.d/tlibc-setcap && sudo chmod 440 /etc/sudoers.d/tlibc-setcap"; \
 		echo ""; \
@@ -80,7 +80,7 @@ __x86_64: clean init_dir
 init_dir:
 	mkdir -p build
 	mkdir -p build/app build/lib build/output
-	mkdir -p build/lib/core build/lib/stdio build/lib/thread build/lib/net build/lib/misc build/lib/init
+	mkdir -p build/lib/core build/lib/stdio build/lib/thread build/lib/net build/lib/math build/lib/misc build/lib/init
 	mkdir -p tmp
 	@echo $(x64_c_srcs)
 	@echo $(x64_c_objs)
@@ -108,11 +108,12 @@ debug: all
 	strace $(Tlibc_exe)
 
 # ─── Raw socket 权限 (CAP_NET_RAW) ─────────────────────
-# ndiscover, netprobe, sniffer 使用 AF_PACKET/SOCK_RAW 需要此权限。
+# ndiscover, netprobe, sniffer, ping 使用 AF_PACKET/SOCK_RAW 需要此权限。
 # 构建后自动尝试设置，如需手动操作：
 #   sudo setcap cap_net_raw+ep ~/tlibc/bin/ndiscover
 #   sudo setcap cap_net_raw+ep ~/tlibc/bin/netprobe
 #   sudo setcap cap_net_raw+ep ~/tlibc/bin/sniffer
+#   sudo setcap cap_net_raw+ep ~/tlibc/bin/ping
 SETCAP := /usr/sbin/setcap
 ifeq ($(wildcard $(SETCAP)),)
 SETCAP := /sbin/setcap
@@ -120,7 +121,7 @@ endif
 
 setcap:
 	@echo "  → 设置 CAP_NET_RAW 权限..."
-	@for bin in ndiscover netprobe sniffer; do \
+	@for bin in ndiscover netprobe sniffer ping; do \
 		installed=~/tlibc/bin/$$bin; \
 		buildout=build/output/$$bin; \
 		if [ -f $$installed ]; then \

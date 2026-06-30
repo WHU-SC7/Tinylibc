@@ -152,6 +152,18 @@ ssize_t __getrandom(void *buf, size_t buflen, unsigned int flags)
     return syscall(SYS_getrandom, buf, buflen, flags);
 }
 
+/* ── statfs（文件系统信息） ── */
+
+int __statfs(const char *pathname, struct statfs *buf)
+{
+    return (int)syscall(SYS_statfs, pathname, buf);
+}
+
+int __fstatfs(int fd, struct statfs *buf)
+{
+    return (int)syscall(SYS_fstatfs, fd, buf);
+}
+
 /* ── I/O 多路复用 ── */
 
 int __poll(struct pollfd *fds, nfds_t nfds, int timeout)

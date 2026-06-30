@@ -194,12 +194,13 @@ static void collect_locals(AstNode *node) {
             collect_locals(s);
         break;
     case AST_VAR_DECL:
-        /* 分配栈偏移（每种类型 4 字节，Phase 3+ 按实际类型） */
-        if (local_count < MAX_LOCALS) {
-            frame_size += 4;
+        if (local_count < MAX_LOCALS && node->name) {
+            int sz = node->ival > 0 ? node->ival : 4;
+            frame_size += sz;
             locals[local_count].name = node->name;
             locals[local_count].offset = -frame_size;
-            locals[local_count].size = 4;
+            locals[local_count].size = sz;
+            locals[local_count].struct_tag = NULL;
             local_count++;
         }
         break;

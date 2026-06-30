@@ -28,6 +28,96 @@
 
 #include "tcc.h"
 
+/* 解析 struct 类型时捕获的信息（供变量声明和成员访问追踪） */
+static const char *last_struct_tag = NULL;
+static Member last_struct_members[MAX_MEMBERS];
+static int last_struct_member_count = 0;
+
+/* ─── 局部变量类型追踪（解析阶段用，供 .m 成员访问计算偏移） ─── */
+
+#define MAX_PVARS 256
+static const char *pvar_name[MAX_PVARS];   /* 变量名 */
+static const char *pvar_tag[MAX_PVARS];    /* struct 标签 */
+static int pvar_count;
+
+static void pvar_add(const char *name, const char *tag) {
+    if (pvar_count < MAX_PVARS && name && *name) {
+        pvar_name[pvar_count] = name;
+        pvar_tag[pvar_count] = tag;
+        pvar_count++;
+    }
+}
+static const char *pvar_find_tag(const char *name) {
+    int i;
+    for (i = 0; i < pvar_count; i++)
+        if (strcmp(pvar_name[i], name) == 0) return pvar_tag[i];
+    return NULL;
+}
+/* 在 struct 中查找成员偏移 */
+static int find_member_offset(const char *struct_tag, const char *member) {
+    if (struct_tag && *struct_tag) {
+        /* 先查 typedef 表 */
+        int ti;
+        for (ti = 0; ti < typedef_count; ti++) {
+            if (strcmp(typedef_table[ti].name, struct_tag) == 0 && typedef_table[ti].member_count > 0) {
+                int mi;
+                for (mi = 0; mi < typedef_table[ti].member_count; mi++)
+                    if (strcmp(typedef_table[ti].members[mi].name, member) == 0)
+                        return typedef_table[ti].members[mi].offset;
+            }
+        }
+        /* 再查 struct 标签表 */
+        StructType *st = find_struct_tag(struct_tag);
+        if (st) {
+            int i;
+            for (i = 0; i < st->member_count; i++)
+                if (strcmp(st->members[i].name, member) == 0)
+                    return st->members[i].offset;
+        }
+    }
+    /* 回退：查 last_struct_members */
+    int i;
+    for (i = 0; i < last_struct_member_count; i++)
+        if (strcmp(last_struct_members[i].name, member) == 0)
+            return last_struct_members[i].offset;
+    return 0;
+}
+
+/* ─── 类型系统全局表 ─── */
+
+StructType tag_table[MAX_TAGS];
+int tag_count;
+
+TypedefEntry typedef_table[MAX_TYPEDEFS];
+int typedef_count;
+
+int is_typedef_name(const char *name) {
+    int i;
+    for (i = 0; i < typedef_count; i++)
+        if (strcmp(typedef_table[i].name, name) == 0) return 1;
+    return 0;
+}
+
+StructType *find_struct_tag(const char *tag) {
+    int i;
+    for (i = 0; i < tag_count; i++)
+        if (tag_table[i].tag && strcmp(tag_table[i].tag, tag) == 0)
+            return &tag_table[i];
+    return NULL;
+}
+
+static int add_struct_tag(const char *tag, StructType *st) {
+    if (tag_count >= MAX_TAGS) return -1;
+    StructType *s = &tag_table[tag_count++];
+    s->tag = tag;
+    int i;
+    for (i = 0; i < st->member_count; i++)
+        s->members[i] = st->members[i];
+    s->member_count = st->member_count;
+    s->total_size = st->total_size;
+    return tag_count - 1;
+}
+
 /* ─── 错误报告 ─── */
 
 void error_at(Parser *p, const char *msg) {
@@ -148,16 +238,32 @@ static AstNode *parse_postfix(Parser *p) {
             left = n;
 
         } else if (t.kind == TOK_DOT) {
-            /* 结构体成员 s.m — 暂不支持 */
             consume(p);
-            consume(p);  /* 跳过成员名 */
-            left = left;
+            Token m = consume(p);
+            AstNode *n = new_ast(p, AST_MEMBER);
+            n->left = left;
+            n->member_name = arena_strdup(p->arena, m.start, m.len);
+            n->op = TOK_DOT;
+            /* 查找成员偏移 */
+            if (left && left->kind == AST_VAR) {
+                const char *tag = pvar_find_tag(left->name);
+                if (tag) n->ival = find_member_offset(tag, n->member_name);
+            }
+            left = n;
 
         } else if (t.kind == TOK_ARROW) {
-            /* 指针成员 p->m — 暂不支持 */
             consume(p);
-            consume(p);
-            left = left;
+            Token m = consume(p);
+            AstNode *n = new_ast(p, AST_MEMBER);
+            n->left = left;
+            n->member_name = arena_strdup(p->arena, m.start, m.len);
+            n->op = TOK_ARROW;
+            /* 通过指针的 struct 标签查找 — 暂简化 */
+            if (left && left->kind == AST_VAR) {
+                const char *tag = pvar_find_tag(left->name);
+                if (tag) n->ival = find_member_offset(tag, n->member_name);
+            }
+            left = n;
 
         } else if (t.kind == TOK_PLUS_PLUS) {
             consume(p);
@@ -387,10 +493,104 @@ static AstNode *parse_expr(Parser *p) {
     return parse_assign(p);
 }
 
+/* ─── 解析 struct 体（返回成员列表和总大小） ─── */
+
+static int parse_struct_body(Parser *p, Member *members, int *out_count) {
+    expect(p, TOK_LBRACE);
+    int count = 0;
+    int offset = 0;
+
+    while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+        int sz = parse_type_specifier(p);
+        if (sz < 0) { error_at(p, "invalid struct member type"); break; }
+
+        while (peek(p).kind == TOK_STAR) { consume(p); sz = 8; }  /* 指针 */
+
+        Token id = peek(p);
+        if (id.kind == TOK_IDENT) {
+            consume(p);
+            if (count < MAX_MEMBERS) {
+                members[count].name = arena_strdup(p->arena, id.start, id.len);
+                members[count].offset = offset;
+                members[count].size = sz;
+                count++;
+                offset += sz;
+            }
+        }
+
+        /* 可能的位域或数组 — 跳过 */
+        if (peek(p).kind == TOK_COLON) { consume(p);
+            while (peek(p).kind != TOK_SEMI && peek(p).kind != TOK_EOF) consume(p); }
+
+        expect(p, TOK_SEMI);
+    }
+    expect(p, TOK_RBRACE);
+
+    /* 对齐到最大成员对齐（简单四字节对齐） */
+    offset = (offset + 3) & ~3;
+
+    *out_count = count;
+    return offset;
+}
+
+/* 解析 struct 类型：struct [tag] { ... }  或 struct tag
+ * 返回 0 表示失败或 forward-declaration */
+static int parse_struct_type(Parser *p, StructType *out) {
+    out->tag = NULL;
+    out->member_count = 0;
+    out->total_size = 0;
+
+    /* 可选的标签 */
+    const char *tag = NULL;
+    if (peek(p).kind == TOK_IDENT) {
+        Token t = consume(p);
+        tag = arena_strdup(p->arena, t.start, t.len);
+    }
+
+    if (peek(p).kind == TOK_LBRACE) {
+        /* struct tag { ... } */
+        out->total_size = parse_struct_body(p, out->members, &out->member_count);
+        out->tag = tag;
+        /* 保存到 last_struct_* 供变量声明和成员访问使用 */
+        last_struct_tag = tag;
+        last_struct_member_count = out->member_count;
+        int mi;
+        for (mi = 0; mi < out->member_count && mi < MAX_MEMBERS; mi++)
+            last_struct_members[mi] = out->members[mi];
+
+        if (tag) {
+            StructType *existing = find_struct_tag(tag);
+            if (!existing) add_struct_tag(tag, out);
+        }
+    } else if (tag) {
+        /* struct tag (前置声明或引用) */
+        StructType *existing = find_struct_tag(tag);
+        if (existing) {
+            *out = *existing;
+        } else {
+            /* 不完全类型，暂不支持 */
+        }
+    }
+    return out->total_size;
+}
+
 /* ─── 类型说明符 ─── */
 
 int parse_type_specifier(Parser *p) {
     Token t = peek(p);
+    /* 检查 typedef 名（先提取词素，t.start 不是 null 终止的） */
+    if (t.kind == TOK_IDENT) {
+        char tname[128];
+        int nl = t.len < 127 ? t.len : 127;
+        int ci; for (ci = 0; ci < nl; ci++) tname[ci] = t.start[ci]; tname[nl] = '\0';
+        int ti;
+        for (ti = 0; ti < typedef_count; ti++) {
+            if (strcmp(typedef_table[ti].name, tname) == 0) {
+                consume(p);
+                return typedef_table[ti].size;
+            }
+        }
+    }
     switch (t.kind) {
     case TOK_INT:      consume(p); return 4;
     case TOK_CHAR:     consume(p); return 1;
@@ -399,6 +599,12 @@ int parse_type_specifier(Parser *p) {
         consume(p);
         if (peek(p).kind == TOK_LONG) { consume(p); return 8; }
         return 8;
+    case TOK_STRUCT: {
+        consume(p);
+        StructType st;
+        int sz = parse_struct_type(p, &st);
+        return sz > 0 ? sz : 4;
+    }
     case TOK_VOID:     consume(p); return 0;
     case TOK_UNSIGNED:
         consume(p);
@@ -545,13 +751,29 @@ AstNode *parse_compound_statement(Parser *p) {
         int ts = parse_type_specifier(p);
         if (ts >= 0) {
             AstNode *decl = new_ast(p, AST_VAR_DECL);
+            decl->ival = ts;
             while (peek(p).kind == TOK_STAR)
                 consume(p);
             Token id = peek(p);
             if (id.kind == TOK_IDENT) {
                 consume(p);
                 decl->name = arena_strdup(p->arena, id.start, id.len);
+                if (decl->name) {
+                    if (last_struct_tag || last_struct_member_count > 0) {
+                        pvar_add(decl->name, last_struct_tag ? last_struct_tag : "");
+                    } else {
+                        /* 可能是 typedef 名（如 Point p;） */
+                        int ti;
+                        for (ti = 0; ti < typedef_count; ti++) {
+                            if (typedef_table[ti].member_count > 0 && ts == typedef_table[ti].size) {
+                                pvar_add(decl->name, typedef_table[ti].name);
+                                break;
+                            }
+                        }
+                    }
+                }
             }
+            last_struct_tag = NULL;
             if (match(p, TOK_EQ))
                 decl->expr = parse_expr(p);
             expect(p, TOK_SEMI);
@@ -637,10 +859,47 @@ AstNode *parse_program(Parser *p) {
     AstNode **tail = &head;
 
     while (peek(p).kind != TOK_EOF) {
+        /* 处理 typedef */
+        if (peek(p).kind == TOK_TYPEDEF) {
+            consume(p);
+            /* 解析 typedef 定义 */
+            while (peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
+                   peek(p).kind == TOK_RESTRICT || peek(p).kind == TOK__ATTRIBUTE__) {
+                if (peek(p).kind == TOK__ATTRIBUTE__) {
+                    consume(p); expect(p, TOK_LPAREN); expect(p, TOK_LPAREN);
+                    int d = 2; while (d > 0 && peek(p).kind != TOK_EOF) {
+                        if (peek(p).kind == TOK_LPAREN) d++;
+                        if (peek(p).kind == TOK_RPAREN) d--;
+                        consume(p); }
+                } else { consume(p); }
+            }
+            int tsz = parse_type_specifier(p);
+            (void)tsz;
+            const char *tname = parse_declarator(p);
+            if (tname && *tname && typedef_count < MAX_TYPEDEFS) {
+                TypedefEntry *te = &typedef_table[typedef_count];
+                te->name = tname;
+                te->size = tsz;
+                te->type_kind = (last_struct_member_count > 0) ? 1 : 0;
+                te->struct_idx = -1;
+                /* 对 struct typedef 保存成员信息 */
+                if (last_struct_member_count > 0) {
+                    te->member_count = last_struct_member_count;
+                    int mi;
+                    for (mi = 0; mi < last_struct_member_count && mi < MAX_MEMBERS; mi++)
+                        te->members[mi] = last_struct_members[mi];
+                }
+                typedef_count++;
+            }
+            expect(p, TOK_SEMI);
+            continue;
+        }
+
+        /* 跳过存储类和限定符 */
         while (peek(p).kind == TOK_STATIC || peek(p).kind == TOK_EXTERN ||
                peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
                peek(p).kind == TOK_RESTRICT || peek(p).kind == TOK_INLINE ||
-               peek(p).kind == TOK__ATTRIBUTE__ || peek(p).kind == TOK_TYPEDEF) {
+               peek(p).kind == TOK__ATTRIBUTE__) {
             if (peek(p).kind == TOK__ATTRIBUTE__) {
                 consume(p);
                 expect(p, TOK_LPAREN);
@@ -660,6 +919,12 @@ AstNode *parse_program(Parser *p) {
         if (typesize < 0) {
             error_at(p, "expected type specifier");
             break;
+        }
+
+        /* 单独的 struct { ... }; 或 struct tag { ... }; 定义（无变量名） */
+        if (peek(p).kind == TOK_SEMI) {
+            consume(p);
+            continue;
         }
 
         const char *save_pos = p->lexer->pos;

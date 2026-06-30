@@ -207,9 +207,7 @@ void cgen_expr(AstNode *node) {
     }
 
     case AST_ASSIGN: {
-        /* node->left = 变量, node->right = 值表达式 */
-        cgen_expr(node->right);  /* 求值右值 → eax */
-        /* 查找左值变量 */
+        cgen_expr(node->right);
         if (node->left && node->left->kind == AST_VAR) {
             const char *vname = node->left->name;
             int i;
@@ -219,8 +217,20 @@ void cgen_expr(AstNode *node) {
                     break;
                 }
             }
+        } else if (node->left && node->left->kind == AST_MEMBER) {
+            /* s.member = expr */
+            int moff = node->left->ival;
+            if (node->left->op == TOK_DOT && node->left->left->kind == AST_VAR) {
+                const char *vname = node->left->left->name;
+                int i;
+                for (i = 0; i < local_count; i++) {
+                    if (strcmp(locals[i].name, vname) == 0) {
+                        store_eax_to_rbp(locals[i].offset + moff);
+                        break;
+                    }
+                }
+            }
         }
-        /* 值已在 eax 中，赋值表达式的结果就是该值 */
         break;
     }
 
@@ -259,6 +269,46 @@ void cgen_expr(AstNode *node) {
         }
 
         emit_call(node->name);
+        break;
+    }
+
+    case AST_MEMBER: {
+        /* s.member 或 p->member */
+        int member_off = node->ival;
+        if (node->op == TOK_DOT) {
+            /* s.member：加载结构的基地址 + 成员偏移 */
+            if (node->left && node->left->kind == AST_VAR) {
+                int i;
+                for (i = 0; i < local_count; i++) {
+                    if (strcmp(locals[i].name, node->left->name) == 0) {
+                        int total_off = locals[i].offset + member_off;
+                        if (total_off >= -128 && total_off < 0) {
+                            load_eax_from_rbp(total_off);
+                        }
+                        break;
+                    }
+                }
+            } else {
+                cgen_expr(node->left);
+                if (member_off != 0) {
+                    push_rax();
+                    mov_eax_imm(member_off);
+                    pop_rcx();
+                    binop_add();
+                }
+            }
+        } else {
+            /* p->member：解引用指针 + 偏移 */
+            cgen_expr(node->left);
+            if (member_off != 0) {
+                push_rax();
+                mov_eax_imm(member_off);
+                pop_rcx();
+                binop_add();
+            }
+            /* 从地址加载值：mov eax, [eax] */
+            e1(0x8B); e1(0x00);  /* mov eax, [eax] */
+        }
         break;
     }
 

@@ -143,6 +143,8 @@ typedef enum {
     AST_CALL,          /* 函数调用 */
     AST_EXPR_STMT,     /* 表达式语句 */
     AST_NULL_STMT,     /* 空语句 */
+    AST_MEMBER,        /* s.member 或 p->member */
+    AST_STRUCT_DEF,    /* struct 定义（顶层） */
 } AstKind;
 
 /* ─── AST 节点 ─── */
@@ -168,6 +170,8 @@ typedef struct AstNode {
     struct AstNode *stmts;
     /* AST_CALL */
     struct AstNode *args;
+    /* AST_MEMBER: member_name = 成员名字 */
+    const char *member_name;
     /* AST_UNARY / AST_BINOP 操作符标记 */
     int op;
     /* 修饰标记 */
@@ -235,11 +239,56 @@ typedef struct {
     const char *name;
     int offset;  /* 距 rbp 的偏移（负值） */
     int size;    /* 类型大小 */
+    const char *struct_tag;  /* 如果是 struct 类型，存标签名 */
 } LocalVar;
 
 extern LocalVar locals[MAX_LOCALS];
 extern int local_count;
 extern int frame_size;
+
+/* ─── 类型系统（Phase 3） ─── */
+
+#define MAX_MEMBERS 64
+#define MAX_TAGS 128
+#define MAX_TYPEDEFS 256
+
+/* 结构体成员描述 */
+typedef struct {
+    const char *name;
+    int offset;
+    int size;
+} Member;
+
+/* 结构体类型（通过 struct 标签或匿名定义） */
+typedef struct {
+    const char *tag;        /* NULL 表示匿名 */
+    Member members[MAX_MEMBERS];
+    int member_count;
+    int total_size;
+} StructType;
+
+/* struct/union/enum 标签表 */
+extern StructType tag_table[MAX_TAGS];
+extern int tag_count;
+
+/* typedef 名字表 */
+typedef struct {
+    const char *name;
+    int size;        /* 类型大小（字节） */
+    int type_kind;   /* 0=基本, 1=struct */
+    int struct_idx;
+    Member members[MAX_MEMBERS];
+    int member_count;
+} TypedefEntry;
+
+extern TypedefEntry typedef_table[MAX_TYPEDEFS];
+extern int typedef_count;
+
+/* 判断名字是否为 typedef */
+int is_typedef_name(const char *name);
+
+/* 查找 struct 标签 */
+StructType *find_struct_tag(const char *tag);
 
 /* ─── 代码生成 ─── */
 

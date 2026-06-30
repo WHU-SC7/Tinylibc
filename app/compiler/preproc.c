@@ -164,9 +164,14 @@ static void pp_buf(const char *s, int len, OutBuf *out, int depth) {
     int i = 0;
     while (i < len) {
         if (s[i] == '/' && i+1 < len && (s[i+1]=='/'||s[i+1]=='*')) {
-            out_putc(out, s[i++]); out_putc(out, s[i++]);
-            if (s[i-1] == '/') { while (i < len && s[i] != '\n') out_putc(out, s[i++]); }
-            else { while (i < len) { out_putc(out, s[i]); if (s[i]=='*'&&i+1<len&&s[i+1]=='/') { i++; out_putc(out, s[i++]); break; } i++; } }
+            if (s[i+1] == '/') {
+                i += 2; while (i < len && s[i] != '\n') i++;
+            } else {
+                i += 2; while (i < len) {
+                    if (s[i]=='*' && i+1 < len && s[i+1]=='/') { i += 2; break; }
+                    i++;
+                }
+            }
             continue;
         }
         if (s[i] == '#' && (i == 0 || s[i-1] == '\n')) {

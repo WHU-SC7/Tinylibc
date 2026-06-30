@@ -936,6 +936,7 @@ static AstNode *parse_statement(Parser *p) {
     case TOK_BREAK:   return parse_break(p);
     case TOK_CONTINUE: return parse_continue(p);
     case TOK__ASM__: {
+        
         consume(p);
         if (peek(p).kind == TOK_VOLATILE) consume(p);
         expect(p, TOK_LPAREN);
@@ -996,9 +997,19 @@ static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
     AstNode *head = NULL;
     if (is_variadic) *is_variadic = 0;
     AstNode **tail = &head;
-    if (peek(p).kind == TOK_VOID)
+    if (peek(p).kind == TOK_VOID) {
+        /* 仅 void 单独作为参数时（无名称）才消耗 */
+        Lexer save_lx = *p->lexer;
+        Token save_tok = p->tok;
         consume(p);
-    else if (peek(p).kind == TOK_RPAREN) {
+        if (peek(p).kind == TOK_RPAREN || peek(p).kind == TOK_COMMA) {
+            /* void 单独 — 正确 */
+        } else {
+            /* void name — 需要回退，当作正常类型处理 */
+            *p->lexer = save_lx;
+            p->tok = save_tok;
+        }
+    } else if (peek(p).kind == TOK_RPAREN) {
         /* 空 */
     } else {
         while (peek(p).kind != TOK_RPAREN && peek(p).kind != TOK_EOF) {

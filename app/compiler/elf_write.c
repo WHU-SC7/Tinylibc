@@ -140,26 +140,48 @@ int elf_write_object(const char *path) {
     /* ── .symtab data ── */
     while (p < sym_ofs) b[p++] = 0;
 
+    /* 统计局部符号数（含 null 条目），ELF 规范要求局部在前、全局在后 */
+    int local_cnt = 1;  /* null 条目 */
+    for (i = 0; i < sym_count; i++)
+        if (!syms[i].is_global) local_cnt++;
+    int first_global = local_cnt;  /* sh_info 值 */
+
     /* null symbol */
     for (ei = 0; ei < 24; ei++) b[p++] = 0;
 
+    /* 先写局部符号 */
     for (i = 0; i < sym_count; i++) {
+        if (syms[i].is_global) continue;
         int idx = sym_str_idx[i];
-        b[p++] = (idx) & 0xFF;
-        b[p++] = (idx >> 8) & 0xFF;
-        b[p++] = (idx >> 16) & 0xFF;
-        b[p++] = (idx >> 24) & 0xFF;
-        b[p++] = ELF64_ST_INFO(syms[i].is_global ? 1 : 0,
-                                syms[i].is_func ? 2 : 0);
-        b[p++] = 0;  /* st_other */
-        b[p++] = syms[i].is_func ? 1 : 0;  /* st_shndx */
+        b[p++] = (idx) & 0xFF; b[p++] = (idx >> 8) & 0xFF;
+        b[p++] = (idx >> 16) & 0xFF; b[p++] = (idx >> 24) & 0xFF;
+        b[p++] = ELF64_ST_INFO(0, syms[i].is_func ? 2 : 0);
         b[p++] = 0;
-        /* st_value (8) */
+        /* 定义（size>0）驻留 .text = 1，外部引用为 SHN_UNDEF = 0 */
+        b[p++] = (syms[i].is_func && syms[i].size > 0) ? 1 : 0; b[p++] = 0;
         int v = syms[i].offset;
         b[p++] = (v) & 0xFF; b[p++] = (v >> 8) & 0xFF;
         b[p++] = (v >> 16) & 0xFF; b[p++] = (v >> 24) & 0xFF;
         b[p++] = 0; b[p++] = 0; b[p++] = 0; b[p++] = 0;
-        /* st_size (8) */
+        int sz = syms[i].size;
+        b[p++] = (sz) & 0xFF; b[p++] = (sz >> 8) & 0xFF;
+        b[p++] = (sz >> 16) & 0xFF; b[p++] = (sz >> 24) & 0xFF;
+        b[p++] = 0; b[p++] = 0; b[p++] = 0; b[p++] = 0;
+    }
+
+    /* 再写全局符号 */
+    for (i = 0; i < sym_count; i++) {
+        if (!syms[i].is_global) continue;
+        int idx = sym_str_idx[i];
+        b[p++] = (idx) & 0xFF; b[p++] = (idx >> 8) & 0xFF;
+        b[p++] = (idx >> 16) & 0xFF; b[p++] = (idx >> 24) & 0xFF;
+        b[p++] = ELF64_ST_INFO(1, syms[i].is_func ? 2 : 0);
+        b[p++] = 0;
+        b[p++] = (syms[i].is_func && syms[i].size > 0) ? 1 : 0; b[p++] = 0;
+        int v = syms[i].offset;
+        b[p++] = (v) & 0xFF; b[p++] = (v >> 8) & 0xFF;
+        b[p++] = (v >> 16) & 0xFF; b[p++] = (v >> 24) & 0xFF;
+        b[p++] = 0; b[p++] = 0; b[p++] = 0; b[p++] = 0;
         int sz = syms[i].size;
         b[p++] = (sz) & 0xFF; b[p++] = (sz >> 8) & 0xFF;
         b[p++] = (sz >> 16) & 0xFF; b[p++] = (sz >> 24) & 0xFF;
@@ -211,7 +233,7 @@ int elf_write_object(const char *path) {
         b[off+32]=(sym_sz)&0xFF; b[off+33]=(sym_sz>>8)&0xFF;
         b[off+34]=(sym_sz>>16)&0xFF; b[off+35]=(sym_sz>>24)&0xFF;
         b[off+40]=4;    /* sh_link = .strtab */
-        b[off+44]=1;
+        b[off+44]=first_global;
         b[off+48]=8;
         b[off+56]=24;
     }

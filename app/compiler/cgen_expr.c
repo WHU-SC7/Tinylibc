@@ -82,8 +82,8 @@ static void emit_call(const char *name) {
         s->name = name;
         s->offset = 0;
         s->size = 0;
-        s->is_global = 0;
-        s->is_func = 0;
+        s->is_global = 1;   /* GLOBAL 以便链接器解析 */
+        s->is_func = 1;
         s->sym_idx = -1;
     }
 

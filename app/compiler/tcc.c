@@ -156,7 +156,6 @@ int main(int argc, char *argv[]) {
     }
 
     if (debug) {
-        /* 预处理后进行词法分析 */
         Lexer dlx;
         lexer_init(&dlx, pp_src, pp_len);
         while (1) {

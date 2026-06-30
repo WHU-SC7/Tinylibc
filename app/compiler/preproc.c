@@ -113,6 +113,11 @@ static void do_directive(const char *s, int ls, int le, OutBuf *out, int depth) 
         int ms = p; while (p < le && pp_id(s[p])) p++;
         if (p == ms) return;
         int mnl = p - ms;
+        int cp = p; while (cp < le && pp_ws(s[cp])) cp++;
+        if (cp < le && s[cp] == '(') {
+            /* 函数式宏 — 不展开，略过 */
+            return;
+        }
         while (p < le && pp_ws(s[p])) p++;
         int vs = p; int vl = le - p;
         while (vl > 0 && pp_ws(s[vs+vl-1])) vl--;
@@ -166,7 +171,10 @@ static void pp_buf(const char *s, int len, OutBuf *out, int depth) {
         }
         if (s[i] == '#' && (i == 0 || s[i-1] == '\n')) {
             int ls = i; int le = i;
-            while (le < len && s[le] != '\n') le++;
+            while (le < len && s[le] != '\n') {
+                if (s[le] == '\\' && le+1 < len && s[le+1] == '\n') le += 2;
+                else le++;
+            }
             do_directive(s, ls, le, out, depth);
             i = le; if (i < len && s[i] == '\n') i++;
             continue;

@@ -778,8 +778,10 @@ int parse_type_specifier(Parser *p) {
 
 /* ─── 声明符 ─── */
 
-static const char *parse_declarator(Parser *p) {
-    while (match(p, TOK_STAR)) ;
+static const char *parse_declarator(Parser *p, int *ptr_level) {
+    int ptrs = 0;
+    while (match(p, TOK_STAR)) ptrs++;
+    if (ptr_level) *ptr_level = ptrs;
     /* 跳过星号后的限定符（如 *const name） */
     while (peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
            peek(p).kind == TOK_RESTRICT) consume(p);
@@ -882,7 +884,7 @@ static AstNode *parse_for_statement(Parser *p) {
         int ts = parse_type_specifier(p);
         if (ts >= 0) {
             n->loop_init = new_ast(p, AST_VAR_DECL);
-            n->loop_init->name = parse_declarator(p);
+            n->loop_init->name = parse_declarator(p, NULL);
             if (match(p, TOK_EQ))
                 n->loop_init->expr = parse_expr(p);
         } else {
@@ -969,8 +971,9 @@ AstNode *parse_compound_statement(Parser *p) {
             }
             if (ts >= 0) {
                 AstNode *decl = new_ast(p, AST_VAR_DECL);
-                decl->ival = ts;
-                decl->name = parse_declarator(p);
+                int dv_ptrs = 0;
+                decl->name = parse_declarator(p, &dv_ptrs);
+                decl->ival = dv_ptrs > 0 ? 8 : (ts > 0 ? ts : 4);
                 if (decl->name && *decl->name) {
                     if (last_struct_tag || last_struct_member_count > 0) {
                         pvar_add(decl->name, last_struct_tag ? last_struct_tag : "");
@@ -998,7 +1001,7 @@ AstNode *parse_compound_statement(Parser *p) {
                 /* 跳过逗号分隔的声明：int a, b, c; */
                 while (peek(p).kind == TOK_COMMA) {
                     consume(p);
-                    parse_declarator(p);
+                    parse_declarator(p, NULL);
                     while (peek(p).kind == TOK_LBRACKET) {
                         int d = 1; consume(p);
                         while (d > 0 && peek(p).kind != TOK_EOF) {
@@ -1160,7 +1163,8 @@ static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
         while (peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
                peek(p).kind == TOK_RESTRICT) consume(p);
         int psz = parse_type_specifier(p);
-        const char *pname = parse_declarator(p);
+        int ptr_level = 0;
+        const char *pname = parse_declarator(p, &ptr_level);
         /* 跳过参数上的 [...] 后缀 */
         while (peek(p).kind == TOK_LBRACKET) {
             int d = 1; consume(p);
@@ -1174,7 +1178,8 @@ static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
         if (pname && *pname) {
             AstNode *pd = new_ast(p, AST_VAR_DECL);
             pd->name = pname;
-            pd->ival = psz > 0 ? psz : 4;
+            /* 指针类型统一为 8 字节，避免与相邻局部变量偏移重叠 */
+            pd->ival = (ptr_level > 0) ? 8 : (psz > 0 ? psz : 4);
             *tail = pd;
             tail = &pd->next;
         }
@@ -1214,7 +1219,7 @@ AstNode *parse_program(Parser *p) {
             }
             int tsz = parse_type_specifier(p);
             (void)tsz;
-            const char *tname = parse_declarator(p);
+            const char *tname = parse_declarator(p, NULL);
             if (tname && *tname && typedef_count < MAX_TYPEDEFS) {
                 TypedefEntry *te = &typedef_table[typedef_count];
                 te->name = tname;
@@ -1342,7 +1347,7 @@ AstNode *parse_program(Parser *p) {
 
         if (is_func) {
             /* 先解析声明符 + 参数列表，看是定义还是声明 */
-            const char *fname = parse_declarator(p);
+            const char *fname = parse_declarator(p, NULL);
             int is_variadic_f = 0;
             AstNode *fparams = parse_parameter_list(p, &is_variadic_f);
             if (peek(p).kind == TOK_SEMI) {

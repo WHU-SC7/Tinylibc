@@ -159,7 +159,7 @@ int main(int argc, char *argv[]) {
         int pp_i;
         int line_n = 1;
         __printf("--- PREPROCESSED OUTPUT (first 300 lines) ---\n");
-        for (pp_i = 0; pp_i < pp_len && line_n <= 3000; pp_i++) {
+        for (pp_i = 0; pp_i < pp_len && line_n <= 300; pp_i++) {
             if (pp_src[pp_i] == '\n') {
                 __printf("\n"); line_n++;
             } else {

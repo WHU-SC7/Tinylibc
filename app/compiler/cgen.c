@@ -70,9 +70,33 @@ static int fixup_count;
 static int break_target_label;    /* break 跳转目标，-1 表示无目标 */
 static int continue_target_label; /* continue 跳转目标，-1 表示无目标 */
 
+static int new_label(void);
+
+/* ─── goto 标签名 → label_id 映射 ─── */
+#define MAX_GOTO_LABELS 256
+static const char *goto_label_names[MAX_GOTO_LABELS];
+static int goto_label_ids[MAX_GOTO_LABELS];
+static int goto_label_count;
+
+static int get_or_create_goto_label(const char *name) {
+    int i;
+    for (i = 0; i < goto_label_count; i++)
+        if (strcmp(goto_label_names[i], name) == 0)
+            return goto_label_ids[i];
+    if (goto_label_count < MAX_GOTO_LABELS) {
+        int id = new_label();
+        goto_label_names[goto_label_count] = name;
+        goto_label_ids[goto_label_count] = id;
+        goto_label_count++;
+        return id;
+    }
+    return -1;
+}
+
 static void reset_labels(void) {
     label_count = 0;
     fixup_count = 0;
+    goto_label_count = 0;
 }
 
 static int new_label(void) {
@@ -445,6 +469,18 @@ static void cgen_stmt(AstNode *stmt) {
     case AST_CONTINUE:
         if (continue_target_label >= 0)
             emit_jmp(continue_target_label);
+        break;
+    case AST_GOTO:
+        if (stmt->name) {
+            int lid = get_or_create_goto_label(stmt->name);
+            if (lid >= 0) emit_jmp(lid);
+        }
+        break;
+    case AST_LABEL:
+        if (stmt->name) {
+            int lid = get_or_create_goto_label(stmt->name);
+            if (lid >= 0) set_label(lid);
+        }
         break;
     case AST_VAR_DECL:
         /* 初始化 */

@@ -70,6 +70,28 @@ static char *pp_read(const char *path, int *out_len) {
 static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had_nl);
 static void pp_buf(const char *s, int len, OutBuf *out, int depth);
 
+/* 从路径中提取目录部分（不包括文件名和末尾斜杠） */
+static void dirname_of(const char *full, int full_len, char *buf, int bufsz) {
+    int last_slash = -1;
+    int i;
+    for (i = 0; i < full_len && full[i]; i++) {
+        if (full[i] == '/') last_slash = i;
+    }
+    if (last_slash < 0) {
+        buf[0] = '.';
+        buf[1] = '/';
+        buf[2] = '\0';
+    } else {
+        int j;
+        for (j = 0; j < last_slash && j < bufsz - 1; j++)
+            buf[j] = full[j];
+        buf[j] = '\0';
+    }
+}
+
+static int inc_path_added_source_dir = 0;
+static char current_source_dir[1024];
+
 static void do_include(const char *s, int *pos, int len, OutBuf *out, int depth) {
     while (*pos < len && s[*pos] != '"' && s[*pos] != '<') (*pos)++;
     if (*pos >= len) return;
@@ -79,6 +101,20 @@ static void do_include(const char *s, int *pos, int len, OutBuf *out, int depth)
     if (flen <= 0) return;
     char fn[512]; int fi;
     for (fi = 0; fi < flen && fi < 500; fi++) { fn[fi] = s[fs + fi]; } fn[fi] = '\0';
+
+    /* 对 #include "..."，先搜索源文件所在目录 */
+    if (delim == '"' && current_source_dir[0] && !inc_path_added_source_dir) {
+        /* 把源文件目录添加到 inc_paths 开头 */
+        int pi;
+        for (pi = inc_path_count; pi > 0; pi--)
+            inc_paths[pi] = inc_paths[pi - 1];
+        const char *dp = (const char *)tlibc_malloc(strlen(current_source_dir) + 1);
+        { int ci; for (ci = 0; current_source_dir[ci]; ci++) ((char*)dp)[ci] = current_source_dir[ci]; ((char*)dp)[ci] = '\0'; }
+        inc_paths[0] = dp;
+        inc_path_count++;
+        inc_path_added_source_dir = 1;
+    }
+
     int fnd = 0;
     int pi; for (pi = 0; pi < inc_path_count; pi++) {
         char pth[1024]; int pj;
@@ -89,7 +125,7 @@ static void do_include(const char *s, int *pos, int len, OutBuf *out, int depth)
         int l2; char *fc = pp_read(pth, &l2);
         if (fc) { pp_buf(fc, l2, out, depth + 1); tlibc_free(fc); fnd = 1; break; }
     }
-    if (!fnd) __printf("tcc: cannot find '%s'\n", fn);
+    if (!fnd) { __printf("tcc: cannot find '%s'\n", fn); }
 }
 
 static void get_name(const char *s, int start, int end, char *buf, int bufsz) {
@@ -200,6 +236,38 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                 continue;
             }
         }
+
+        /* ─── 对象宏展开 ─── */
+        if ((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z') || s[i] == '_') {
+            int start = i;
+            while (i < len && ((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z') ||
+                   s[i] == '_' || (s[i] >= '0' && s[i] <= '9'))) i++;
+            int id_len = i - start;
+            int mi;
+            int expanded = 0;
+            for (mi = 0; mi < macro_count; mi++) {
+                const char *mn = macros[mi].name;
+                int j;
+                for (j = 0; j < id_len; j++) if (mn[j] != s[start + j]) goto nomatch;
+                if (mn[j] != '\0') goto nomatch;
+                /* 找到了！输出宏值 */
+                if (macros[mi].value && macros[mi].value_len > 0) {
+                    /* 递归展开宏值中的宏（防止无限循环：depth > 64 时停止） */
+                    if (depth < 64) {
+                        pp_buf_impl(macros[mi].value, macros[mi].value_len, out, depth + 1, NULL);
+                    } else {
+                        int vi; for (vi = 0; vi < macros[mi].value_len; vi++) out_putc(out, macros[mi].value[vi]);
+                    }
+                }
+                expanded = 1;
+                break;
+                nomatch:;
+            }
+            if (expanded) continue;
+            /* 不是宏，原样输出 */
+            { int idx; for (idx = start; idx < i; idx++) out_putc(out, s[idx]); }
+            continue;
+        }
         if (s[i] != 13) { out_putc(out, s[i]); } i++;
     }
 }
@@ -234,7 +302,12 @@ static char *strip_all_comments(const char *src, int len, int *out_len) {
 }
 
 char *preprocess(const char *src, int len, const char *fname, int *out_len) {
-    (void)fname;
+    /* 从 fname 提取源文件目录 */
+    current_source_dir[0] = '\0';
+    inc_path_added_source_dir = 0;
+    if (fname) {
+        { int fnl = 0; while (fname[fnl]) fnl++; dirname_of(fname, fnl, current_source_dir, 1024); }
+    }
     int clean_len;
     char *clean = strip_all_comments(src, len, &clean_len);
     OutBuf out = { 0, 0, 0 };

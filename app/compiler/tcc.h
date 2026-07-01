@@ -18,7 +18,7 @@
 
 /* ─── Arena 分配器 ─── */
 
-#define ARENA_SIZE (1024 * 1024)
+#define ARENA_SIZE (4 * 1024 * 1024)
 
 typedef struct {
     char *ptr;
@@ -152,6 +152,8 @@ typedef enum {
     AST_STRING,        /* 字符串常量 */
     AST_STRUCT_DEF,    /* struct 定义（顶层） */
     AST_ASM,           /* __asm__ 内联汇编 */
+    AST_GOTO,          /* goto label */
+    AST_LABEL,         /* label: 定义 */
 } AstKind;
 
 /* ─── AST 节点 ─── */
@@ -194,8 +196,8 @@ typedef struct AstNode {
 
 /* ─── 符号表（代码生成输出用） ─── */
 
-#define MAX_SYMS 4096
-#define MAX_RELS 8192
+#define MAX_SYMS 8192
+#define MAX_RELS 16384
 
 typedef struct {
     const char *name;
@@ -280,9 +282,9 @@ extern int func_nparams;
 
 /* ─── 类型系统（Phase 3） ─── */
 
-#define MAX_MEMBERS 64
-#define MAX_TAGS 128
-#define MAX_TYPEDEFS 256
+#define MAX_MEMBERS 128
+#define MAX_TAGS 512
+#define MAX_TYPEDEFS 1024
 
 /* 结构体成员描述 */
 typedef struct {

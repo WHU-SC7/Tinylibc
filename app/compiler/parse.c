@@ -591,9 +591,24 @@ static AstNode *parse_assign(Parser *p) {
     return left;
 }
 
-/* 顶层表达式 */
+/* 顶层表达式（不含逗号运算符） */
 static AstNode *parse_expr(Parser *p) {
     return parse_assign(p);
+}
+
+/* 逗号表达式（最低优先级）：expr1, expr2 */
+static AstNode *parse_expr_comma(Parser *p) {
+    AstNode *n = parse_assign(p);
+    while (peek(p).kind == TOK_COMMA) {
+        consume(p);
+        AstNode *right = parse_assign(p);
+        AstNode *cn = new_ast(p, AST_BINOP);
+        cn->op = TOK_COMMA;
+        cn->left = n;
+        cn->right = right;
+        n = cn;
+    }
+    return n;
 }
 
 /* ─── 解析 struct 体（返回成员列表和总大小） ─── */
@@ -661,6 +676,33 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
                 if (d) consume(p);
             }
             if (peek(p).kind == TOK_RBRACKET) consume(p);
+        }
+
+        /* 逗号分隔的成员：int a, b, c; */
+        while (peek(p).kind == TOK_COMMA) {
+            consume(p);
+            while (peek(p).kind == TOK_STAR) { consume(p); }
+            Token cid = peek(p);
+            if (cid.kind == TOK_IDENT) {
+                consume(p);
+                if (count < MAX_MEMBERS) {
+                    members[count].name = arena_strdup(p->arena, cid.start, cid.len);
+                    members[count].offset = offset;
+                    members[count].size = sz;
+                    count++;
+                    offset += sz;
+                }
+            }
+            /* 跳过数组 [...] 在逗号后成员上 */
+            if (peek(p).kind == TOK_LBRACKET) { consume(p);
+                int d2 = 1;
+                while (d2 > 0 && peek(p).kind != TOK_EOF) {
+                    if (peek(p).kind == TOK_LBRACKET) d2++;
+                    if (peek(p).kind == TOK_RBRACKET) d2--;
+                    if (d2) consume(p);
+                }
+                if (peek(p).kind == TOK_RBRACKET) consume(p);
+            }
         }
 
         expect(p, TOK_SEMI);
@@ -757,6 +799,20 @@ int parse_type_specifier(Parser *p) {
         StructType st;
         int sz = parse_struct_type(p, &st);
         return sz > 0 ? sz : 4;
+    }
+    case TOK_ENUM: {
+        consume(p);
+        if (peek(p).kind == TOK_IDENT) consume(p);  /* 可选的标签名 */
+        if (peek(p).kind == TOK_LBRACE) {
+            int depth = 1; consume(p);
+            while (depth > 0 && peek(p).kind != TOK_EOF) {
+                if (peek(p).kind == TOK_LBRACE) depth++;
+                if (peek(p).kind == TOK_RBRACE) depth--;
+                if (depth) consume(p);
+            }
+            if (peek(p).kind == TOK_RBRACE) consume(p);
+        }
+        return 4;  /* enum 大小 = int */
     }
     case TOK_VOID:     consume(p); return 0;
     case TOK_UNSIGNED:
@@ -899,10 +955,10 @@ static AstNode *parse_for_statement(Parser *p) {
             n->loop_init = new_ast(p, AST_VAR_DECL);
             n->loop_init->name = parse_declarator(p, NULL);
             if (match(p, TOK_EQ))
-                n->loop_init->expr = parse_expr(p);
+                n->loop_init->expr = parse_expr_comma(p);
         } else {
             n->loop_init = new_ast(p, AST_EXPR_STMT);
-            n->loop_init->expr = parse_expr(p);
+            n->loop_init->expr = parse_expr_comma(p);
         }
     }
     expect(p, TOK_SEMI);
@@ -914,7 +970,7 @@ static AstNode *parse_for_statement(Parser *p) {
 
     /* step */
     if (peek(p).kind != TOK_RPAREN) {
-        n->loop_step = parse_expr(p);
+        n->loop_step = parse_expr_comma(p);
     }
     expect(p, TOK_RPAREN);
 
@@ -974,6 +1030,26 @@ AstNode *parse_compound_statement(Parser *p) {
 
     while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
         const char *prev_pos = p->lexer->pos;  /* 防死循环 */
+        /* 检测标签：IDENT : */
+        if (peek(p).kind == TOK_IDENT) {
+            const char *lsp = p->lexer->pos;
+            int lsl = p->lexer->line, lsc = p->lexer->col;
+            Token lst = p->tok;
+            Token lid = consume(p);
+            if (peek(p).kind == TOK_COLON) {
+                consume(p); /* 冒号 */
+                AstNode *label_node = new_ast(p, AST_LABEL);
+                label_node->name = arena_strdup(p->arena, lid.start, lid.len);
+                *tail = label_node;
+                tail = &label_node->next;
+                continue;
+            }
+            /* 恢复，不是标签 */
+            p->lexer->pos = lsp;
+            p->lexer->line = lsl;
+            p->lexer->col = lsc;
+            p->tok = lst;
+        }
         /* 处理 register __asm__ 变量声明 */
         if (peek(p).kind == TOK_REGISTER) {
             skip_register_asm(p);
@@ -1069,6 +1145,33 @@ AstNode *parse_compound_statement(Parser *p) {
                         decl->expr = parse_expr(p);
                     }
                 }
+                /* 逗号分隔的多变量声明：int a = 1, b = 2; */
+                while (peek(p).kind == TOK_COMMA) {
+                    consume(p);
+                    parse_declarator(p, NULL);
+                    while (peek(p).kind == TOK_LBRACKET) {
+                        int d = 1; consume(p);
+                        while (d > 0 && peek(p).kind != TOK_EOF) {
+                            if (peek(p).kind == TOK_LBRACKET) d++;
+                            if (peek(p).kind == TOK_RBRACKET) d--;
+                            if (d) consume(p);
+                        }
+                        if (peek(p).kind == TOK_RBRACKET) consume(p);
+                    }
+                    if (match(p, TOK_EQ)) {
+                        if (peek(p).kind == TOK_LBRACE) {
+                            int d = 1; consume(p);
+                            while (d > 0 && peek(p).kind != TOK_EOF) {
+                                if (peek(p).kind == TOK_LBRACE) d++;
+                                if (peek(p).kind == TOK_RBRACE) d--;
+                                if (d) consume(p);
+                            }
+                            if (peek(p).kind == TOK_RBRACE) consume(p);
+                        } else {
+                            parse_expr(p);
+                        }
+                    }
+                }
                 expect(p, TOK_SEMI);
                 *tail = decl;
                 tail = &decl->next;
@@ -1114,6 +1217,17 @@ static AstNode *parse_statement(Parser *p) {
         return new_ast(p, AST_DEFAULT);
     case TOK_BREAK:   return parse_break(p);
     case TOK_CONTINUE: return parse_continue(p);
+    case TOK_GOTO:
+        consume(p);
+        if (peek(p).kind == TOK_IDENT) {
+            Token lt = consume(p);
+            AstNode *n = new_ast(p, AST_GOTO);
+            n->name = arena_strdup(p->arena, lt.start, lt.len);
+            expect(p, TOK_SEMI);
+            return n;
+        }
+        error_at(p, "expected label name");
+        return NULL;
     case TOK__ASM__: {
         
         consume(p);
@@ -1158,7 +1272,7 @@ static AstNode *parse_statement(Parser *p) {
     case TOK_LBRACE:  return parse_compound_statement(p);
     case TOK_SEMI:    consume(p); return new_ast(p, AST_NULL_STMT);
     default: {
-        AstNode *expr = parse_expr(p);
+        AstNode *expr = parse_expr_comma(p);
         expect(p, TOK_SEMI);
         if (!expr) return NULL;
         AstNode *n = new_ast(p, AST_EXPR_STMT);

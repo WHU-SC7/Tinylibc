@@ -21,8 +21,7 @@ int __sigaction(int signum, const struct sigaction *act,
 void rt_sig_restore(void)
 {
     __asm__ volatile (
-        "mov $15, %%rax\n\t"    /* __NR_rt_sigreturn = 15 */
-        "syscall\n\t"
+        "mov $15, %%rax\n\tsyscall\n\t"
         :
         :
         : "rax", "memory"

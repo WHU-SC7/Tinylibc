@@ -11,6 +11,7 @@
  *
  * 已知模板：
  *   "syscall"                     → 0F 05
+ *   "mov $N, %%rax ... syscall"   → 48 C7 C0 imm32 + 0F 05
  *   "lock xaddq %0, %1"          → F0 48 0F C1 /r
  *   "lock xaddl %0, %1"          → F0 0F C1 /r
  *   "lock cmpxchgq %2, %1"       → F0 48 0F B1 /r
@@ -99,6 +100,26 @@ void cgen_asm(AstNode *node) {
 
     if (str_contains(t, "ecall")) {
         /* RISC-V ecall — 不常见，占位 */
+        return;
+    }
+
+    /* mov $N, %%rax + syscall — 用于 rt_sigreturn 等直接 syscall */
+    if (str_contains(t, "mov $") && str_contains(t, "%%rax") && str_contains(t, "syscall")) {
+        /* 解析 $ 后的立即数 */
+        const char *p = t;
+        while (*p && *p != '$') p++;
+        int imm = 0;
+        if (*p == '$') {
+            p++;
+            while (*p >= '0' && *p <= '9') { imm = imm * 10 + (*p - '0'); p++; }
+        }
+        /* mov $imm, %rax → 48 C7 C0 imm32_le (sign-extended) */
+        e1(0x48);          /* REX.W */
+        e1(0xC7);          /* MOV r/m64, imm32 */
+        e1(0xC0);          /* ModRM: mod=11, reg=0 (/0), r/m=0 (rax) */
+        e4(imm);
+        /* syscall → 0F 05 */
+        e1(0x0F); e1(0x05);
         return;
     }
 

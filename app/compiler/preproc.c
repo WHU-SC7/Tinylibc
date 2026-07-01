@@ -19,6 +19,18 @@ typedef struct {
 static FuncMacro func_macros[MAX_FUNC_MACROS];
 static int func_macro_count;
 
+/* 宏展开栈：防止无限递归 */
+#define MAX_EXPAND_STACK 64
+static const char *expand_stack[MAX_EXPAND_STACK];
+static int expand_stack_depth;
+
+static int is_expanding(const char *name) {
+    int i;
+    for (i = 0; i < expand_stack_depth; i++)
+        if (expand_stack[i] == name) return 1;
+    return 0;
+}
+
 static const char *inc_paths[MAX_INCLUDE_PATHS];
 static int inc_path_count;
 
@@ -149,6 +161,29 @@ static void get_name(const char *s, int start, int end, char *buf, int bufsz) {
     buf[n] = '\0';
 }
 
+/* 从替换文本中移除 \ 续行符（含后续空白） */
+static char *strip_continuations(const char *src, int len, int *out_len) {
+    OutBuf b = { 0, 0, 0 };
+    int i = 0;
+    while (i < len) {
+        if (src[i] == '\\' && i + 1 < len) {
+            int ni = i + 1;
+            /* 跳过 \n 或 \r\n */
+            if (src[ni] == '\r') ni++;
+            if (ni < len && src[ni] == '\n') {
+                i = ni + 1;
+                /* 跳过续行开头的空白 */
+                while (i < len && (src[i] == ' ' || src[i] == '\t')) i++;
+                continue;
+            }
+        }
+        out_putc(&b, src[i]); i++;
+    }
+    out_putc(&b, '\0');
+    *out_len = b.len - 1;
+    return b.data;
+}
+
 static void do_directive(const char *s, int ls, int le, OutBuf *out, int depth) {
     int p = ls; while (p < le && pp_ws(s[p])) p++;
     if (p >= le || s[p] != '#') return;
@@ -192,26 +227,30 @@ static void do_directive(const char *s, int ls, int le, OutBuf *out, int depth) 
             }
             if (cp < le && s[cp] == ')') cp++;
             while (cp < le && pp_ws(s[cp])) cp++;
-            int vs = cp; int vl = le - cp;
-            while (vl > 0 && pp_ws(s[vs+vl-1])) vl--;
-            if (vl > 0) {
-                char *rp = (char *)tlibc_malloc(vl + 1);
-                { int ci; for (ci = 0; ci < vl; ci++) rp[ci] = s[vs + ci]; rp[vl] = '\0'; }
-                fm->replacement = rp; fm->repl_len = vl;
-            } else { fm->replacement = 0; fm->repl_len = 0; }
+            {
+                int vs = cp; int vl = le - cp;
+                while (vl > 0 && pp_ws(s[vs+vl-1])) vl--;
+                if (vl > 0) {
+                    int cl; char *rp = strip_continuations(s + vs, vl, &cl);
+                    fm->replacement = rp; fm->repl_len = cl;
+                } else { fm->replacement = 0; fm->repl_len = 0; }
+            }
             func_macro_count++;
             return;
         }
         while (p < le && pp_ws(s[p])) p++;
-        int vs = p; int vl = le - p;
-        while (vl > 0 && pp_ws(s[vs+vl-1])) vl--;
-        { int ci; for (ci = 0; ci < vl - 1; ci++) {
-            if (s[vs+ci] == '/' && s[vs+ci+1] == '*') { vl = ci; break; }
-            if (s[vs+ci] == '/' && s[vs+ci+1] == '/') { vl = ci; break; }
-        } }
-        char *n = (char *)tlibc_malloc(mnl+1); get_name(s, ms, ms+mnl, n, mnl+1);
-        char *v = 0; if (vl > 0) { v = (char *)tlibc_malloc(vl+1); int ci; for (ci=0;ci<vl;ci++) v[ci]=s[vs+ci]; v[vl]='\0'; }
-        add_macro(n, v, vl); return;
+        {
+            int vs = p; int vl = le - p;
+            while (vl > 0 && pp_ws(s[vs+vl-1])) vl--;
+            { int ci; for (ci = 0; ci < vl - 1; ci++) {
+                if (s[vs+ci] == '/' && s[vs+ci+1] == '*') { vl = ci; break; }
+                if (s[vs+ci] == '/' && s[vs+ci+1] == '/') { vl = ci; break; }
+            } }
+            char *n = (char *)tlibc_malloc(mnl+1); get_name(s, ms, ms+mnl, n, mnl+1);
+            char *v = 0; int rvl = 0;
+            if (vl > 0) { v = strip_continuations(s + vs, vl, &rvl); }
+            add_macro(n, v, rvl); return;
+        }
     }
 
     if (dl == 6 && s[dw]=='i'&&s[dw+1]=='f'&&s[dw+2]=='d') {
@@ -284,6 +323,19 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
             }
         }
 
+        /* ─── 跳过字符串字面量（宏不展开其中的标识符） ─── */
+        if (s[i] == '"') {
+            out_putc(out, '"'); i++;
+            while (i < len && s[i] != '"') {
+                if (s[i] == '\\' && i + 1 < len) {
+                    out_putc(out, s[i]); i++;
+                }
+                out_putc(out, s[i]); i++;
+            }
+            if (i < len) { out_putc(out, '"'); i++; }
+            continue;
+        }
+
         /* ─── 对象宏展开 ─── */
         if ((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z') || s[i] == '_') {
             int start = i;
@@ -321,6 +373,12 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                     for (j = 0; j < id_len; j++) if (fn[j] != s[start + j]) goto fnm;
                     if (fn[j] != '\0') goto fnm;
                     id_match = 1;
+                    /* 防无限递归：正在展开的宏不再展开，原样输出标识符 */
+                    if (is_expanding(fn)) {
+                        int idx; for (idx = start; idx < i; idx++) out_putc(out, s[idx]);
+                        id_match = 1;
+                        break;
+                    }
                     /* 解析参数：从 i+1 开始，匹配 ) */
                     int ap = i + 1;
                     int adepth = 1;
@@ -340,6 +398,12 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                             if (ap < len) ap++;
                             continue;
                         }
+                        if (s[ap] == '\'') {
+                            ap++; if (ap < len && s[ap] == '\\') ap++;
+                            if (ap < len) ap++;
+                            if (ap < len && s[ap] == '\'') ap++;
+                            continue;
+                        }
                         if (s[ap] == '(') adepth++;
                         if (s[ap] == ')') { adepth--; if (adepth == 0) break; }
                         if (adepth == 1 && s[ap] == ',' && arg_count < MAX_MACRO_PARAMS-1) {
@@ -353,13 +417,78 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                     if (adepth == 0) {
                         arg_lens[arg_count] = (s + ap) - arg_starts[arg_count];
                         arg_count++;
-                        /* 输出替换文本（直接输出，不递归调用 pp_buf_impl） */
+                        /* 去除每个参数的收尾空白（标准 C 语义） */
+                        {
+                            int ai;
+                            for (ai = 0; ai < arg_count; ai++) {
+                                while (arg_lens[ai] > 0 && pp_ws(arg_starts[ai][0]))
+                                    { arg_starts[ai]++; arg_lens[ai]--; }
+                                while (arg_lens[ai] > 0 && pp_ws(arg_starts[ai][arg_lens[ai]-1]))
+                                    arg_lens[ai]--;
+                            }
+                        }
+                        /* 预展开所有参数（标准 C 语义：参数先展开再替换） */
+                        char *expanded_args[MAX_MACRO_PARAMS];
+                        int expanded_lens[MAX_MACRO_PARAMS];
+                        {
+                            int ai;
+                            for (ai = 0; ai < arg_count; ai++) {
+                                OutBuf ab = { 0, 0, 0 };
+                                /* 递归展开参数中的宏（depth+1，且当前宏已入栈保护） */
+                                expand_stack[expand_stack_depth++] = fn;
+                                pp_buf_impl(arg_starts[ai], arg_lens[ai], &ab, depth + 1, NULL);
+                                expand_stack_depth--;
+                                if (ab.data && ab.len > 0) {
+                                    expanded_args[ai] = ab.data;
+                                    expanded_lens[ai] = ab.len;
+                                } else {
+                                    expanded_args[ai] = 0;
+                                    expanded_lens[ai] = 0;
+                                }
+                            }
+                        }
+                        /* 构建临时展开缓冲区 */
+                        OutBuf temp = { 0, 0, 0 };
                         if (func_macros[fmi].replacement) {
                             const char *rp = func_macros[fmi].replacement;
                             int rl = func_macros[fmi].repl_len;
                             int ri = 0;
                             while (ri < rl) {
-                                /* 检查 __VA_ARGS__ */
+                                /* , ## __VA_ARGS__：GCC 扩展，VA_ARGS 为空时删除逗号 */
+                                if (func_macros[fmi].is_variadic && rp[ri] == ',') {
+                                    int nri = ri + 1;
+                                    while (nri < rl && (rp[nri] == ' ' || rp[nri] == '\t')) nri++;
+                                    if (nri + 1 < rl && rp[nri] == '#' && rp[nri+1] == '#') {
+                                        nri += 2;
+                                        while (nri < rl && (rp[nri] == ' ' || rp[nri] == '\t')) nri++;
+                                        if (nri + 10 < rl &&
+                                            rp[nri]=='_' && rp[nri+1]=='_' && rp[nri+2]=='V' &&
+                                            rp[nri+3]=='A' && rp[nri+4]=='_' && rp[nri+5]=='A' &&
+                                            rp[nri+6]=='R' && rp[nri+7]=='G' && rp[nri+8]=='S' &&
+                                            rp[nri+9]=='_' && rp[nri+10]=='_') {
+                                            int va_empty = (arg_count == func_macros[fmi].param_count);
+                                            if (va_empty) {
+                                                ri = nri + 11; continue;
+                                            } else {
+                                                out_putc(&temp, ',');
+                                                int vi;
+                                                for (vi = func_macros[fmi].param_count; vi < arg_count; vi++) {
+                                                    if (vi > func_macros[fmi].param_count) out_putc(&temp, ',');
+                                                    if (expanded_args[vi]) {
+                                                        int vj; for (vj = 0; vj < expanded_lens[vi]; vj++)
+                                                            out_putc(&temp, expanded_args[vi][vj]);
+                                                    } else {
+                                                        int vj; for (vj = 0; vj < arg_lens[vi]; vj++)
+                                                            out_putc(&temp, (arg_starts[vi])[vj]);
+                                                    }
+                                                }
+                                                ri = nri + 11; continue;
+                                            }
+                                        }
+                                    }
+                                    out_putc(&temp, rp[ri]); ri++; continue;
+                                }
+                                /* __VA_ARGS__（独立出现，非 ,## 后） */
                                 if (func_macros[fmi].is_variadic && ri + 10 < rl &&
                                     rp[ri]=='_' && rp[ri+1]=='_' && rp[ri+2]=='V' &&
                                     rp[ri+3]=='A' && rp[ri+4]=='_' && rp[ri+5]=='A' &&
@@ -368,23 +497,21 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                     ri += 11;
                                     int vi;
                                     for (vi = func_macros[fmi].param_count; vi < arg_count; vi++) {
-                                        if (vi > func_macros[fmi].param_count) out_putc(out, ',');
-                                        int vj; for (vj = 0; vj < arg_lens[vi]; vj++)
-                                            out_putc(out, (arg_starts[vi])[vj]);
+                                        if (vi > func_macros[fmi].param_count) out_putc(&temp, ',');
+                                        if (expanded_args[vi]) {
+                                            int vj; for (vj = 0; vj < expanded_lens[vi]; vj++)
+                                                out_putc(&temp, expanded_args[vi][vj]);
+                                        } else {
+                                            int vj; for (vj = 0; vj < arg_lens[vi]; vj++)
+                                                out_putc(&temp, (arg_starts[vi])[vj]);
+                                        }
                                     }
                                     continue;
                                 }
                                 /* 跳过 #（stringify 运算符—TODO：支持真正字符串化） */
                                 if (rp[ri]=='#' && ri+1 < rl && rp[ri+1] != '#') { ri++; continue; }
-                                /* 跳过 ## 及其前面的逗号（GCC 扩展：,##__VA_ARGS__） */
-                                if (ri+1 < rl && rp[ri]=='#' && rp[ri+1]=='#') {
-                                    /* 检查 out 末尾是否有逗号，有则移除 */
-                                    while (out->len > 0 && (out->data[out->len-1] == ' ' || out->data[out->len-1] == '\t'))
-                                        out->len--;
-                                    if (out->len > 0 && out->data[out->len-1] == ',')
-                                        out->len--;
-                                    ri += 2; continue;
-                                }
+                                /* ## 通用粘贴（非 ,## 的情况）：跳过 ## */
+                                if (ri+1 < rl && rp[ri]=='#' && rp[ri+1]=='#') { ri += 2; continue; }
                                 /* 检查参数名 */
                                 if (pp_id(rp[ri])) {
                                     int rs = ri;
@@ -396,18 +523,42 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                         int jj;
                                         for (jj = 0; jj < ri - rs; jj++) if (pn[jj] != rp[rs+jj]) goto pnm;
                                         if (pn[jj] != '\0') goto pnm;
-                                        int vj; for (vj = 0; vj < arg_lens[pi]; vj++)
-                                            out_putc(out, (arg_starts[pi])[vj]);
+                                        if (expanded_args[pi]) {
+                                            int vj; for (vj = 0; vj < expanded_lens[pi]; vj++)
+                                                out_putc(&temp, expanded_args[pi][vj]);
+                                        } else {
+                                            int vj; for (vj = 0; vj < arg_lens[pi]; vj++)
+                                                out_putc(&temp, (arg_starts[pi])[vj]);
+                                        }
                                         matched = 1;
                                         break;
                                         pnm:;
                                     }
                                     if (!matched) {
-                                        int idx; for (idx = rs; idx < ri; idx++) out_putc(out, rp[idx]);
+                                        int idx; for (idx = rs; idx < ri; idx++) out_putc(&temp, rp[idx]);
                                     }
                                     continue;
                                 }
-                                out_putc(out, rp[ri]); ri++;
+                                out_putc(&temp, rp[ri]); ri++;
+                            }
+                        }
+                        /* 递归展开临时缓冲区中的宏 */
+                        if (temp.data && temp.len > 0) {
+                            /* 注意：temp 是替换后的结果，此时不需要再标记宏为展开中
+                             * （标记已在参数展开阶段完成）。直接递归展开 */
+                            if (depth < 64) {
+                                pp_buf_impl(temp.data, temp.len, out, depth + 1, NULL);
+                            } else {
+                                /* 深度超限：直接输出，不进一步展开 */
+                                int ti; for (ti = 0; ti < temp.len; ti++) out_putc(out, temp.data[ti]);
+                            }
+                            tlibc_free(temp.data);
+                        }
+                        /* 清理预展开的参数缓冲区 */
+                        {
+                            int ai;
+                            for (ai = 0; ai < arg_count; ai++) {
+                                if (expanded_args[ai]) tlibc_free(expanded_args[ai]);
                             }
                         }
                         i = ap + 1; /* 跳过 ) */
@@ -430,6 +581,24 @@ static char *strip_all_comments(const char *src, int len, int *out_len) {
     OutBuf out = { 0, 0, 0 };
     int i = 0;
     while (i < len) {
+        /* 跳过字符串字面量 */
+        if (src[i] == '"') {
+            out_putc(&out, src[i]); i++;
+            while (i < len && src[i] != '"') {
+                if (src[i] == '\\' && i+1 < len) { out_putc(&out, src[i]); i++; }
+                out_putc(&out, src[i]); i++;
+            }
+            if (i < len) { out_putc(&out, src[i]); i++; }
+            continue;
+        }
+        /* 跳过字符字面量 */
+        if (src[i] == '\'') {
+            out_putc(&out, src[i]); i++;
+            if (i < len && src[i] == '\\') { out_putc(&out, src[i]); i++; }
+            if (i < len) { out_putc(&out, src[i]); i++; }
+            if (i < len && src[i] == '\'') { out_putc(&out, src[i]); i++; }
+            continue;
+        }
         if (src[i] == '/' && i+1 < len) {
             if (src[i+1] == '/') {
                 i += 2; while (i < len && src[i] != '\n') { out_putc(&out, ' '); i++; }
@@ -459,7 +628,17 @@ char *preprocess(const char *src, int len, const char *fname, int *out_len) {
     inc_path_added_source_dir = 0;
     if (fname) {
         { int fnl = 0; while (fname[fnl]) fnl++; dirname_of(fname, fnl, current_source_dir, 1024); }
+        /* __FILE__ 替换为带引号的文件名字符串 */
+        int fnl = 0; while (fname[fnl]) fnl++;
+        char *fv = (char *)tlibc_malloc(fnl + 3);
+        fv[0] = '"'; { int fi; for (fi = 0; fi < fnl; fi++) fv[fi+1] = fname[fi]; }
+        fv[fnl+1] = '"'; fv[fnl+2] = '\0';
+        add_macro("__FILE__", fv, fnl + 2);
+    } else {
+        add_macro("__FILE__", "\"<unknown>\"", 11);
     }
+    /* __LINE__ 设为 0（行号跟踪复杂，先填占位值，不影响编译） */
+    add_macro("__LINE__", "0", 1);
     int clean_len;
     char *clean = strip_all_comments(src, len, &clean_len);
     OutBuf out = { 0, 0, 0 };

@@ -152,6 +152,7 @@ void parser_init(Parser *p, Lexer *lx, Arena *a) {
 
 /* 前向声明 */
 static AstNode *parse_expr(Parser *p);
+static AstNode *parse_expr_comma(Parser *p);
 static AstNode *parse_statement(Parser *p);
 static AstNode *parse_compound_statement(Parser *p);
 int parse_type_specifier(Parser *p);
@@ -217,14 +218,57 @@ static AstNode *parse_primary(Parser *p) {
 
     if (t.kind == TOK_STRING) {
         consume(p);
+        /* 收集所有相邻的字符串字面量（C 标准字符串连接） */
+        Token str_tokens[64];
+        int str_count = 0;
+        str_tokens[str_count++] = t;
+        while (peek(p).kind == TOK_STRING && str_count < 64)
+            str_tokens[str_count++] = consume(p);
+        /* 计算总长度 */
+        int total = 0;
+        int si;
+        for (si = 0; si < str_count; si++) {
+            const char *src = str_tokens[si].start + 1;
+            int src_len = str_tokens[si].len - 2;
+            int i = 0;
+            while (i < src_len) {
+                if (src[i] == '\\' && i + 1 < src_len) { i += 2; total++; }
+                else { i++; total++; }
+            }
+        }
+        char *dst = arena_alloc(p->arena, total + 1);
+        int pos = 0;
+        for (si = 0; si < str_count; si++) {
+            const char *src = str_tokens[si].start + 1;
+            int src_len = str_tokens[si].len - 2;
+            int i = 0;
+            while (i < src_len) {
+                char c = src[i++];
+                if (c == '\\' && i < src_len) {
+                    char esc = src[i++];
+                    switch (esc) {
+                    case 'n': dst[pos++] = '\n'; break;
+                    case 't': dst[pos++] = '\t'; break;
+                    case 'r': dst[pos++] = '\r'; break;
+                    case '0': dst[pos++] = '\0'; break;
+                    case '\\': dst[pos++] = '\\'; break;
+                    case '"': dst[pos++] = '"'; break;
+                    default:   dst[pos++] = esc;  break;
+                    }
+                } else {
+                    dst[pos++] = c;
+                }
+            }
+        }
+        dst[pos] = '\0';
         AstNode *n = new_ast(p, AST_STRING);
-        n->str_val = decode_string_literal(p, &t);
+        n->str_val = dst;
         return n;
     }
 
     if (t.kind == TOK_LPAREN) {
         consume(p);
-        AstNode *n = parse_expr(p);
+        AstNode *n = parse_expr_comma(p);
         expect(p, TOK_RPAREN);
         return n;
     }
@@ -938,7 +982,7 @@ static AstNode *parse_return_statement(Parser *p) {
     consume(p);
     AstNode *n = new_ast(p, AST_RETURN);
     if (peek(p).kind != TOK_SEMI)
-        n->expr = parse_expr(p);
+        n->expr = parse_expr_comma(p);
     expect(p, TOK_SEMI);
     return n;
 }

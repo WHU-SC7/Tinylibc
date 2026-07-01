@@ -118,6 +118,27 @@ int elf_write_object(const char *path) {
     while (p < text_ofs) b[p++] = 0;
     for (ei = 0; ei < code_size; ei++) b[p++] = code_buf[ei];
 
+    /* ── 在写重定位前，重映射符号索引 ── */
+    /* ELF 要求局部符号在前、全局在后，但代码中 relocation 的 r_info
+     * 使用 syms[] 序号+1 计算。此处为每个符号分配实际 ELF 索引并修复。 */
+    {
+        int elf_idx = 1;
+        for (i = 0; i < sym_count; i++)
+            if (!syms[i].is_global) syms[i].sym_idx = elf_idx++;
+        for (i = 0; i < sym_count; i++)
+            if (syms[i].is_global) syms[i].sym_idx = elf_idx++;
+        for (int ri = 0; ri < rel_count; ri++) {
+            unsigned long r_sym = ELF64_R_SYM(rels[ri].r_info);
+            if (r_sym > 0) {
+                int cgen_idx = (int)(r_sym - 1);
+                if (cgen_idx >= 0 && cgen_idx < sym_count) {
+                    unsigned int r_type = ELF64_R_TYPE(rels[ri].r_info);
+                    rels[ri].r_info = ELF64_R_INFO(syms[cgen_idx].sym_idx, r_type);
+                }
+            }
+        }
+    }
+
     /* ── .rela.text data ── */
     while (p < rela_ofs) b[p++] = 0;
     for (ei = 0; ei < rel_count; ei++) {
@@ -158,7 +179,7 @@ int elf_write_object(const char *path) {
         b[p++] = ELF64_ST_INFO(0, syms[i].is_func ? 2 : 0);
         b[p++] = 0;
         /* 定义（size>0）驻留 .text = 1，外部引用为 SHN_UNDEF = 0 */
-        b[p++] = (syms[i].is_func && syms[i].size > 0) ? 1 : 0; b[p++] = 0;
+        b[p++] = (syms[i].size > 0) ? 1 : 0; b[p++] = 0;
         int v = syms[i].offset;
         b[p++] = (v) & 0xFF; b[p++] = (v >> 8) & 0xFF;
         b[p++] = (v >> 16) & 0xFF; b[p++] = (v >> 24) & 0xFF;
@@ -177,7 +198,7 @@ int elf_write_object(const char *path) {
         b[p++] = (idx >> 16) & 0xFF; b[p++] = (idx >> 24) & 0xFF;
         b[p++] = ELF64_ST_INFO(1, syms[i].is_func ? 2 : 0);
         b[p++] = 0;
-        b[p++] = (syms[i].is_func && syms[i].size > 0) ? 1 : 0; b[p++] = 0;
+        b[p++] = (syms[i].size > 0) ? 1 : 0; b[p++] = 0;
         int v = syms[i].offset;
         b[p++] = (v) & 0xFF; b[p++] = (v >> 8) & 0xFF;
         b[p++] = (v >> 16) & 0xFF; b[p++] = (v >> 24) & 0xFF;

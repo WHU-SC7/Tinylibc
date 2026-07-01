@@ -35,6 +35,14 @@ int rel_count;
 char strtab[65536];
 int strtab_len;
 
+/* ─── 字符串字面量池 ─── */
+
+unsigned char strpool_buf[STRPOOL_SIZE];
+int strpool_size;
+
+StrInfo str_infos[MAX_STRINGS];
+int str_info_count;
+
 /* ─── 局部变量表 ─── */
 
 LocalVar locals[MAX_LOCALS];
@@ -438,6 +446,8 @@ void cgen_init(void) {
     func_nparams = 0;
     strtab_len = 0;
     strtab[strtab_len++] = '\0';
+    strpool_size = 0;
+    str_info_count = 0;
 }
 
 void cgen_program(AstNode *prog) {
@@ -446,5 +456,22 @@ void cgen_program(AstNode *prog) {
     for (AstNode *func = prog->body; func; func = func->next) {
         if (func->kind == AST_FUNC_DEF)
             cgen_func_def(func);
+    }
+
+    /* 在全部函数代码之后追加字符串池 */
+    if (strpool_size > 0) {
+        int string_start = code_size;
+
+        int i;
+        for (i = 0; i < strpool_size; i++)
+            code_buf[code_size++] = strpool_buf[i];
+
+        /* 修正每个字符串符号的 offset（符号已在 cgen_expr 中创建） */
+        for (i = 0; i < str_info_count; i++) {
+            int si = str_infos[i].sym_index;
+            if (si >= 0 && si < sym_count) {
+                syms[si].offset = string_start + str_infos[i].pool_offset;
+            }
+        }
     }
 }

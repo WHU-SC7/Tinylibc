@@ -146,6 +146,7 @@ typedef enum {
     AST_EXPR_STMT,     /* 表达式语句 */
     AST_NULL_STMT,     /* 空语句 */
     AST_MEMBER,        /* s.member 或 p->member */
+    AST_STRING,        /* 字符串常量 */
     AST_STRUCT_DEF,    /* struct 定义（顶层） */
     AST_ASM,           /* __asm__ 内联汇编 */
 } AstKind;
@@ -175,6 +176,8 @@ typedef struct AstNode {
     struct AstNode *args;
     /* AST_MEMBER: member_name = 成员名字 */
     const char *member_name;
+    /* AST_STRING: str_val = 解码后的字符串内容 */
+    const char *str_val;
     /* AST_ASM: asm_template = 汇编模板字符串 */
     const char *asm_template;
     /* AST_FUNC_DEF: params = 参数声明链表 */
@@ -211,6 +214,22 @@ extern int rel_count;
 
 extern char strtab[65536];
 extern int strtab_len;
+
+/* 字符串字面量池 — cgen_expr 追加，cgen_program 结尾刷入 code_buf */
+#define STRPOOL_SIZE 65536
+extern unsigned char strpool_buf[STRPOOL_SIZE];
+extern int strpool_size;
+
+/* 字符串字面量引用记录（供 cgen_program 结尾修复偏移） */
+#define MAX_STRINGS 1024
+typedef struct {
+    int pool_offset;       /* 在 strpool_buf 中的偏移 */
+    int len;               /* 字符串长度（含 null） */
+    int sym_index;         /* syms[] 中对应符号条目的索引 */
+    char name[16];         /* 符号名如 ".LC0" */
+} StrInfo;
+extern StrInfo str_infos[MAX_STRINGS];
+extern int str_info_count;
 
 /* ─── 词法分析器 ─── */
 

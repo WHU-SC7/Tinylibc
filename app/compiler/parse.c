@@ -166,6 +166,34 @@ static AstNode *new_ast(Parser *p, AstKind kind) {
     return n;
 }
 
+/* 解码字符串字面量（去除引号，处理转义序列） */
+static const char *decode_string_literal(Parser *p, const Token *t) {
+    const char *src = t->start + 1;      /* 跳过开头的 " */
+    int src_len = t->len - 2;            /* 去掉两端引号 */
+    char *dst = arena_alloc(p->arena, src_len + 1);
+    char *out = dst;
+    int i = 0;
+    while (i < src_len) {
+        char c = src[i++];
+        if (c == '\\' && i < src_len) {
+            char esc = src[i++];
+            switch (esc) {
+            case 'n': *out++ = '\n'; break;
+            case 't': *out++ = '\t'; break;
+            case 'r': *out++ = '\r'; break;
+            case '0': *out++ = '\0'; break;
+            case '\\': *out++ = '\\'; break;
+            case '"': *out++ = '"'; break;
+            default:   *out++ = esc;  break;
+            }
+        } else {
+            *out++ = c;
+        }
+    }
+    *out = '\0';
+    return dst;
+}
+
 /* 基本表达式: identifier, number, string, (expr) */
 static AstNode *parse_primary(Parser *p) {
     Token t = peek(p);
@@ -198,8 +226,8 @@ static AstNode *parse_primary(Parser *p) {
 
     if (t.kind == TOK_STRING) {
         consume(p);
-        AstNode *n = new_ast(p, AST_CONSTANT);
-        n->ival = 0;  /* 字符串常量地址暂不支持 */
+        AstNode *n = new_ast(p, AST_STRING);
+        n->str_val = decode_string_literal(p, &t);
         return n;
     }
 

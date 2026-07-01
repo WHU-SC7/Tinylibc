@@ -110,6 +110,71 @@ void cgen_expr(AstNode *node) {
         mov_eax_imm(node->ival);
         break;
 
+    case AST_STRING: {
+        /* 字符串字面量：追加到 strpool，创建 LOCAL 符号，发射 lea + 重定位 */
+        const char *str = node->str_val;
+        if (!str) { mov_eax_imm(0); break; }
+        int len = 0;
+        while (str[len]) len++;
+        len++;  /* include null terminator */
+
+        /* 追加到字符串池 */
+        int pool_off = strpool_size;
+        int i;
+        for (i = 0; i < len; i++)
+            strpool_buf[strpool_size++] = str[i];
+
+        /* 在 syms[] 中创建 LOCAL 符号（必须早于后续 GLOBAL 创建，确保 ELF 顺序正确） */
+        /* 先构建符号名 .LC%d */
+        char name_buf[16];
+        int si = str_info_count;
+        char *np = name_buf;
+        *np++ = '.'; *np++ = 'L'; *np++ = 'C';
+        if (si >= 10000) *np++ = '0' + (si / 10000) % 10;
+        if (si >= 1000)  *np++ = '0' + (si / 1000) % 10;
+        if (si >= 100)   *np++ = '0' + (si / 100) % 10;
+        if (si >= 10)    *np++ = '0' + (si / 10) % 10;
+        *np++ = '0' + si % 10;
+        *np = '\0';
+
+        /* 用 str_infos 持久化符号名（name 数组在 elf_write 前一直有效） */
+        int ni;
+        for (ni = 0; ni < 16; ni++)
+            str_infos[si].name[ni] = name_buf[ni];
+
+        /* 添加 LOCAL 符号（offset 暂设为 0，后续在 cgen_program 中修正） */
+        int sym_idx = -1;
+        if (sym_count < MAX_SYMS) {
+            sym_idx = sym_count++;
+            syms[sym_idx].name = str_infos[si].name;
+            syms[sym_idx].offset = 0;
+            syms[sym_idx].size = len;
+            syms[sym_idx].is_global = 0;
+            syms[sym_idx].is_func = 0;
+            syms[sym_idx].sym_idx = -1;
+        }
+
+        /* 记录字符串信息供后续偏移修正 */
+        str_infos[si].pool_offset = pool_off;
+        str_infos[si].len = len;
+        str_infos[si].sym_index = sym_idx;
+        str_info_count++;
+
+        /* 发射 lea rax, [rip + disp32] */
+        e1(0x48); e1(0x8D); e1(0x05);   /* lea rax, [rip + disp32] */
+        int reloc_off = code_size;
+        e4(0);                            /* disp32 占位（链接器覆盖） */
+
+        /* 记录重定位（直接用 sym_idx + 1，此时 syms[] 顺序与 ELF 索引一致） */
+        if (rel_count < MAX_RELS && sym_idx >= 0) {
+            Elf64_Rela *r = &rels[rel_count++];
+            r->r_offset = reloc_off;
+            r->r_info = ELF64_R_INFO(sym_idx + 1, R_X86_64_PC32);
+            r->r_addend = -4;
+        }
+        break;
+    }
+
     case AST_VAR: {
         /* 查找局部变量偏移 */
         int i;

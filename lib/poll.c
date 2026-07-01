@@ -61,6 +61,12 @@ int epoll_create1(int flags)
     return __epoll_create1(flags);
 }
 
+int epoll_create(int size)
+{
+    (void)size;
+    return epoll_create1(0);
+}
+
 int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event)
 {
     return __epoll_ctl(epfd, op, fd, event);

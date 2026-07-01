@@ -162,6 +162,64 @@ static void skip_comment(Lexer *lx, int style) {
     }
 }
 
+/* ─── 简易字符串转 double ─── */
+/* 由 read_number 调用，解析已确认格式正确的浮点字符串 */
+
+static double simple_atof(const char *s, int len) {
+    double result = 0.0;
+    int i = 0;
+    int exp_sign = 1;
+    int exponent = 0;
+    int has_exponent = 0;
+
+    /* 整数部分 */
+    while (i < len && is_digit(s[i])) {
+        result = result * 10.0 + (double)(s[i] - '0');
+        i++;
+    }
+
+    /* 小数部分 */
+    if (i < len && s[i] == '.') {
+        i++;
+        double frac = 0.0;
+        double divisor = 1.0;
+        while (i < len && is_digit(s[i])) {
+            frac = frac * 10.0 + (double)(s[i] - '0');
+            divisor *= 10.0;
+            i++;
+        }
+        result += frac / divisor;
+    }
+
+    /* 指数部分 */
+    if (i < len && (s[i] == 'e' || s[i] == 'E')) {
+        i++;
+        if (i < len && s[i] == '-') {
+            exp_sign = -1; i++;
+        } else if (i < len && s[i] == '+') {
+            i++;
+        }
+        while (i < len && is_digit(s[i])) {
+            exponent = exponent * 10 + (s[i] - '0');
+            i++;
+        }
+        has_exponent = 1;
+    }
+
+    if (has_exponent) {
+        int exp = exponent * exp_sign;
+        double pow10 = 1.0;
+        if (exp > 0) {
+            while (exp-- > 0) pow10 *= 10.0;
+        } else {
+            while (exp++ < 0) pow10 /= 10.0;
+        }
+        result *= pow10;
+    }
+
+    return result;
+}
+
 /* ─── 读数字 ─── */
 
 static Token read_number(Lexer *lx) {
@@ -169,16 +227,24 @@ static Token read_number(Lexer *lx) {
     t.start = lx->pos - 1;  /* pos 已在 lexer_next 中前移过首位 */
     t.kind = TOK_NUMBER;
     t.ival = 0;
+    t.dval = 0.0;
+    t.is_float = 0;
     t.sval = NULL;
 
     int base = 10;
+    int maybe_float = 0;
+
     if (t.start[0] == '0' && (input_peek(lx) == 'x' || input_peek(lx) == 'X')) {
         base = 16;
         advance(lx);
+    } else if (t.start[0] == '.') {
+        /* 以 . 开头的浮点数：.5 .25 等 */
+        maybe_float = 1;
     } else if (is_digit(t.start[0])) {
         t.ival = t.start[0] - '0';  /* 把已消费的首位算回来 */
     }
 
+    /* 读取整数位（十进制/十六进制） */
     while (1) {
         int c = input_peek(lx);
         if (is_digit(c)) {
@@ -192,10 +258,45 @@ static Token read_number(Lexer *lx) {
         }
     }
 
-    /* 跳过 u/l/ll 后缀 */
-    while (input_peek(lx) == 'u' || input_peek(lx) == 'U' ||
-           input_peek(lx) == 'l' || input_peek(lx) == 'L')
-        advance(lx);
+    /* 小数部分（仅十进制，且下一位必须是数字：3.f → 3 . f，不是 float） */
+    if (base == 10 && input_peek(lx) == '.') {
+        int next = (lx->pos + 1 < lx->end) ? (unsigned char)*(lx->pos + 1) : -1;
+        if (is_digit(next)) {
+            maybe_float = 1;
+            advance(lx);  /* 跳过 . */
+            while (is_digit(input_peek(lx)))
+                advance(lx);
+        }
+    }
+
+    /* 指数部分（仅十进制，下一个必须是数字或符号） */
+    if (base == 10 && (input_peek(lx) == 'e' || input_peek(lx) == 'E')) {
+        int next = (lx->pos + 1 < lx->end) ? (unsigned char)*(lx->pos + 1) : -1;
+        if (is_digit(next) || next == '+' || next == '-') {
+            maybe_float = 1;
+            advance(lx);  /* 跳过 e/E */
+            if (input_peek(lx) == '+' || input_peek(lx) == '-')
+                advance(lx);
+            while (is_digit(input_peek(lx)))
+                advance(lx);
+        }
+    }
+
+    /* 计算浮点值 */
+    if (maybe_float) {
+        t.is_float = 1;
+        t.dval = simple_atof(t.start, lx->pos - t.start);
+    }
+
+    /* 跳过后缀：u/l/ll（整数）和 f/F（浮点） */
+    while (1) {
+        int c = input_peek(lx);
+        if (c == 'u' || c == 'U' || c == 'l' || c == 'L' ||
+            c == 'f' || c == 'F')
+            advance(lx);
+        else
+            break;
+    }
 
     t.len = lx->pos - t.start;
     return t;
@@ -355,7 +456,9 @@ Token lexer_next(Lexer *lx) {
     case '^': t.kind = TOK_CARET; break;
 
     case '.':
-        if (input_peek(lx) == '.') { advance(lx);
+        if (is_digit(input_peek(lx))) {
+            t = read_number(lx);
+        } else if (input_peek(lx) == '.') { advance(lx);
             if (input_peek(lx) == '.') { advance(lx); t.kind = TOK_ELLIPSIS; }
             else t.kind = TOK_ERROR;
         } else t.kind = TOK_DOT;

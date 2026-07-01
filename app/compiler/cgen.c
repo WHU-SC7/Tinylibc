@@ -241,6 +241,7 @@ static void collect_locals(AstNode *node) {
             locals[local_count].offset = -frame_size;
             locals[local_count].size = sz;
             locals[local_count].struct_tag = NULL;
+            locals[local_count].is_float = node->is_float;
             local_count++;
         }
         break;
@@ -322,9 +323,17 @@ static void cgen_for(AstNode *stmt) {
             if (stmt->loop_init->expr) {
                 cgen_expr(stmt->loop_init->expr);
                 int i;
-                for (i = 0; i < local_count; i++)
-                    if (strcmp(locals[i].name, stmt->loop_init->name) == 0)
-                        { emit1(0x89); emit1(0x45); emit1(locals[i].offset & 0xFF); break; }
+                for (i = 0; i < local_count; i++) {
+                    if (strcmp(locals[i].name, stmt->loop_init->name) == 0) {
+                        if (locals[i].is_float) {
+                            emit1(0xF2); emit1(0x0F); emit1(0x11);
+                            emit1(0x45); emit1(locals[i].offset & 0xFF);
+                        } else {
+                            emit1(0x89); emit1(0x45); emit1(locals[i].offset & 0xFF);
+                        }
+                        break;
+                    }
+                }
             }
         } else {
             cgen_expr(stmt->loop_init->expr);
@@ -443,6 +452,26 @@ static void cgen_stmt(AstNode *stmt) {
     case AST_FOR:
         cgen_for(stmt);
         break;
+    case AST_DO_WHILE: {
+        int start_label = new_label();
+        int end_label = new_label();
+        int saved_break = break_target_label;
+        int saved_continue = continue_target_label;
+        break_target_label = end_label;
+        continue_target_label = start_label;
+        set_label(start_label);
+        cgen_stmt(stmt->loop_body);
+        /* 条件为真（非零）时继续循环 */
+        if (stmt->loop_cond) {
+            cgen_expr(stmt->loop_cond);
+            emit1(0x85); emit1(0xC0);  /* test eax, eax */
+            emit_jcc(0x85, start_label);  /* jne start_label */
+        }
+        set_label(end_label);
+        break_target_label = saved_break;
+        continue_target_label = saved_continue;
+        break;
+    }
     case AST_BLOCK:
         cgen_block(stmt);
         break;
@@ -487,9 +516,18 @@ static void cgen_stmt(AstNode *stmt) {
         if (stmt->expr) {
             cgen_expr(stmt->expr);
             int i;
-            for (i = 0; i < local_count; i++)
-                if (strcmp(locals[i].name, stmt->name) == 0)
-                    { emit1(0x89); emit1(0x45); emit1(locals[i].offset & 0xFF); break; }
+            for (i = 0; i < local_count; i++) {
+                if (strcmp(locals[i].name, stmt->name) == 0) {
+                    if (locals[i].is_float) {
+                        /* movsd [rbp+off], xmm0 */
+                        emit1(0xF2); emit1(0x0F); emit1(0x11);
+                        emit1(0x45); emit1(locals[i].offset & 0xFF);
+                    } else {
+                        emit1(0x89); emit1(0x45); emit1(locals[i].offset & 0xFF);
+                    }
+                    break;
+                }
+            }
         }
         break;
     default:
@@ -517,29 +555,41 @@ static void cgen_func_def(AstNode *func) {
 
     emit_prologue();
 
-    /* 保存参数寄存器到局部变量槽 */
+    /* 保存参数寄存器到局部变量槽（int 和 float 分开计数） */
     {
-        int arg_reg = 0;
-        int nparams = func->ival;
+        int int_reg = 0;
+        int float_reg = 0;
         AstNode *p;
-        for (p = func->params; p && arg_reg < 6 && arg_reg < nparams; p = p->next) {
+        for (p = func->params; p; p = p->next) {
             if (p->kind == AST_VAR_DECL && p->name) {
                 int i;
                 for (i = 0; i < local_count; i++) {
                     if (strcmp(locals[i].name, p->name) == 0) {
-                        switch (arg_reg) {
-                        case 0: e1(0x89); e1(0x7D); e1(locals[i].offset & 0xFF); break;
-                        case 1: e1(0x89); e1(0x75); e1(locals[i].offset & 0xFF); break;
-                        case 2: e1(0x89); e1(0x55); e1(locals[i].offset & 0xFF); break;
-                        case 3: e1(0x89); e1(0x4D); e1(locals[i].offset & 0xFF); break;
-                        case 4: e1(0x44); e1(0x89); e1(0x45); e1(locals[i].offset & 0xFF); break;
-                        case 5: e1(0x44); e1(0x89); e1(0x4D); e1(locals[i].offset & 0xFF); break;
+                        if (locals[i].is_float) {
+                            /* 保存 xmm 寄存器: movsd [rbp+off], xmmN */
+                            if (float_reg < 8) {
+                                e1(0xF2); e1(0x0F); e1(0x11);
+                                e1(0x45 | ((float_reg & 7) << 3));
+                                e1(locals[i].offset & 0xFF);
+                            }
+                            float_reg++;
+                        } else {
+                            if (int_reg < 6) {
+                                switch (int_reg) {
+                                case 0: e1(0x89); e1(0x7D); e1(locals[i].offset & 0xFF); break;
+                                case 1: e1(0x89); e1(0x75); e1(locals[i].offset & 0xFF); break;
+                                case 2: e1(0x89); e1(0x55); e1(locals[i].offset & 0xFF); break;
+                                case 3: e1(0x89); e1(0x4D); e1(locals[i].offset & 0xFF); break;
+                                case 4: e1(0x44); e1(0x89); e1(0x45); e1(locals[i].offset & 0xFF); break;
+                                case 5: e1(0x44); e1(0x89); e1(0x4D); e1(locals[i].offset & 0xFF); break;
+                                }
+                            }
+                            int_reg++;
                         }
                         break;
                     }
                 }
             }
-            arg_reg++;
         }
     }
 

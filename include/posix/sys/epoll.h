@@ -48,11 +48,7 @@ int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event);
 int epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout);
 
 /* epoll_create (老版本，只接受 size 参数，内核忽略) */
-static inline int epoll_create(int size)
-{
-    (void)size;
-    return epoll_create1(0);
-}
+int epoll_create(int size);
 
 /* epoll_pwait — 带信号掩码的 epoll_wait */
 int epoll_pwait(int epfd, struct epoll_event *events, int maxevents,

@@ -126,6 +126,8 @@ typedef struct {
     const char *start;   /* 指向源文件中的起始位置 */
     int len;             /* 词素的字节长度 */
     int ival;            /* TOK_NUMBER 的整数值 */
+    double dval;          /* 浮点字面量的值 */
+    int is_float;         /* 1 表示浮点字面量（dval 有效） */
     const char *sval;    /* TOK_IDENT 的名称指针（arena 分配） */
 } Token;
 
@@ -175,6 +177,8 @@ typedef struct AstNode {
     struct AstNode *expr;
     /* AST_CONSTANT */
     int ival;
+    double dval;      /* 浮点常量值（is_float=1 时有效） */
+    int is_float;     /* 1 表示此表达式结果为 double 类型 */
     /* AST_BINOP */
     struct AstNode *left, *right;
     /* AST_IF */
@@ -277,6 +281,7 @@ typedef struct {
     int offset;  /* 距 rbp 的偏移（负值） */
     int size;    /* 类型大小 */
     const char *struct_tag;  /* 如果是 struct 类型，存标签名 */
+    int is_float;            /* 1 表示 double 类型变量 */
 } LocalVar;
 
 extern LocalVar locals[MAX_LOCALS];

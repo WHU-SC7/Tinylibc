@@ -173,11 +173,8 @@ int elf_write_object(const char *path) {
     /* ── .symtab data ── */
     while (p < sym_ofs) b[p++] = 0;
 
-    /* 统计局部符号数（含 null 条目），ELF 规范要求局部在前、全局在后 */
-    int local_cnt = 1;  /* null 条目 */
-    for (i = 0; i < sym_count; i++)
-        if (!syms[i].is_global) local_cnt++;
-    int first_global = local_cnt;  /* sh_info 值 */
+    /* 统计局部符号数在写入时同步进行，保证 sh_info 与表内容一致 */
+    int first_global = 1;  /* null 条目在索引 0 */
 
     /* null symbol */
     for (ei = 0; ei < 24; ei++) b[p++] = 0;
@@ -185,6 +182,7 @@ int elf_write_object(const char *path) {
     /* 先写局部符号 */
     for (i = 0; i < sym_count; i++) {
         if (syms[i].is_global) continue;
+        first_global++;  /* 每写一个局部符号，sh_info 自增 */
         int idx = sym_str_idx[i];
         b[p++] = (idx) & 0xFF; b[p++] = (idx >> 8) & 0xFF;
         b[p++] = (idx >> 16) & 0xFF; b[p++] = (idx >> 24) & 0xFF;

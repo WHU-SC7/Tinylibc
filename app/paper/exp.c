@@ -1,18 +1,9 @@
-#if X86_64_TLIBC == 1
-//使用Tinylibc
 #include "core.h"
 #include "tlibc_compat.h"
 #include "pthread.h"
 #include "syscall.h"
 #include "syscall_num.h"
 #include "mempool.h"
-#else
-//使用Glibc
-#include <stdio.h>
-#include <time.h>
-#include <pthread.h>
-#include <unistd.h>
-#endif
 
 #define THREAD_NUM_PER_CIRCLE 6000
 
@@ -29,7 +20,7 @@ int main(int argc, char *argv[])
     struct timespec ts;
     struct timespec ts1;
     timespec_get(&ts, TIME_UTC);
-    double t = ts.tv_sec+ ts.tv_nsec / 1e9;
+    double t = ts.tv_sec+ ts.tv_nsec / 1000000000.0;
     printf("start time: %f\n", t);
 
     //如果全部创建完之后再join，glibc性能会更好，从1600上升到5000
@@ -52,7 +43,7 @@ int main(int argc, char *argv[])
     // }
 
     timespec_get(&ts1, TIME_UTC);
-    double t1 = ts1.tv_sec+ ts1.tv_nsec / 1e9;//end time
+    double t1 = ts1.tv_sec+ ts1.tv_nsec / 1000000000.0;//end time
     double elapsed = t1 - t;
     printf("elapsed time: %f, 每秒线程数: %f\n", elapsed, THREAD_NUM_PER_CIRCLE / elapsed);
     usleep(1000000);

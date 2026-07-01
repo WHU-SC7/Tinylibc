@@ -31,10 +31,11 @@
 /*  辅助函数: pipe 创建/销毁                                           */
 /* ================================================================== */
 
-#define setup_pipe(fds)                                                 \
-    ({  int __ret = pipe2((fds), 0);                                    \
-        TEST_ASSERT(__ret == 0, "pipe2");                               \
-        __ret; })
+static inline int
+setup_pipe(int fds[2])
+{
+    return pipe2(fds, 0);
+}
 
 #define teardown_pipe(fds)                                              \
     do { close((fds)[0]); close((fds)[1]); } while (0)
@@ -88,7 +89,9 @@ test_poll_pipein(void)
 
     TEST_START("poll — pipe POLLIN");
 
-    if (setup_pipe(pipefd) < 0) goto cleanup;
+    int __pr = setup_pipe(pipefd);
+    TEST_ASSERT(__pr == 0, "pipe2");
+    if (__pr < 0) goto cleanup;
 
     /* 空 pipe，短超时 → 0 */
     pf.fd = pipefd[0]; pf.events = POLLIN; pf.revents = 0;
@@ -117,7 +120,9 @@ test_poll_pipeout(void)
 
     TEST_START("poll — pipe POLLOUT");
 
-    if (setup_pipe(pipefd) < 0) goto cleanup;
+    int __pr = setup_pipe(pipefd);
+    TEST_ASSERT(__pr == 0, "pipe2");
+    if (__pr < 0) goto cleanup;
 
     /* 写端初始可写 */
     pf.fd = pipefd[1]; pf.events = POLLOUT; pf.revents = 0;
@@ -152,7 +157,9 @@ test_poll_multi(void)
 
     TEST_START("poll — 多 fd 混合 (读+写+无效)");
 
-    if (setup_pipe(pipefd) < 0) goto cleanup;
+    int __pr = setup_pipe(pipefd);
+    TEST_ASSERT(__pr == 0, "pipe2");
+    if (__pr < 0) goto cleanup;
 
     write(pipefd[1], "data", 5);
 
@@ -190,7 +197,9 @@ test_poll_timeout_zero(void)
 
     TEST_START("poll — 0 超时立即返回");
 
-    if (setup_pipe(pipefd) < 0) goto cleanup;
+    int __pr = setup_pipe(pipefd);
+    TEST_ASSERT(__pr == 0, "pipe2");
+    if (__pr < 0) goto cleanup;
 
     pf.fd = pipefd[0]; pf.events = POLLIN; pf.revents = 0;
     ret = poll(&pf, 1, TMO_IMMEDIATE);
@@ -238,7 +247,9 @@ test_select_pipe(void)
 
     TEST_START("select — pipe 读");
 
-    if (setup_pipe(pipefd) < 0) goto cleanup;
+    int __pr = setup_pipe(pipefd);
+    TEST_ASSERT(__pr == 0, "pipe2");
+    if (__pr < 0) goto cleanup;
 
     FD_ZERO(&rfds);
     FD_SET(pipefd[0], &rfds);
@@ -270,7 +281,9 @@ test_select_write(void)
 
     TEST_START("select — pipe 写");
 
-    if (setup_pipe(pipefd) < 0) goto cleanup;
+    int __pr = setup_pipe(pipefd);
+    TEST_ASSERT(__pr == 0, "pipe2");
+    if (__pr < 0) goto cleanup;
 
     FD_ZERO(&wfds);
     FD_SET(pipefd[1], &wfds);
@@ -294,7 +307,9 @@ test_select_timeout_zero(void)
 
     TEST_START("select — 0 超时立即返回");
 
-    if (setup_pipe(pipefd) < 0) goto cleanup;
+    int __pr = setup_pipe(pipefd);
+    TEST_ASSERT(__pr == 0, "pipe2");
+    if (__pr < 0) goto cleanup;
 
     FD_ZERO(&rfds);
     FD_SET(pipefd[0], &rfds);
@@ -316,7 +331,9 @@ test_select_null_timeout(void)
 
     TEST_START("select — NULL timeout (阻塞)");
 
-    if (setup_pipe(pipefd) < 0) goto cleanup;
+    int __pr = setup_pipe(pipefd);
+    TEST_ASSERT(__pr == 0, "pipe2");
+    if (__pr < 0) goto cleanup;
 
     /* 先写入，让 select 立即返回 */
     write(pipefd[1], "x", 1);
@@ -346,7 +363,9 @@ test_epoll_lt_basic(void)
 
     TEST_START("epoll — LT 基本");
 
-    if (setup_pipe(pipefd) < 0)     goto cleanup;
+    int __pr = setup_pipe(pipefd);
+    TEST_ASSERT(__pr == 0, "pipe2");
+    if (__pr < 0) goto cleanup;
     epfd = epoll_create1(0);
     TEST_ASSERT(epfd >= 0, "epoll_create1");
 
@@ -390,7 +409,9 @@ test_epoll_del(void)
 
     TEST_START("epoll — DEL 后不再收到事件");
 
-    if (setup_pipe(pipefd) < 0)     goto cleanup;
+    int __pr = setup_pipe(pipefd);
+    TEST_ASSERT(__pr == 0, "pipe2");
+    if (__pr < 0) goto cleanup;
     epfd = epoll_create1(0);
     TEST_ASSERT(epfd >= 0, "epoll_create1");
 
@@ -428,7 +449,9 @@ test_epoll_multiple(void)
 
     TEST_START("epoll — 多 fd 监视");
 
-    if (setup_pipe(pipefd) < 0)     goto cleanup;
+    int __pr = setup_pipe(pipefd);
+    TEST_ASSERT(__pr == 0, "pipe2");
+    if (__pr < 0) goto cleanup;
     epfd = epoll_create1(0);
     TEST_ASSERT(epfd >= 0, "epoll_create1");
 
@@ -463,7 +486,9 @@ test_epoll_hup(void)
 
     TEST_START("epoll — POLLHUP (对端关闭)");
 
-    if (setup_pipe(pipefd) < 0)     goto cleanup;
+    int __pr = setup_pipe(pipefd);
+    TEST_ASSERT(__pr == 0, "pipe2");
+    if (__pr < 0) goto cleanup;
     epfd = epoll_create1(0);
     TEST_ASSERT(epfd >= 0, "epoll_create1");
 
@@ -500,7 +525,9 @@ test_epoll_et(void)
 
     TEST_START("epoll — ET 边缘触发");
 
-    if (setup_pipe(pipefd) < 0)     goto cleanup;
+    int __pr = setup_pipe(pipefd);
+    TEST_ASSERT(__pr == 0, "pipe2");
+    if (__pr < 0) goto cleanup;
     epfd = epoll_create1(0);
     TEST_ASSERT(epfd >= 0, "epoll_create1");
 

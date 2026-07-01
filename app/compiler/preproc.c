@@ -1,9 +1,23 @@
 #include "tcc.h"
 
 #define MAX_MACROS 4096
+#define MAX_FUNC_MACROS 1024
+#define MAX_MACRO_PARAMS 64
+
 typedef struct { const char *name; const char *value; int value_len; } Macro;
 static Macro macros[MAX_MACROS];
 static int macro_count;
+
+typedef struct {
+    const char *name;
+    const char *params[MAX_MACRO_PARAMS];
+    int param_count;
+    int is_variadic;
+    const char *replacement;
+    int repl_len;
+} FuncMacro;
+static FuncMacro func_macros[MAX_FUNC_MACROS];
+static int func_macro_count;
 
 static const char *inc_paths[MAX_INCLUDE_PATHS];
 static int inc_path_count;
@@ -151,8 +165,41 @@ static void do_directive(const char *s, int ls, int le, OutBuf *out, int depth) 
         if (p == ms) return;
         int mnl = p - ms;
         int cp = p; while (cp < le && pp_ws(s[cp])) cp++;
-        if (cp < le && s[cp] == '(') {
-            /* 函数式宏 — 不展开，略过 */
+        if (cp == p && cp < le && s[cp] == '(') {
+            /* 函数式宏（必须 ( 紧跟宏名，无空白）— 存储定义 */
+            if (func_macro_count >= MAX_FUNC_MACROS) return;
+            FuncMacro *fm = &func_macros[func_macro_count];
+            char *mn2 = (char *)tlibc_malloc(mnl + 1);
+            { int ci; for (ci = 0; ci < mnl; ci++) mn2[ci] = s[ms + ci]; mn2[mnl] = '\0'; }
+            fm->name = mn2;
+            fm->param_count = 0; fm->is_variadic = 0;
+            cp++; /* 跳过 ( */
+            while (cp < le && s[cp] != ')') {
+                while (cp < le && pp_ws(s[cp])) cp++;
+                if (cp >= le || s[cp] == ')') break;
+                if (cp + 2 <= le && s[cp] == '.' && s[cp+1] == '.' && s[cp+2] == '.') {
+                    fm->is_variadic = 1; cp += 3; break;
+                }
+                int ps = cp;
+                while (cp < le && pp_id(s[cp])) cp++;
+                if (cp > ps && fm->param_count < MAX_MACRO_PARAMS) {
+                    char *pn = (char *)tlibc_malloc(cp - ps + 1);
+                    { int ci; for (ci = 0; ci < cp - ps; ci++) pn[ci] = s[ps + ci]; pn[cp - ps] = '\0'; }
+                    fm->params[fm->param_count++] = pn;
+                }
+                while (cp < le && pp_ws(s[cp])) cp++;
+                if (cp < le && s[cp] == ',') { cp++; continue; }
+            }
+            if (cp < le && s[cp] == ')') cp++;
+            while (cp < le && pp_ws(s[cp])) cp++;
+            int vs = cp; int vl = le - cp;
+            while (vl > 0 && pp_ws(s[vs+vl-1])) vl--;
+            if (vl > 0) {
+                char *rp = (char *)tlibc_malloc(vl + 1);
+                { int ci; for (ci = 0; ci < vl; ci++) rp[ci] = s[vs + ci]; rp[vl] = '\0'; }
+                fm->replacement = rp; fm->repl_len = vl;
+            } else { fm->replacement = 0; fm->repl_len = 0; }
+            func_macro_count++;
             return;
         }
         while (p < le && pp_ws(s[p])) p++;
@@ -264,6 +311,112 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                 nomatch:;
             }
             if (expanded) continue;
+            /* 检查函数式宏：标识符后跟 ( */
+            if (i < len && s[i] == '(' && func_macro_count > 0) {
+                int id_match = 0;
+                int fmi;
+                for (fmi = 0; fmi < func_macro_count; fmi++) {
+                    const char *fn = func_macros[fmi].name;
+                    int j;
+                    for (j = 0; j < id_len; j++) if (fn[j] != s[start + j]) goto fnm;
+                    if (fn[j] != '\0') goto fnm;
+                    id_match = 1;
+                    /* 解析参数：从 i+1 开始，匹配 ) */
+                    int ap = i + 1;
+                    int adepth = 1;
+                    int aprev = -1;
+                    const char *arg_starts[MAX_MACRO_PARAMS];
+                    int arg_lens[MAX_MACRO_PARAMS];
+                    int arg_count = 0;
+                    arg_starts[0] = s + ap;
+                    while (adepth > 0 && ap < len) {
+                        if (ap == aprev) break;
+                        aprev = ap;
+                        if (s[ap] == '"') {
+                            ap++; while (ap < len && s[ap] != '"') {
+                                if (s[ap] == '\\' && ap+1 < len) ap++;
+                                ap++;
+                            }
+                            if (ap < len) ap++;
+                            continue;
+                        }
+                        if (s[ap] == '(') adepth++;
+                        if (s[ap] == ')') { adepth--; if (adepth == 0) break; }
+                        if (adepth == 1 && s[ap] == ',' && arg_count < MAX_MACRO_PARAMS-1) {
+                            arg_lens[arg_count] = (s + ap) - arg_starts[arg_count];
+                            arg_count++;
+                            arg_starts[arg_count] = s + ap + 1;
+                        }
+                        ap++;
+                        if (ap >= len) break;
+                    }
+                    if (adepth == 0) {
+                        arg_lens[arg_count] = (s + ap) - arg_starts[arg_count];
+                        arg_count++;
+                        /* 输出替换文本（直接输出，不递归调用 pp_buf_impl） */
+                        if (func_macros[fmi].replacement) {
+                            const char *rp = func_macros[fmi].replacement;
+                            int rl = func_macros[fmi].repl_len;
+                            int ri = 0;
+                            while (ri < rl) {
+                                /* 检查 __VA_ARGS__ */
+                                if (func_macros[fmi].is_variadic && ri + 10 < rl &&
+                                    rp[ri]=='_' && rp[ri+1]=='_' && rp[ri+2]=='V' &&
+                                    rp[ri+3]=='A' && rp[ri+4]=='_' && rp[ri+5]=='A' &&
+                                    rp[ri+6]=='R' && rp[ri+7]=='G' && rp[ri+8]=='S' &&
+                                    rp[ri+9]=='_' && rp[ri+10]=='_') {
+                                    ri += 11;
+                                    int vi;
+                                    for (vi = func_macros[fmi].param_count; vi < arg_count; vi++) {
+                                        if (vi > func_macros[fmi].param_count) out_putc(out, ',');
+                                        int vj; for (vj = 0; vj < arg_lens[vi]; vj++)
+                                            out_putc(out, (arg_starts[vi])[vj]);
+                                    }
+                                    continue;
+                                }
+                                /* 跳过 #（stringify 运算符—TODO：支持真正字符串化） */
+                                if (rp[ri]=='#' && ri+1 < rl && rp[ri+1] != '#') { ri++; continue; }
+                                /* 跳过 ## 及其前面的逗号（GCC 扩展：,##__VA_ARGS__） */
+                                if (ri+1 < rl && rp[ri]=='#' && rp[ri+1]=='#') {
+                                    /* 检查 out 末尾是否有逗号，有则移除 */
+                                    while (out->len > 0 && (out->data[out->len-1] == ' ' || out->data[out->len-1] == '\t'))
+                                        out->len--;
+                                    if (out->len > 0 && out->data[out->len-1] == ',')
+                                        out->len--;
+                                    ri += 2; continue;
+                                }
+                                /* 检查参数名 */
+                                if (pp_id(rp[ri])) {
+                                    int rs = ri;
+                                    while (ri < rl && pp_id(rp[ri])) ri++;
+                                    int matched = 0;
+                                    int pi;
+                                    for (pi = 0; pi < func_macros[fmi].param_count && pi < arg_count; pi++) {
+                                        const char *pn = func_macros[fmi].params[pi];
+                                        int jj;
+                                        for (jj = 0; jj < ri - rs; jj++) if (pn[jj] != rp[rs+jj]) goto pnm;
+                                        if (pn[jj] != '\0') goto pnm;
+                                        int vj; for (vj = 0; vj < arg_lens[pi]; vj++)
+                                            out_putc(out, (arg_starts[pi])[vj]);
+                                        matched = 1;
+                                        break;
+                                        pnm:;
+                                    }
+                                    if (!matched) {
+                                        int idx; for (idx = rs; idx < ri; idx++) out_putc(out, rp[idx]);
+                                    }
+                                    continue;
+                                }
+                                out_putc(out, rp[ri]); ri++;
+                            }
+                        }
+                        i = ap + 1; /* 跳过 ) */
+                    }
+                    break;
+                    fnm:;
+                }
+                if (id_match) continue;
+            }
             /* 不是宏，原样输出 */
             { int idx; for (idx = start; idx < i; idx++) out_putc(out, s[idx]); }
             continue;
@@ -302,7 +455,6 @@ static char *strip_all_comments(const char *src, int len, int *out_len) {
 }
 
 char *preprocess(const char *src, int len, const char *fname, int *out_len) {
-    /* 从 fname 提取源文件目录 */
     current_source_dir[0] = '\0';
     inc_path_added_source_dir = 0;
     if (fname) {

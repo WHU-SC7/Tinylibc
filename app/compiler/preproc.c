@@ -1,3 +1,24 @@
+/*
+ * SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 BandieraRosse
+ */
+
+/*
+ * preproc — C 预处理器核心
+ *
+ * 机制：宏定义/展开（对象宏 + 函数宏）、#include 文件包含、#if/#ifdef 条件
+ *       编译、#define/#undef 指令处理。全程字符串操作，不依赖词法/语法分析器。
+ * 系统调用：openat, read, close（加载 include 文件）
+ *
+ * 索引入口：
+ *   preprocess(src, len, fname, out_len)
+ *                        主入口：预处理整个翻译单元
+ *     preprocess_file    加载并预处理 #include 文件
+ *     expand_macro       展开单个宏引用
+ *     expand_line        展开一行中的全部宏
+ *   add_include_path    注册 include 搜索路径
+ */
+
 #include "tcc.h"
 
 #define MAX_MACROS 4096

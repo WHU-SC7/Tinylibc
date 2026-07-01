@@ -1,0 +1,5 @@
+# tcc — 完整 C 编译器
+tcc: lex parse preproc cgen cgen_expr cgen_asm elf_write
+
+# tpp — 独立预处理器
+tpp: preproc

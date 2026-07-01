@@ -6,8 +6,8 @@
 /*
  * tcc — Tinylibc C 编译器（统一入口）
  *
- * 此文件是 tmake 识别的单一应用入口。它 #include 所有模块文件，
- * 使得编译器能通过项目现有构建系统直接编译。
+ * 此文件是 tmake 识别的单一应用入口。多文件编译由 app/compiler/tmakelist
+ * 文件描述，tmake 读取后分别编译各模块并联合链接。
  *
  * 开发时各模块文件（lex.c / parse.c / cgen.c / elf_write.c）保持独立，
  * 支持单独修改和增量重编。
@@ -22,17 +22,7 @@
  *     read_file     读取整个源文件到堆内存
  */
 
-/* 统一编译：包含所有模块。
- * 模块中的 #include "tcc.h" 按 #include "..." 规则从 app/compiler/ 目录查找 */
 #include "tcc.h"
-#include "elf.h"
-#include "lex.c"
-#include "parse.c"
-#include "preproc.c"
-#include "cgen_asm.c"
-#include "cgen_expr.c"
-#include "cgen.c"
-#include "elf_write.c"
 
 /* ─── 读取文件 ─── */
 

@@ -54,8 +54,18 @@ char *default_envp[]={
     NULL
 };
 int flag_count = 0;
-static int g_max_jobs = 1;  // 并行编译任务数，默认串行
+static int g_max_jobs = 1;     // 并行编译任务数，默认自动检测 CPU 核数
+static int g_jobs_explicit = 0; // 用户是否显式指定了 -j
 static char *g_build_target = NULL;  // 指定编译目标，NULL 表示全量构建
+
+/* 核心工具链：全量构建后额外安装到 ~/.local/bin/ 方便日常调用 */
+static char *g_core_tools[] = {
+    "tmake",
+    "shell",
+    "tcc",
+    "tpp",
+    NULL   /* 结尾哨兵，新增工具在上一行追加即可 */
+};
 
 int copy_gcc_flags(char **dest){
     int i=0;
@@ -543,6 +553,27 @@ out_subdir_from_path(const char *file_path, char *out, int out_size)
     if(slash) *slash = '\0';
 }
 
+/* ── tmakelist 前向声明（compile/link 阶段使用，定义见文件末尾） ── */
+#define MAX_TMAKELIST_TARGETS 16
+#define MAX_TARGET_SOURCES 32
+
+typedef struct {
+    char name[64];
+    char srcs[MAX_TARGET_SOURCES][64];
+    int src_count;
+} TmakelistTarget;
+
+typedef struct {
+    TmakelistTarget targets[MAX_TMAKELIST_TARGETS];
+    int target_count;
+} Tmakelist;
+
+static int read_tmakelist(const char *app_dir, Tmakelist *tl);
+static int tmakelist_has_source(Tmakelist *tl, const char *name);
+static void get_file_basename(const char *path, char *name, int size);
+static void get_file_dir(const char *path, char *dir, int size);
+static void install_core_tools(void);
+
 // 递归编译：先收集所有源文件，再统一并行分派
 
 int compile_recursive_task(const char *path){
@@ -558,6 +589,26 @@ int compile_recursive_task(const char *path){
         return 0;
     }
     printf("共找到 %d 个源文件\n", total);
+
+    /* ── tmakelist 过滤：目录有合法 tmakelist 时只编译其中引用的文件 ── */
+    {
+        int idx = 0;
+        while (idx < total) {
+            char dir[256], name[64];
+            get_file_dir(files[idx], dir, sizeof(dir));
+            get_file_basename(files[idx], name, sizeof(name));
+
+            Tmakelist tl;
+            int ret = read_tmakelist(dir, &tl);
+            if (ret > 0 && !tmakelist_has_source(&tl, name)) {
+                /* 合法 tmakelist 中未引用此文件 → 跳过 */
+                snprintf(files[idx], 512, "%s", files[total - 1]);
+                total--;
+                continue;
+            }
+            idx++;
+        }
+    }
 
     // 确保所有 build 子目录存在
     for(int i = 0; i < total; i++){
@@ -624,9 +675,17 @@ int compile_recursive_task(const char *path){
     return failed ? -1 : 0;
 }
 
+/* ── 链接辅助前向声明 ── */
+static void obj_to_src_dir(const char *obj_path, char *dir, int size);
+static int  link_multi_app(char **obj_paths, int count,
+                            const char *output_name, const char *output_path);
+static int  link_multi_app_start(char **obj_paths, int count,
+                                  const char *output_name, const char *output_path);
+
 // 递归链接：先收集 path 下所有 .o，再统一并行分派
 //   path: 搜索目录（如 "build/app"）
 //   output_path: 可执行文件输出目录（如 "build/output"）
+//   支持多文件模块：检测源目录下的 tmakelist 文件，将多个 .o 联合链接
 int link_recursive_task(const char *path, const char *output_path){
     char (*files)[512] = (char (*)[512])tlibc_malloc(MAX_FLAT_FILES * 512);
     int total = collect_files_recursive(path, ".o", files, MAX_FLAT_FILES);
@@ -637,56 +696,396 @@ int link_recursive_task(const char *path, const char *output_path){
     }
     printf("共找到 %d 个目标文件\n", total);
 
-    if(g_max_jobs <= 1){
-        for(int i = 0; i < total; i++){
-            printf("链接文件%d: %s\n", i, files[i]);
-            if(link_app(files[i], output_path) < 0){
-                tlibc_free(files);
-                return -1;
+    /* 标记已处理的文件（属于某个模块组） */
+    char *handled = (char *)tlibc_malloc(total);
+    memset(handled, 0, total);
+
+    /* ── Phase 1: 收集 tmakelist 多文件目标 → 标记 handled ── */
+    #define MAX_LINK_JOBS 128
+    static char *job_objs[MAX_LINK_JOBS][MAX_TARGET_SOURCES + 1];
+    static int   job_obj_counts[MAX_LINK_JOBS];
+    static char  job_names[MAX_LINK_JOBS][64];
+    int job_total = 0;
+
+    for (int i = 0; i < total; i++) {
+        if (handled[i]) continue;
+
+        /* 从 build 路径反推源目录 */
+        char src_dir[256];
+        obj_to_src_dir(files[i], src_dir, sizeof(src_dir));
+
+        Tmakelist tl;
+        int tl_ret = read_tmakelist(src_dir, &tl);
+
+        if (tl_ret > 0) {
+            /* 跳过已处理过的目录 */
+            {
+                char main_obj[512];
+                snprintf(main_obj, sizeof(main_obj), "build/%s/%s.o",
+                         src_dir, tl.targets[0].name);
+                int already = 0;
+                for (int j = 0; j < total; j++) {
+                    if (strcmp(files[j], main_obj) == 0 && handled[j]) {
+                        already = 1; break;
+                    }
+                }
+                if (already) continue;
             }
+
+            /* 遍历 tmakelist 中每个目标，收集 .o 并生成链接任务 */
+            for (int t = 0; t < tl.target_count && job_total < MAX_LINK_JOBS; t++) {
+                TmakelistTarget *tgt = &tl.targets[t];
+                int obj_idx = 0;
+
+                /* 目标名自身 → .o */
+                {
+                    char expected[512];
+                    snprintf(expected, sizeof(expected), "build/%s/%s.o",
+                             src_dir, tgt->name);
+                    for (int j = 0; j < total; j++) {
+                        if (strcmp(files[j], expected) == 0) {
+                            job_objs[job_total][obj_idx++] = files[j];
+                            handled[j] = 1;
+                            break;
+                        }
+                    }
+                }
+
+                /* 依赖源文件 → .o */
+                for (int s = 0; s < tgt->src_count; s++) {
+                    char expected[512];
+                    snprintf(expected, sizeof(expected), "build/%s/%s.o",
+                             src_dir, tgt->srcs[s]);
+                    for (int j = 0; j < total; j++) {
+                        if (strcmp(files[j], expected) == 0) {
+                            job_objs[job_total][obj_idx++] = files[j];
+                            handled[j] = 1;
+                            break;
+                        }
+                    }
+                }
+
+                if (obj_idx > 0) {
+                    job_obj_counts[job_total] = obj_idx;
+                    {
+                        int k;
+                        for (k = 0; tgt->name[k] && k < 63; k++)
+                            job_names[job_total][k] = tgt->name[k];
+                        job_names[job_total][k] = '\0';
+                    }
+                    job_total++;
+                }
+            }
+            continue;
         }
+    }
+
+    /* ── Phase 2: 统一并行链接（tmakelist 目标 + 单文件应用） ── */
+    int failed = 0;
+    int max_jobs = g_max_jobs;
+    if (max_jobs < 1) max_jobs = 1;
+
+    /* 统计剩余单文件应用 */
+    int remaining = 0;
+    for (int i = 0; i < total; i++)
+        if (!handled[i]) remaining++;
+
+    int all_jobs = job_total + remaining;
+    if (all_jobs == 0) {
+        tlibc_free(handled);
         tlibc_free(files);
         return 0;
     }
+    if (max_jobs > all_jobs) max_jobs = all_jobs;
 
-    // 并行链接
-    int max_jobs = g_max_jobs;
-    if(max_jobs > total) max_jobs = total;
-    int pids[max_jobs];
-    int active = 0, next = 0, failed = 0;
-
-    while(next < total || active > 0){
-        while(active < max_jobs && next < total && !failed){
-            printf("链接文件%d: %s\n", next, files[next]);
-            int pid = link_app_start(files[next], output_path);
-            if(pid > 0)
-                pids[active++] = pid;
-            next++;
+    if (max_jobs <= 1) {
+        /* 串行 */
+        for (int j = 0; j < job_total; j++) {
+            int ret = link_multi_app(job_objs[j], job_obj_counts[j],
+                                      job_names[j], output_path);
+            if (ret < 0) { failed = 1; break; }
         }
-        if(active == 0) break;
-
-        int status;
-        int done_pid = waitpid(-1, &status, 0);
-        if(done_pid <= 0) break;
-
-        for(int i = 0; i < active; i++){
-            if(pids[i] == done_pid){
-                pids[i] = pids[active - 1];
-                active--;
-                break;
+        if (!failed) {
+            for (int i = 0; i < total; i++) {
+                if (handled[i]) continue;
+                if (link_app(files[i], output_path) < 0) {
+                    failed = 1; break;
+                }
             }
         }
-        if(status != 0){
-            printf("链接失败, 状态码: %d\n", status);
-            failed = 1;
+    } else {
+        /* 并行池：tmakelist 目标 + 单文件混合 */
+        int pids[max_jobs];
+        int active = 0;
+        int next_job = 0;     /* tmakelist 任务游标 */
+        int next_file = 0;    /* 单文件游标 */
+
+        while (next_job < job_total || next_file < total || active > 0) {
+            /* 启动任务直到池满 */
+            while (active < max_jobs && !failed) {
+                /* 优先启动 tmakelist 目标 */
+                if (next_job < job_total) {
+                    int pid = link_multi_app_start(job_objs[next_job],
+                                                    job_obj_counts[next_job],
+                                                    job_names[next_job],
+                                                    output_path);
+                    if (pid > 0) {
+                        pids[active++] = pid;
+                    }
+                    next_job++;
+                    continue;
+                }
+                /* 然后启动单文件 */
+                while (next_file < total && !failed) {
+                    if (handled[next_file]) { next_file++; continue; }
+                    int pid = link_app_start(files[next_file], output_path);
+                    if (pid > 0) {
+                        pids[active++] = pid;
+                    }
+                    next_file++;
+                    break;
+                }
+                if (next_job >= job_total && next_file >= total) break;
+            }
+            if (active == 0) break;
+
+            int status;
+            int done_pid = waitpid(-1, &status, 0);
+            if (done_pid <= 0) break;
+
+            for (int k = 0; k < active; k++) {
+                if (pids[k] == done_pid) {
+                    pids[k] = pids[active - 1];
+                    active--;
+                    break;
+                }
+            }
+            if (status != 0) {
+                printf("链接失败, 状态码: %d\n", status);
+                failed = 1;
+            }
         }
     }
 
+    tlibc_free(handled);
     tlibc_free(files);
     return failed ? -1 : 0;
+    #undef MAX_LINK_JOBS
 }
 
 #undef MAX_FLAT_FILES
+
+/* ================================================================== */
+/* ── 文件路径工具 ── */
+
+/* 提取文件名（不含后缀），如 "app/compiler/lex.c" → "lex" */
+static void get_file_basename(const char *path, char *name, int size)
+{
+    const char *slash = strrchr(path, '/');
+    const char *start = slash ? slash + 1 : path;
+    int i;
+    for (i = 0; i < size - 1 && start[i] && start[i] != '.'; i++)
+        name[i] = start[i];
+    name[i] = '\0';
+}
+
+/* 提取文件所在目录，如 "app/compiler/lex.c" → "app/compiler" */
+static void get_file_dir(const char *path, char *dir, int size)
+{
+    snprintf(dir, size, "%s", path);
+    char *slash = strrchr(dir, '/');
+    if (slash) *slash = '\0';
+}
+
+/* ── tmakelist 解析 ── */
+
+/* 读取 <app_dir>/tmakelist，解析目标定义。
+ * 返回: >0 合法（目标数），0 文件不存在，-1 格式非法（已打印警告） */
+static int read_tmakelist(const char *app_dir, Tmakelist *tl)
+{
+    char path[512];
+    snprintf(path, sizeof(path), "%s/tmakelist", app_dir);
+    int fd = openat(AT_FDCWD, path, O_RDONLY, 0);
+    if (fd < 0) return 0;
+
+    char buf[4096];
+    int n = read(fd, buf, sizeof(buf) - 1);
+    close(fd);
+    if (n <= 0) return 0;
+    buf[n] = '\0';
+
+    tl->target_count = 0;
+    int line = 0;
+    char *p = buf;
+    int has_error = 0;
+
+    while (*p) {
+        /* 跳过行首空白 */
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '\n' || *p == '\r') { p++; line++; continue; }
+        if (*p == '#') {
+            while (*p && *p != '\n') p++;
+            continue;
+        }
+        if (!*p) break;
+
+        /* 解析目标名（直到 ':'） */
+        int i = 0;
+        char target_name[64];
+        while (*p && *p != ':' && *p != '\n' && *p != '\r') {
+            if (*p != ' ' && *p != '\t') {
+                if (i < 63) target_name[i++] = *p;
+            }
+            p++;
+        }
+
+        if (*p != ':') {
+            /* 行不含 ':'，非法（非注释非空行必须含 ':'） */
+            if (i > 0) {
+                target_name[i] = '\0';
+                printf("tmakelist: 语法错误 ('%s' 行缺少 ':'), 退化到默认构建\n",
+                       target_name);
+                has_error = 1;
+                break;
+            }
+            /* 空行（只有空白），跳过 */
+            while (*p && *p != '\n') p++;
+            if (*p) { p++; line++; }
+            continue;
+        }
+        p++; /* 跳过 ':' */
+
+        if (i == 0) {
+            printf("tmakelist: 语法错误 (行 %d 目标名为空), 退化到默认构建\n", line + 1);
+            has_error = 1;
+            break;
+        }
+        target_name[i] = '\0';
+
+        /* 解析源文件列表 */
+        if (tl->target_count >= MAX_TMAKELIST_TARGETS) {
+            printf("tmakelist: 目标数超过上限 %d\n", MAX_TMAKELIST_TARGETS);
+            has_error = 1;
+            break;
+        }
+
+        TmakelistTarget *t = &tl->targets[tl->target_count];
+        {
+            int j;
+            for (j = 0; j < i && j < 63; j++)
+                t->name[j] = target_name[j];
+            t->name[j] = '\0';
+        }
+        t->src_count = 0;
+
+        while (*p && *p != '\n' && *p != '\r') {
+            /* 跳过空白 */
+            while (*p == ' ' || *p == '\t') p++;
+            if (*p == '\n' || *p == '\r' || *p == '#' || !*p) break;
+
+            /* 读取源文件名 */
+            int j = 0;
+            while (*p && *p != ' ' && *p != '\t' && *p != '\n' && *p != '\r' && *p != '#') {
+                if (j < 63) t->srcs[t->src_count][j++] = *p;
+                p++;
+            }
+            if (j > 0) {
+                t->srcs[t->src_count][j] = '\0';
+                t->src_count++;
+                if (t->src_count >= MAX_TARGET_SOURCES) break;
+            }
+        }
+
+        if (t->src_count == 0) {
+            printf("tmakelist: 语法错误 ('%s' 没有源文件), 退化到默认构建\n",
+                   t->name);
+            has_error = 1;
+            break;
+        }
+
+        tl->target_count++;
+
+        /* 跳过行尾 */
+        while (*p && *p != '\n') p++;
+        if (*p) { p++; line++; }
+    }
+
+    if (has_error) {
+        tl->target_count = 0;
+        return -1;
+    }
+    if (tl->target_count == 0) return 0;
+    return tl->target_count;
+}
+
+/* 检查 name（不含 .c）是否被 tmakelist 中任一目标引用（包含目标名自身） */
+static int tmakelist_has_source(Tmakelist *tl, const char *name)
+{
+    int t;
+    for (t = 0; t < tl->target_count; t++) {
+        if (strcmp(tl->targets[t].name, name) == 0)
+            return 1;
+        int s;
+        for (s = 0; s < tl->targets[t].src_count; s++) {
+            if (strcmp(tl->targets[t].srcs[s], name) == 0)
+                return 1;
+        }
+    }
+    return 0;
+}
+
+/* 从 build .o 路径反推源目录（如 "build/app/compiler/tcc.o" → "app/compiler"） */
+static void obj_to_src_dir(const char *obj_path, char *dir, int size)
+{
+    /* 跳过 "build/" 前缀 */
+    const char *p = obj_path;
+    if (strncmp(p, "build/", 6) == 0) p += 6;
+    snprintf(dir, size, "%s", p);
+    /* 去掉最后的 /xxx.o，得到目录 */
+    char *slash = strrchr(dir, '/');
+    if (slash) *slash = '\0';
+}
+
+/* 链接多个 .o 文件到一个可执行文件，返回子进程 PID（不等待） */
+static int link_multi_app_start(char **obj_paths, int count,
+                                 const char *output_name, const char *output_path)
+{
+    char *ld_flags[1024];
+    int flag_num = copy_default_ld_flags(ld_flags);
+
+    /* 添加所有 .o 文件 */
+    for (int i = 0; i < count; i++)
+        ld_flags[flag_num++] = obj_paths[i];
+
+    /* 库文件 */
+    ld_flags[flag_num++] = "build/lib/tlibc.a";
+
+    /* 输出 */
+    char output[1024];
+    snprintf(output, sizeof(output), "%s/%s", output_path, output_name);
+    ld_flags[flag_num++] = (char *)"-o";
+    ld_flags[flag_num++] = output;
+    ld_flags[flag_num] = NULL;
+
+    int pid = fork();
+    if (pid == 0) {
+        printf("链接 %s ...\n", output_name);
+        execve(default_ld_path, ld_flags, default_envp);
+        exit(127);
+    }
+    return pid;
+}
+
+/* 链接多个 .o 文件到一个可执行文件（同步，等价于 start + wait） */
+static int link_multi_app(char **obj_paths, int count,
+                           const char *output_name, const char *output_path)
+{
+    int pid = link_multi_app_start(obj_paths, count, output_name, output_path);
+    if (pid < 0) return -1;
+    int status;
+    waitpid(pid, &status, 0);
+    return (status == 0) ? 0 : -1;
+}
 
 // 简单字符串转数字（项目无stdlib，自实现）
 static int parse_int(const char *s){
@@ -903,7 +1302,109 @@ static int build_single_app(const char *name)
     snprintf(build_dir, 512, "build/%s", out_subdir);
     tlibc_recursive_mkdir(build_dir);
 
-    /* 5. 编译（检查 .o 是否已存在，实现增量跳过） */
+    /* 5. 检查 tmakelist 多文件模块 */
+    Tmakelist tl;
+    int tl_ret = read_tmakelist(out_subdir, &tl);
+
+    if (tl_ret > 0) {
+        /* 在 tmakelist 中查找匹配的目标 */
+        TmakelistTarget *found_tgt = NULL;
+        for (int t = 0; t < tl.target_count; t++) {
+            if (strcmp(tl.targets[t].name, name) == 0) {
+                found_tgt = &tl.targets[t];
+                break;
+            }
+        }
+
+        if (found_tgt) {
+            /* ── tmakelist 多文件目标：编译全部依赖 → 联合链接 ── */
+            int total_srcs = 1 + found_tgt->src_count;
+            printf("检测到 tmakelist 多文件目标 (%d 个源文件)\n", total_srcs);
+
+            /* 编译目标自身 */
+            if (compile_file(src_path, out_subdir) < 0) return -1;
+
+            /* 编译依赖源文件 */
+            for (int s = 0; s < found_tgt->src_count; s++) {
+                char dep_src[512];
+                snprintf(dep_src, sizeof(dep_src), "%s/%s.c",
+                         out_subdir, found_tgt->srcs[s]);
+                if (tlibc_is_path_file(dep_src) == 1) {
+                    if (compile_file(dep_src, out_subdir) < 0) return -1;
+                }
+            }
+
+            /* 收集 .o 路径 */
+            char *group_objs[MAX_TARGET_SOURCES + 1];
+            int found_objs = 0;
+
+            /* 目标自身 */
+            {
+                char expected[512];
+                snprintf(expected, sizeof(expected), "build/%s/%s.o",
+                         out_subdir, found_tgt->name);
+                if (tlibc_is_path_file(expected) == 1) {
+                    group_objs[0] = (char *)tlibc_malloc(512);
+                    snprintf(group_objs[0], 512, "%s", expected);
+                    found_objs++;
+                }
+            }
+
+            /* 依赖 */
+            for (int s = 0; s < found_tgt->src_count; s++) {
+                char expected[512];
+                snprintf(expected, sizeof(expected), "build/%s/%s.o",
+                         out_subdir, found_tgt->srcs[s]);
+                group_objs[1 + s] = NULL;
+                if (tlibc_is_path_file(expected) == 1) {
+                    group_objs[1 + s] = (char *)tlibc_malloc(512);
+                    snprintf(group_objs[1 + s], 512, "%s", expected);
+                    found_objs++;
+                }
+            }
+
+            tlibc_recursive_mkdir("build/output");
+            /* 紧凑排列 */
+            char *compact[MAX_TARGET_SOURCES + 1];
+            int cc = 0;
+            for (int k = 0; k < total_srcs; k++)
+                if (k == 0 ? group_objs[0] : group_objs[k])
+                    compact[cc++] = (k == 0) ? group_objs[0] : group_objs[k];
+            /* 为避免双重释放，只在 group_objs[0] 存了 compact 也用到的指针；
+             * compact 指向 group_objs 数组中的元素，释放时需遍历 group_objs 非 NULL 项 */
+            if (link_multi_app(compact, cc, found_tgt->name, "build/output") < 0) {
+                for (int i = 0; i < total_srcs; i++) {
+                    if (i == 0 && group_objs[0]) tlibc_free(group_objs[0]);
+                    else if (i > 0 && group_objs[i]) tlibc_free(group_objs[i]);
+                }
+                printf("Link failed.\n");
+                return -1;
+            }
+            for (int i = 0; i < total_srcs; i++) {
+                if (i == 0 && group_objs[0]) tlibc_free(group_objs[0]);
+                else if (i > 0 && group_objs[i]) tlibc_free(group_objs[i]);
+            }
+
+            /* 安装 */
+            char install_dir[1024];
+            tlibc_get_user_dir(install_dir, 1024);
+            size_t dlen = strlen(install_dir);
+            snprintf(install_dir + dlen, 1024 - dlen, "/tlibc/bin");
+            tlibc_recursive_mkdir(install_dir);
+            char dst[1024];
+            snprintf(dst, 1024, "%s/%s", install_dir, found_tgt->name);
+            printf("Install: build/output/%s -> %s\n", found_tgt->name, dst);
+            char exe_src[512];
+            snprintf(exe_src, 512, "build/output/%s", found_tgt->name);
+            tlibc_copy_exe_file(exe_src, dst);
+            printf("\nDone: %s\n", found_tgt->name);
+            install_core_tools();
+            return 0;
+        }
+        /* tmakelist 存在但目标不匹配 → 回退到单文件 */
+    }
+
+    /* 6. 单文件应用：编译 + 链接 */
     char obj_check[512];
     get_obj_path(src_path, out_subdir, obj_check, sizeof(obj_check));
     if(!needs_rebuild(src_path, obj_check)){
@@ -916,7 +1417,7 @@ static int build_single_app(const char *name)
         }
     }
 
-    /* 6. 链接 */
+    /* 7. 链接 */
     char obj_path[512];
     snprintf(obj_path, 512, "build/%s/%s.o", out_subdir, name);
     tlibc_recursive_mkdir("build/output");
@@ -926,7 +1427,7 @@ static int build_single_app(const char *name)
         return -1;
     }
 
-    /* 7. 安装 */
+    /* 8. 安装 */
     char install_dir[1024];
     tlibc_get_user_dir(install_dir, 1024);
     size_t dlen = strlen(install_dir);
@@ -941,7 +1442,85 @@ static int build_single_app(const char *name)
     tlibc_copy_exe_file(exe_src, dst);
 
     printf("\nDone: %s\n", name);
+    install_core_tools();
     return 0;
+}
+
+/* ── 核心工具链安装到 ~/.local/bin/ ── */
+
+/* 判断 ~/.local/bin 是否在 PATH 中 */
+static int is_in_path(const char *dir)
+{
+    extern char **global_envp;
+    char *path = get_env_var(global_envp, "PATH");
+    if (!path) return 0;
+
+    char *p = path;
+    while (*p) {
+        char seg[512];
+        int s = 0;
+        while (*p && *p != ':') {
+            if (s < 511) seg[s++] = *p;
+            p++;
+        }
+        seg[s] = '\0';
+        if (strcmp(seg, dir) == 0) return 1;
+        if (*p == ':') p++;
+    }
+    return 0;
+}
+
+/* 安装核心工具链（tmake, shell, tcc, tpp）到 ~/.local/bin/。
+ * 仅安装 build/output/ 中已存在的，因此全量构建和 -b 单目标都可以调用。 */
+static void install_core_tools(void)
+{
+    char local_bin[1024];
+    tlibc_get_user_dir(local_bin, 1024);
+    {
+        size_t dl = strlen(local_bin);
+        snprintf(local_bin + dl, 1024 - dl, "/.local/bin");
+    }
+    tlibc_recursive_mkdir(local_bin);
+
+    int count = 0;
+    for (int i = 0; g_core_tools[i] != NULL; i++) {
+        char src[512];
+        snprintf(src, sizeof(src), "build/output/%s", g_core_tools[i]);
+        if (tlibc_is_path_file(src) != 1) continue;
+
+        char dst[1024];
+        snprintf(dst, sizeof(dst), "%s/%s", local_bin, g_core_tools[i]);
+
+        /* 先写到 .new 临时文件再 rename 到目标。
+         * 直接 O_TRUNC 正在运行的二进制会触发 ETXTBSY。 */
+        char tmp[1024];
+        snprintf(tmp, sizeof(tmp), "%s/.%s.new", local_bin, g_core_tools[i]);
+        if (tlibc_copy_exe_file(src, tmp) == 0)
+            rename(tmp, dst);
+        count++;
+    }
+
+    if (count == 0) return;
+
+    printf("\n核心工具: ");
+    for (int i = 0; g_core_tools[i] != NULL; i++) {
+        char src[512];
+        snprintf(src, sizeof(src), "build/output/%s", g_core_tools[i]);
+        if (tlibc_is_path_file(src) == 1)
+            printf("%s ", g_core_tools[i]);
+    }
+    printf("→ %s\n", local_bin);
+
+    if (!is_in_path(local_bin)) {
+        printf("  ! %s 不在 PATH 中。请将下面几行加到 ~/.bashrc 末尾：\n",
+               local_bin);
+        printf("      # ~/.local/bin — XDG 标准用户可执行文件路径\n");
+        printf("      if [ -d \"$HOME/.local/bin\" ] ; then\n");
+        printf("          PATH=\"$HOME/.local/bin:$PATH\"\n");
+        printf("      fi\n");
+        printf("    （不要从 ~/.bashrc 里 source ~/.profile，Ubuntu 的\n");
+        printf("     ~/.profile 默认会 source ~/.bashrc，双向 source 会死循环。）\n");
+    }
 }
 
 int main(int argc, char *argv[]){
@@ -953,12 +1532,15 @@ int main(int argc, char *argv[]){
             printf("\n用法: tmake [-j [N]] [-b <程序名>]\n");
             printf("\n选项:\n");
             printf("  -h, --help     显示本帮助信息\n");
-            printf("  -j [N]         并行编译，N 为并行任务数\n");
-            printf("                  不传 N 时自动检测 CPU 核数\n");
-            printf("                  不传 -j 时串行编译（默认）\n");
+            printf("  -j [N]         并行编译，N 为并行任务数（默认自动检测 CPU 核数）\n");
+            printf("                  不传 -j 时自动检测，-j 1 可切回串行\n");
             printf("  -b <程序名>    只构建指定程序（增量，跳过已有 .o）\n");
             printf("                  例如: tmake -b ndiscover\n");
             printf("                  重复调用跳过已编译文件，修改源码后自动重编\n");
+            printf("\n多文件模块:\n");
+            printf("  子目录下可放 tmakelist 文件定义多文件目标:\n");
+            printf("    <目标名>: <源文件1> <源文件2> ...\n");
+            printf("  有合法 tmakelist 的目录只编译其中引用的源文件。\n");
             return 0;
         } else if(strcmp(argv[i], "-b") == 0 || strcmp(argv[i], "--build") == 0){
             if(i + 1 < argc){
@@ -994,19 +1576,26 @@ int main(int argc, char *argv[]){
         printf("创建build目录成功\n");
     }
 
-    // 解析 -j [N] 参数
+    /* 解析 -j [N] 参数（显式指定时覆盖自动检测） */
     for(int i = 1; i < argc; i++){
         if(strcmp(argv[i], "-j") == 0){
+            g_jobs_explicit = 1;
             if(i + 1 < argc && argv[i+1][0] >= '0' && argv[i+1][0] <= '9'){
                 g_max_jobs = parse_int(argv[i + 1]);
             } else {
                 g_max_jobs = get_nprocs();
-                printf("检测到 CPU 核数: %d\n", g_max_jobs);
             }
             if(g_max_jobs < 1) g_max_jobs = 1;
             if(g_max_jobs > 64) g_max_jobs = 64;
             break;
         }
+    }
+
+    /* 默认自动检测 CPU 核数 */
+    if (!g_jobs_explicit) {
+        g_max_jobs = get_nprocs();
+        printf("检测到 CPU 核数: %d\n", g_max_jobs);
+        if (g_max_jobs < 1) g_max_jobs = 1;
     }
 
     char *exe_path = "build/output";
@@ -1042,6 +1631,7 @@ int main(int argc, char *argv[]){
 
     t_start = get_ms();
     install(exe_path);
+    install_core_tools();
     t_install = get_ms() - t_start;
 
     t_total = get_ms() - t_total;

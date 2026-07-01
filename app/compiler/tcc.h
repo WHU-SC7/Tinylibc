@@ -16,6 +16,12 @@
 #include "tlibc_everything.h"
 #include "elf.h"
 
+/* ─── 缓冲区容量（固定分配，溢出时安全报错退出） ─── */
+
+#define CODE_BUF_SIZE  (256 * 1024)  /* 代码生成缓冲区 */
+#define STRTAB_SIZE    (256 * 1024)  /* ELF 字符串表 */
+#define STRPOOL_SIZE   (256 * 1024)  /* 字符串字面量池 */
+
 /* ─── Arena 分配器 ─── */
 
 #define ARENA_SIZE (16 * 1024 * 1024)
@@ -209,7 +215,7 @@ typedef struct {
 } CgenSym;
 
 /* 代码生成输出的全局状态 */
-extern unsigned char code_buf[65536];
+extern unsigned char code_buf[CODE_BUF_SIZE];
 extern int code_size;
 
 extern CgenSym syms[MAX_SYMS];
@@ -218,11 +224,10 @@ extern int sym_count;
 extern Elf64_Rela rels[MAX_RELS];
 extern int rel_count;
 
-extern char strtab[65536];
+extern char strtab[STRTAB_SIZE];
 extern int strtab_len;
 
 /* 字符串字面量池 — cgen_expr 追加，cgen_program 结尾刷入 code_buf */
-#define STRPOOL_SIZE 65536
 extern unsigned char strpool_buf[STRPOOL_SIZE];
 extern int strpool_size;
 
@@ -349,7 +354,13 @@ static inline int align_up(int offset, int align) {
 }
 
 /* 代码生成共享辅助（所有 cgen_*.c 文件共用） */
-static inline void e1(int b) { code_buf[code_size++] = b & 0xFF; }
+static inline void e1(int b) {
+    if (code_size >= CODE_BUF_SIZE) {
+        __write(2, "tcc: code buffer overflow\n", 26);
+        __exit(1);
+    }
+    code_buf[code_size++] = b & 0xFF;
+}
 static inline void e4(int v) { e1(v); e1(v>>8); e1(v>>16); e1(v>>24); }
 
 static inline const char *arena_strdup(Arena *a, const char *start, int len) {

@@ -23,7 +23,7 @@
 
 /* ─── 全局缓冲区 ─── */
 
-unsigned char code_buf[65536];
+unsigned char code_buf[CODE_BUF_SIZE];
 int code_size;
 
 CgenSym syms[MAX_SYMS];
@@ -32,7 +32,7 @@ int sym_count;
 Elf64_Rela rels[MAX_RELS];
 int rel_count;
 
-char strtab[65536];
+char strtab[STRTAB_SIZE];
 int strtab_len;
 
 /* ─── 字符串字面量池 ─── */
@@ -595,6 +595,10 @@ void cgen_program(AstNode *prog) {
 
     /* 在全部函数代码之后追加字符串池 */
     if (strpool_size > 0) {
+        if (code_size + strpool_size > CODE_BUF_SIZE) {
+            __write(2, "tcc: code buffer overflow\n", 26);
+            __exit(1);
+        }
         int string_start = code_size;
 
         int i;

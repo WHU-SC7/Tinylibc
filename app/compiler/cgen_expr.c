@@ -121,6 +121,10 @@ void cgen_expr(AstNode *node) {
 
         /* 追加到字符串池 */
         int pool_off = strpool_size;
+        if (strpool_size + len > STRPOOL_SIZE) {
+            __write(2, "tcc: string pool overflow\n", 26);
+            __exit(1);
+        }
         int i;
         for (i = 0; i < len; i++)
             strpool_buf[strpool_size++] = str[i];

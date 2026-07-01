@@ -39,14 +39,26 @@ int elf_write_object(const char *path) {
     int shstrtab_sz = build_shstrtab(shstrtab_buf, sec_names, 5);
 
     /* ── 构建 .strtab ── */
-    static unsigned char strtab_buf[4096];
+    #define ELF_STRTAB_SIZE 16384
+    #define ELF_MAX_SYM_STR 4096
+    static unsigned char strtab_buf[ELF_STRTAB_SIZE];
     int strtab_sz = 0;
     strtab_buf[strtab_sz++] = '\0';
-    int sym_str_idx[4096];
+    int sym_str_idx[ELF_MAX_SYM_STR];
+    if (sym_count > ELF_MAX_SYM_STR) {
+        __write(2, "tcc: too many symbols\n", 22);
+        __exit(1);
+    }
     int i;
     for (i = 0; i < sym_count; i++) {
         sym_str_idx[i] = strtab_sz;
         const char *s = syms[i].name;
+        if (!s) s = "";
+        int nlen = 0; while (s[nlen]) nlen++;
+        if (strtab_sz + nlen + 1 > ELF_STRTAB_SIZE) {
+            __write(2, "tcc: strtab overflow\n", 21);
+            __exit(1);
+        }
         while (*s)
             strtab_buf[strtab_sz++] = *s++;
         strtab_buf[strtab_sz++] = '\0';

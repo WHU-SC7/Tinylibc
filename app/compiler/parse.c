@@ -370,17 +370,24 @@ static AstNode *parse_unary(Parser *p) {
             Token st = p->tok;
             consume(p);
             int sz = parse_type_specifier(p);
-            if (sz >= 0 && peek(p).kind == TOK_RPAREN) {
-                consume(p);
-                n->ival = sz;
-            } else {
-                /* sizeof(expr) — 回退，给表达式赋默认大小 */
-                p->lexer->pos = sp; p->lexer->line = sl;
-                p->lexer->col = sc; p->tok = st;
-                consume(p);
-                parse_expr(p); expect(p, TOK_RPAREN);
-                n->ival = 8;
+            if (sz >= 0) {
+                /* 跳过指针星号和限定符：sizeof(char*), sizeof(const int*) 等 */
+                int ptr_stars = 0;
+                while (peek(p).kind == TOK_STAR) { consume(p); ptr_stars++; }
+                while (peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
+                       peek(p).kind == TOK_RESTRICT) { consume(p); }
+                if (peek(p).kind == TOK_RPAREN) {
+                    consume(p);
+                    n->ival = (ptr_stars > 0) ? 8 : (sz > 0 ? sz : 4);
+                    return n;
+                }
             }
+            /* sizeof(expr) — 回退，给表达式赋默认大小 */
+            p->lexer->pos = sp; p->lexer->line = sl;
+            p->lexer->col = sc; p->tok = st;
+            consume(p);
+            parse_expr(p); expect(p, TOK_RPAREN);
+            n->ival = 8;
         } else {
             n->ival = 4;
         }
@@ -407,6 +414,26 @@ static AstNode *parse_unary(Parser *p) {
                 consume(p);
                 while (peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
                        peek(p).kind == TOK_RESTRICT) consume(p);
+            }
+            /* 处理复杂指针类型：(*name), (*name)[N], (*name)(params) 等 */
+            while (peek(p).kind == TOK_LPAREN) {
+                int depth = 1; consume(p);
+                while (depth > 0 && peek(p).kind != TOK_EOF) {
+                    if (peek(p).kind == TOK_LPAREN) depth++;
+                    if (peek(p).kind == TOK_RPAREN) depth--;
+                    if (depth) consume(p);
+                }
+                if (peek(p).kind == TOK_RPAREN) consume(p);
+                /* 数组后缀：(*)[N] */
+                while (peek(p).kind == TOK_LBRACKET) {
+                    int d2 = 1; consume(p);
+                    while (d2 > 0 && peek(p).kind != TOK_EOF) {
+                        if (peek(p).kind == TOK_LBRACKET) d2++;
+                        if (peek(p).kind == TOK_RBRACKET) d2--;
+                        if (d2) consume(p);
+                    }
+                    if (peek(p).kind == TOK_RBRACKET) consume(p);
+                }
             }
             if (peek(p).kind == TOK_RPAREN) {
                 consume(p);

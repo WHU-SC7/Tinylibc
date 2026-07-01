@@ -3,10 +3,6 @@
 
 #include "tlibc_types.h"    /* size_t */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /* ========= 线程栈大小 ========= */
 #define THREAD_STACK_SIZE (1024 * 1024)   /* 1 MiB */
 
@@ -59,9 +55,5 @@ void pthread_exit(void *retval);
 int pthread_detach(pthread_t t);
 pthread_t pthread_self(void);
 int pthread_equal(pthread_t a, pthread_t b);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* __PTHREAD_H */

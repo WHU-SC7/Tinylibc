@@ -67,12 +67,13 @@ static void unop_not(void) { e1(0xF7); e1(0xD0); }  /* not eax */
 /* ─── 函数调用 ─── */
 
 static void emit_call(const char *name) {
+    if (!name) return;
     /* 通过符号表查找函数地址。对于 .o 文件，使用 R_X86_64_PLT32 或 R_X86_64_PC32 重定位 */
     /* 先找到或创建符号 */
     int sym_idx = -1;
     int i;
     for (i = 0; i < sym_count; i++) {
-        if (strcmp(syms[i].name, name) == 0) { sym_idx = i; break; }
+        if (syms[i].name && strcmp(syms[i].name, name) == 0) { sym_idx = i; break; }
     }
     if (sym_idx < 0) {
         /* 创建未定义符号 */

@@ -18,7 +18,7 @@
 
 /* ─── Arena 分配器 ─── */
 
-#define ARENA_SIZE (4 * 1024 * 1024)
+#define ARENA_SIZE (16 * 1024 * 1024)
 
 typedef struct {
     char *ptr;

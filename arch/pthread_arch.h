@@ -15,19 +15,9 @@ struct pthread;   /* 前向声明，完整定义在 pthread.h */
 
 static inline struct pthread *__tlibc_thread_self(void)
 {
-#if defined(__x86_64__)
     struct pthread *self;
     __asm__("mov %%fs:0, %0" : "=r"(self));
     return self;
-
-#elif defined(__aarch64__)
-    struct pthread *self;
-    __asm__("mrs %0, tpidr_el0" : "=r"(self));
-    return self;
-
-#else
-#error "Unsupported architecture: no __tlibc_thread_self implementation"
-#endif
 }
 
 #endif /* __PTHREAD_ARCH_H */

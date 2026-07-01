@@ -38,10 +38,6 @@
 #define M_SQRT2    1.41421356237309504880
 #define M_SQRT1_2  0.70710678118654752440
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 double sqrt(double x);
 double fabs(double x);
 double ceil(double x);
@@ -63,9 +59,5 @@ double pow(double x, double y);
 
 /* 整数平方根（非 POSIX，tinylibc 扩展） */
 long long isqrt(long long n);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif /* _MATH_H */

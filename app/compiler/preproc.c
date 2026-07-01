@@ -454,6 +454,26 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                             int rl = func_macros[fmi].repl_len;
                             int ri = 0;
                             while (ri < rl) {
+                                /* 跳过字符串字面量（参数名不在字符串内替换） */
+                                if (rp[ri] == '"') {
+                                    out_putc(&temp, rp[ri]); ri++;
+                                    while (ri < rl && rp[ri] != '"') {
+                                        if (rp[ri] == '\\' && ri + 1 < rl) {
+                                            out_putc(&temp, rp[ri]); ri++;
+                                        }
+                                        out_putc(&temp, rp[ri]); ri++;
+                                    }
+                                    if (ri < rl) { out_putc(&temp, rp[ri]); ri++; }
+                                    continue;
+                                }
+                                /* 跳过字符字面量 */
+                                if (rp[ri] == '\'') {
+                                    out_putc(&temp, rp[ri]); ri++;
+                                    if (ri < rl && rp[ri] == '\\') { out_putc(&temp, rp[ri]); ri++; }
+                                    if (ri < rl) { out_putc(&temp, rp[ri]); ri++; }
+                                    if (ri < rl && rp[ri] == '\'') { out_putc(&temp, rp[ri]); ri++; }
+                                    continue;
+                                }
                                 /* , ## __VA_ARGS__：GCC 扩展，VA_ARGS 为空时删除逗号 */
                                 if (func_macros[fmi].is_variadic && rp[ri] == ',') {
                                     int nri = ri + 1;

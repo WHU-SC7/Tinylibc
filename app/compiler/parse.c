@@ -927,7 +927,7 @@ static const char *parse_declarator(Parser *p, int *ptr_level) {
         consume(p);
         return arena_strdup(p->arena, t.start, t.len);
     }
-    /* 处理 (*name)(params) — 函数指针 */
+    /* 处理 (*name)(params) 或 (*name[...])(params) — 函数指针/函数指针数组 */
     if (t.kind == TOK_LPAREN) {
         consume(p);
         if (peek(p).kind == TOK_STAR) {
@@ -937,6 +937,16 @@ static const char *parse_declarator(Parser *p, int *ptr_level) {
             Token nt = peek(p);
             const char *name = "";
             if (nt.kind == TOK_IDENT) { consume(p); name = arena_strdup(p->arena, nt.start, nt.len); }
+            /* 跳过数组后缀 [...]（函数指针数组）*/
+            while (peek(p).kind == TOK_LBRACKET) {
+                int d = 1; consume(p);
+                while (d > 0 && peek(p).kind != TOK_EOF) {
+                    if (peek(p).kind == TOK_LBRACKET) d++;
+                    if (peek(p).kind == TOK_RBRACKET) d--;
+                    if (d) consume(p);
+                }
+                if (peek(p).kind == TOK_RBRACKET) consume(p);
+            }
             expect(p, TOK_RPAREN);
             if (peek(p).kind == TOK_LPAREN) {
                 int d = 1; consume(p);
@@ -1357,9 +1367,12 @@ static AstNode *parse_statement(Parser *p) {
 /* is_variadic: 输出，表示是否有 ... */
 
 static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
-    expect(p, TOK_LPAREN);
-    AstNode *head = NULL;
     if (is_variadic) *is_variadic = 0;
+    /* 函数指针声明器 (*name)(params) 已在 parse_declarator 中跳过了参数，
+     * 此时当前 token 不是 '('，直接返回 NULL */
+    if (peek(p).kind != TOK_LPAREN) return NULL;
+    consume(p);  /* 跳过 '(' */
+    AstNode *head = NULL;
     AstNode **tail = &head;
     if (peek(p).kind == TOK_VOID) {
         /* 仅 void 单独作为参数时（无名称）才消耗 */
@@ -1445,8 +1458,8 @@ AstNode *parse_program(Parser *p) {
                 } else { consume(p); }
             }
             int tsz = parse_type_specifier(p);
-            (void)tsz;
-            const char *tname = parse_declarator(p, NULL);
+            int tptr_level = 0;
+            const char *tname = parse_declarator(p, &tptr_level);
             if (tname && *tname && typedef_count < MAX_TYPEDEFS) {
                 /* 检查是否已存在同名 typedef（头文件多重包含导致重复） */
                 int dup = 0;
@@ -1457,7 +1470,7 @@ AstNode *parse_program(Parser *p) {
                 if (!dup) {
                     TypedefEntry *te = &typedef_table[typedef_count];
                     te->name = tname;
-                    te->size = tsz;
+                    te->size = tptr_level > 0 ? 8 : tsz;
                     te->type_kind = (last_struct_member_count > 0) ? 1 : 0;
                     te->struct_idx = -1;
                     /* 对 struct typedef 保存成员信息 */
@@ -1510,9 +1523,35 @@ AstNode *parse_program(Parser *p) {
                 }
                 if (peek(p).kind == TOK_RBRACE) consume(p);
             }
-            /* 跳过可选的变量名和 , 初始化器 */
-            if (peek(p).kind == TOK_IDENT) consume(p);
-            if (peek(p).kind == TOK_COMMA) consume(p);
+            /* 跳过可选的变量声明、逗号分隔和初始化器 */
+            while (peek(p).kind == TOK_IDENT) {
+                consume(p);
+                /* 跳过数组后缀 */
+                while (peek(p).kind == TOK_LBRACKET) {
+                    int d = 1; consume(p);
+                    while (d > 0 && peek(p).kind != TOK_EOF) {
+                        if (peek(p).kind == TOK_LBRACKET) d++;
+                        if (peek(p).kind == TOK_RBRACKET) d--;
+                        if (d) consume(p);
+                    }
+                    if (peek(p).kind == TOK_RBRACKET) consume(p);
+                }
+                if (match(p, TOK_EQ)) {
+                    if (peek(p).kind == TOK_LBRACE) {
+                        int d = 1; consume(p);
+                        while (d > 0 && peek(p).kind != TOK_EOF) {
+                            if (peek(p).kind == TOK_LBRACE) d++;
+                            if (peek(p).kind == TOK_RBRACE) d--;
+                            if (d) consume(p);
+                        }
+                        if (peek(p).kind == TOK_RBRACE) consume(p);
+                    } else {
+                        parse_expr(p);
+                    }
+                }
+                if (peek(p).kind == TOK_COMMA) { consume(p); continue; }
+                break;
+            }
             expect(p, TOK_SEMI);
             continue;
         }
@@ -1563,16 +1602,19 @@ AstNode *parse_program(Parser *p) {
             }
         }
 
-        if (peek(p).kind != TOK_IDENT) {
+        /* 检查是否为函数指针声明器 (*name)(...) 或其变体 */
+        if (peek(p).kind == TOK_LPAREN) {
+            /* 可能是 (*name)(params) 函数指针 — 使用 parse_declarator */
+        } else if (peek(p).kind != TOK_IDENT) {
             p->lexer->pos = save_pos;
             p->lexer->line = save_line;
             p->lexer->col = save_col;
             p->tok = saved_tok;
             error_at(p, "expected identifier");
             break;
+        } else {
+            consume(p);
         }
-
-        consume(p);
         int is_func = (peek(p).kind == TOK_LPAREN);
 
         p->lexer->pos = save_pos;
@@ -1588,6 +1630,21 @@ AstNode *parse_program(Parser *p) {
             if (peek(p).kind == TOK_SEMI) {
                 /* 函数原型：只声明不定义 */
                 consume(p);
+            } else if (peek(p).kind == TOK_EQ) {
+                /* 函数指针变量带初始化器：int (*f)(args) = value; */
+                consume(p); /* = */
+                if (peek(p).kind == TOK_LBRACE) {
+                    int d = 1; consume(p);
+                    while (d > 0 && peek(p).kind != TOK_EOF) {
+                        if (peek(p).kind == TOK_LBRACE) d++;
+                        if (peek(p).kind == TOK_RBRACE) d--;
+                        if (d) consume(p);
+                    }
+                    if (peek(p).kind == TOK_RBRACE) consume(p);
+                } else {
+                    parse_expr(p);
+                }
+                expect(p, TOK_SEMI);
             } else {
                 /* 函数定义 */
                 AstNode *fbody = parse_compound_statement(p);
@@ -1609,29 +1666,36 @@ AstNode *parse_program(Parser *p) {
                 tail = &func->next;
             }
         } else {
-            while (peek(p).kind == TOK_STAR) consume(p);
-            if (peek(p).kind == TOK_IDENT) consume(p);
-            while (peek(p).kind == TOK_LBRACKET) {
-                int d = 1; consume(p);
-                while (d > 0 && peek(p).kind != TOK_EOF) {
-                    if (peek(p).kind == TOK_LBRACKET) d++;
-                    if (peek(p).kind == TOK_RBRACKET) d--;
-                    if (d) consume(p);
-                }
-                if (peek(p).kind == TOK_RBRACKET) consume(p);
-            }
-            if (match(p, TOK_EQ)) {
-                if (peek(p).kind == TOK_LBRACE) {
+            /* 全局变量声明（支持逗号分隔多变量：int a, b, c;） */
+            while (1) {
+                while (peek(p).kind == TOK_STAR) consume(p);
+                if (peek(p).kind == TOK_IDENT) consume(p);
+                while (peek(p).kind == TOK_LBRACKET) {
                     int d = 1; consume(p);
                     while (d > 0 && peek(p).kind != TOK_EOF) {
-                        if (peek(p).kind == TOK_LBRACE) d++;
-                        if (peek(p).kind == TOK_RBRACE) d--;
+                        if (peek(p).kind == TOK_LBRACKET) d++;
+                        if (peek(p).kind == TOK_RBRACKET) d--;
                         if (d) consume(p);
                     }
-                    if (peek(p).kind == TOK_RBRACE) consume(p);
-                } else {
-                    parse_expr(p);
+                    if (peek(p).kind == TOK_RBRACKET) consume(p);
                 }
+                if (match(p, TOK_EQ)) {
+                    if (peek(p).kind == TOK_LBRACE) {
+                        int d = 1; consume(p);
+                        while (d > 0 && peek(p).kind != TOK_EOF) {
+                            if (peek(p).kind == TOK_LBRACE) d++;
+                            if (peek(p).kind == TOK_RBRACE) d--;
+                            if (d) consume(p);
+                        }
+                        if (peek(p).kind == TOK_RBRACE) consume(p);
+                    } else {
+                        parse_expr(p);
+                    }
+                }
+                if (peek(p).kind == TOK_COMMA)
+                    consume(p);
+                else
+                    break;
             }
             expect(p, TOK_SEMI);
         }

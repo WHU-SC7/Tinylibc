@@ -139,6 +139,9 @@ typedef enum {
     AST_WHILE,         /* while 语句 */
     AST_FOR,           /* for 语句 */
     AST_DO_WHILE,      /* do-while 语句 */
+    AST_SWITCH,        /* switch 语句 */
+    AST_CASE,          /* case 标签 */
+    AST_DEFAULT,       /* default 标签 */
     AST_BREAK,         /* break 语句 */
     AST_CONTINUE,      /* continue 语句 */
     AST_BLOCK,         /* 复合语句（{}） */
@@ -170,6 +173,7 @@ typedef struct AstNode {
     struct AstNode *cond, *then_stmt, *else_stmt;
     /* AST_WHILE / AST_FOR */
     struct AstNode *loop_cond, *loop_body, *loop_init, *loop_step;
+    /* AST_SWITCH: cond = 条件, loop_body = 跳转表代码, stmts = 体语句 (AST_CASE/AST_DEFAULT/普通语句) */
     /* AST_BLOCK */
     struct AstNode *stmts;
     /* AST_CALL */

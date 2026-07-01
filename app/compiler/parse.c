@@ -215,15 +215,6 @@ static AstNode *parse_primary(Parser *p) {
         return n;
     }
 
-    /* 类型关键字在表达式中当作常量（兼容 __builtin_va_arg(ap, int)） */
-    if (t.kind == TOK_INT || t.kind == TOK_CHAR || t.kind == TOK_SHORT ||
-        t.kind == TOK_LONG || t.kind == TOK_VOID || t.kind == TOK_DOUBLE) {
-        consume(p);
-        AstNode *n = new_ast(p, AST_CONSTANT);
-        n->ival = 4;
-        return n;
-    }
-
     if (t.kind == TOK_STRING) {
         consume(p);
         AstNode *n = new_ast(p, AST_STRING);
@@ -258,9 +249,28 @@ static AstNode *parse_postfix(Parser *p) {
             consume(p);
             AstNode **tail = &call->args;
             while (peek(p).kind != TOK_RPAREN && peek(p).kind != TOK_EOF) {
-                *tail = parse_expr(p);
+                /* 先检查是否类型关键字（__builtin_va_arg 的类型参数） */
+                if (call->name && (peek(p).kind == TOK_INT || peek(p).kind == TOK_CHAR ||
+                    peek(p).kind == TOK_SHORT || peek(p).kind == TOK_LONG ||
+                    peek(p).kind == TOK_VOID || peek(p).kind == TOK_DOUBLE ||
+                    peek(p).kind == TOK_UNSIGNED || peek(p).kind == TOK_SIGNED ||
+                    peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE)) {
+                    int tsz = parse_type_specifier(p);
+                    /* 处理指针类型：char*, const void* 等 */
+                    while (peek(p).kind == TOK_STAR || peek(p).kind == TOK_CONST ||
+                           peek(p).kind == TOK_VOLATILE || peek(p).kind == TOK_RESTRICT) {
+                        if (peek(p).kind == TOK_STAR) tsz = 8;
+                        consume(p);
+                    }
+                    if (tsz > 0) {
+                        *tail = new_ast(p, AST_CONSTANT);
+                        (*tail)->ival = tsz;
+                    }
+                } else {
+                    *tail = parse_expr(p);
+                }
+                /* 回退路径：parse_expr 返回 NULL 时尝试类型 */
                 if (*tail == NULL && call->name) {
-                    /* __builtin_va_arg(ap, type) — 类型参数 */
                     int tsz = parse_type_specifier(p);
                     if (tsz > 0) {
                         *tail = new_ast(p, AST_CONSTANT);
@@ -881,6 +891,9 @@ static AstNode *parse_for_statement(Parser *p) {
 
     /* init */
     if (peek(p).kind != TOK_SEMI) {
+        /* 跳过限定符：for (const char *p = ...) */
+        while (peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
+               peek(p).kind == TOK_RESTRICT) consume(p);
         int ts = parse_type_specifier(p);
         if (ts >= 0) {
             n->loop_init = new_ast(p, AST_VAR_DECL);
@@ -918,6 +931,24 @@ static AstNode *parse_do_while(Parser *p) {
     n->loop_cond = parse_expr(p);
     expect(p, TOK_RPAREN);
     expect(p, TOK_SEMI);
+    return n;
+}
+
+/* ─── switch/case/default ─── */
+
+static AstNode *parse_switch_statement(Parser *p) {
+    consume(p);  /* switch */
+    expect(p, TOK_LPAREN);
+    AstNode *n = new_ast(p, AST_SWITCH);
+    n->cond = parse_expr(p);
+    expect(p, TOK_RPAREN);
+    /* switch 体使用复合语句解析器，由其处理 case/default 标签 */
+    n->stmts = NULL;
+    if (peek(p).kind == TOK_LBRACE) {
+        AstNode *block = parse_compound_statement(p);
+        if (block && block->stmts)
+            n->stmts = block->stmts;
+    }
     return n;
 }
 
@@ -1070,6 +1101,17 @@ static AstNode *parse_statement(Parser *p) {
     case TOK_WHILE:   return parse_while_statement(p);
     case TOK_FOR:     return parse_for_statement(p);
     case TOK_DO:      return parse_do_while(p);
+    case TOK_SWITCH:  return parse_switch_statement(p);
+    case TOK_CASE:
+        consume(p);
+        { AstNode *n = new_ast(p, AST_CASE);
+          AstNode *val = parse_expr(p);
+          n->ival = (val && val->kind == AST_CONSTANT) ? val->ival : 0;
+          expect(p, TOK_COLON); return n; }
+    case TOK_DEFAULT:
+        consume(p);
+        expect(p, TOK_COLON);
+        return new_ast(p, AST_DEFAULT);
     case TOK_BREAK:   return parse_break(p);
     case TOK_CONTINUE: return parse_continue(p);
     case TOK__ASM__: {
@@ -1221,19 +1263,27 @@ AstNode *parse_program(Parser *p) {
             (void)tsz;
             const char *tname = parse_declarator(p, NULL);
             if (tname && *tname && typedef_count < MAX_TYPEDEFS) {
-                TypedefEntry *te = &typedef_table[typedef_count];
-                te->name = tname;
-                te->size = tsz;
-                te->type_kind = (last_struct_member_count > 0) ? 1 : 0;
-                te->struct_idx = -1;
-                /* 对 struct typedef 保存成员信息 */
-                if (last_struct_member_count > 0) {
-                    te->member_count = last_struct_member_count;
-                    int mi;
-                    for (mi = 0; mi < last_struct_member_count && mi < MAX_MEMBERS; mi++)
-                        te->members[mi] = last_struct_members[mi];
+                /* 检查是否已存在同名 typedef（头文件多重包含导致重复） */
+                int dup = 0;
+                int ti;
+                for (ti = 0; ti < typedef_count; ti++) {
+                    if (strcmp(typedef_table[ti].name, tname) == 0) { dup = 1; break; }
                 }
-                typedef_count++;
+                if (!dup) {
+                    TypedefEntry *te = &typedef_table[typedef_count];
+                    te->name = tname;
+                    te->size = tsz;
+                    te->type_kind = (last_struct_member_count > 0) ? 1 : 0;
+                    te->struct_idx = -1;
+                    /* 对 struct typedef 保存成员信息 */
+                    if (last_struct_member_count > 0) {
+                        te->member_count = last_struct_member_count;
+                        int mi;
+                        for (mi = 0; mi < last_struct_member_count && mi < MAX_MEMBERS; mi++)
+                            te->members[mi] = last_struct_members[mi];
+                    }
+                    typedef_count++;
+                }
             }
             expect(p, TOK_SEMI);
             continue;

@@ -66,6 +66,10 @@ static int fixup_label[MAX_FIXUPS];
 static int fixup_offset[MAX_FIXUPS];
 static int fixup_count;
 
+/* ─── break/continue 目标标签（用于循环和 switch） ─── */
+static int break_target_label;    /* break 跳转目标，-1 表示无目标 */
+static int continue_target_label; /* continue 跳转目标，-1 表示无目标 */
+
 static void reset_labels(void) {
     label_count = 0;
     fixup_count = 0;
@@ -257,6 +261,11 @@ static void cgen_while(AstNode *stmt) {
     int start_label = new_label();
     int end_label = new_label();
 
+    int saved_break = break_target_label;
+    int saved_continue = continue_target_label;
+    break_target_label = end_label;
+    continue_target_label = start_label;
+
     set_label(start_label);
 
     cgen_expr(stmt->loop_cond);
@@ -268,12 +277,19 @@ static void cgen_while(AstNode *stmt) {
     emit_jmp(start_label);
 
     set_label(end_label);
+    break_target_label = saved_break;
+    continue_target_label = saved_continue;
 }
 
 static void cgen_for(AstNode *stmt) {
     int start_label = new_label();
     int end_label = new_label();
     int step_label = new_label();
+
+    int saved_break = break_target_label;
+    int saved_continue = continue_target_label;
+    break_target_label = end_label;
+    continue_target_label = step_label;
 
     /* init */
     if (stmt->loop_init) {
@@ -310,11 +326,79 @@ static void cgen_for(AstNode *stmt) {
 
     emit_jmp(start_label);
     set_label(end_label);
+    break_target_label = saved_break;
+    continue_target_label = saved_continue;
 }
 
 static void cgen_block(AstNode *block) {
     for (AstNode *s = block->stmts; s; s = s->next)
         cgen_stmt(s);
+}
+
+/* ─── switch/case/default ─── */
+
+#define MAX_CASES 256
+
+typedef struct { int value; int label; } CaseEntry;
+
+static void cgen_switch(AstNode *stmt) {
+    CaseEntry cases[MAX_CASES];
+    int case_count = 0;
+    int default_label = -1;
+
+    /* Phase 1: 遍历体收集 case 信息 */
+    for (AstNode *s = stmt->stmts; s; s = s->next) {
+        if (s->kind == AST_CASE) {
+            if (case_count >= MAX_CASES) break;
+            cases[case_count].value = s->ival;
+            cases[case_count].label = new_label();
+            s->op = cases[case_count].label;  /* 存入 op 字段供 Phase 4 使用 */
+            case_count++;
+        } else if (s->kind == AST_DEFAULT) {
+            default_label = new_label();
+            s->op = default_label;
+        }
+    }
+
+    /* Phase 2: 生成条件表达式 */
+    cgen_expr(stmt->cond);          /* eax = 条件值 */
+    emit1(0x50);                    /* push rax (保存到栈) */
+
+    /* Phase 3: 生成跳转到分发表 */
+    int dispatch_label = new_label();
+    emit_jmp(dispatch_label);
+
+    /* Phase 4: 生成 case 体 */
+    int saved_break = break_target_label;
+    break_target_label = new_label();
+
+    for (AstNode *s = stmt->stmts; s; s = s->next) {
+        if (s->kind == AST_CASE) {
+            set_label(s->op);
+        } else if (s->kind == AST_DEFAULT) {
+            set_label(s->op);
+        } else {
+            cgen_stmt(s);
+        }
+    }
+
+    /* Phase 5: 分发表 */
+    set_label(dispatch_label);
+    emit1(0x58);                    /* pop rax (恢复条件值) */
+
+    int i;
+    for (i = 0; i < case_count; i++) {
+        emit1(0x3D);                /* cmp eax, imm32 */
+        emit4(cases[i].value);
+        emit_jcc(0x84, cases[i].label);  /* je case_label */
+    }
+
+    /* 未匹配时跳到 default 或结束 */
+    if (default_label >= 0)
+        emit_jmp(default_label);
+
+    set_label(break_target_label);
+    break_target_label = saved_break;
 }
 
 /* ─── 语句分派 ─── */
@@ -346,6 +430,21 @@ static void cgen_stmt(AstNode *stmt) {
     case AST_ASM:
         if (stmt->asm_template)
             cgen_asm(stmt);
+        break;
+    case AST_SWITCH:
+        cgen_switch(stmt);
+        break;
+    case AST_CASE:
+    case AST_DEFAULT:
+        /* case/default 仅作为标签，由 cgen_switch 统一处理 */
+        break;
+    case AST_BREAK:
+        if (break_target_label >= 0)
+            emit_jmp(break_target_label);
+        break;
+    case AST_CONTINUE:
+        if (continue_target_label >= 0)
+            emit_jmp(continue_target_label);
         break;
     case AST_VAR_DECL:
         /* 初始化 */

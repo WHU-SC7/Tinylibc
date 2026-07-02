@@ -204,6 +204,7 @@ typedef struct AstNode {
     /* 修饰标记 */
     int is_static;       /* static 存储类 */
     int is_variadic;     /* 变参函数（...） */
+    int is_postfix;      /* 1 表示 x++/x--（后缀），0 表示 ++x/--x（前缀） */
     int type_size;       /* 类型大小（字节）：4=int, 8=指针/long/double, 1=char, 2=short */
     int elem_size;       /* AST_VAR_DECL: 指针变量的元素大小（int*→4, char**→8） */
 } AstNode;
@@ -298,6 +299,7 @@ typedef struct {
     const char *struct_tag;  /* 如果是 struct 类型，存标签名 */
     int is_float;            /* 1 表示 double 类型变量 */
     int element_size;        /* 指针变量的元素大小（用于指针运算：int*→4, char**→8） */
+    int scope_depth;         /* 声明时的作用域深度（用于块作用域变量阴影） */
 } LocalVar;
 
 extern LocalVar locals[MAX_LOCALS];
@@ -305,6 +307,7 @@ extern int local_count;
 extern int frame_size;
 extern int reg_save_offset;
 extern int func_nparams;
+extern int scope_depth;   /* 当前作用域深度（用于变量阴影解析） */
 
 /* ─── 类型系统（Phase 3） ─── */
 

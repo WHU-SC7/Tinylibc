@@ -53,6 +53,9 @@ int frame_size;
 int reg_save_offset;  /* 从 rbp 向下的偏移（负值） */
 int func_nparams;      /* 当前函数的命名参数个数（供 va_start 使用） */
 
+/* ─── 作用域深度（用于变量阴影解析） ─── */
+int scope_depth;
+
 /* ─── 标签和回填 ─── */
 
 #define MAX_LABELS 256
@@ -250,11 +253,14 @@ static void collect_locals(AstNode *node) {
     case AST_FUNC_DEF:
         local_count = 0;
         frame_size = 0;
+        scope_depth = 0;
         collect_locals(node->body);
         break;
     case AST_BLOCK:
+        scope_depth++;
         for (AstNode *s = node->stmts; s; s = s->next)
             collect_locals(s);
+        scope_depth--;
         break;
     case AST_VAR_DECL:
         if (local_count < MAX_LOCALS && node->name) {
@@ -266,6 +272,7 @@ static void collect_locals(AstNode *node) {
             locals[local_count].struct_tag = NULL;
             locals[local_count].is_float = node->is_float;
             locals[local_count].element_size = node->elem_size;
+            locals[local_count].scope_depth = scope_depth;
             local_count++;
         }
         break;
@@ -369,8 +376,9 @@ static void cgen_for(AstNode *stmt) {
             if (stmt->loop_init->expr) {
                 cgen_expr(stmt->loop_init->expr);
                 int i;
-                for (i = 0; i < local_count; i++) {
-                    if (strcmp(locals[i].name, stmt->loop_init->name) == 0) {
+                for (i = local_count - 1; i >= 0; i--) {
+                    if (strcmp(locals[i].name, stmt->loop_init->name) == 0 &&
+                        locals[i].scope_depth <= scope_depth) {
                         if (locals[i].is_float) {
                             emit1(0xF2); emit1(0x0F); emit1(0x11);
                             emit1(0x45); emit1(locals[i].offset & 0xFF);
@@ -412,8 +420,10 @@ static void cgen_for(AstNode *stmt) {
 }
 
 static void cgen_block(AstNode *block) {
+    scope_depth++;
     for (AstNode *s = block->stmts; s; s = s->next)
         cgen_stmt(s);
+    scope_depth--;
 }
 
 /* ─── switch/case/default ─── */
@@ -562,21 +572,27 @@ static void cgen_stmt(AstNode *stmt) {
     case AST_VAR_DECL:
         /* 初始化 */
         if (stmt->expr) {
-            cgen_expr(stmt->expr);
-            int i;
-            for (i = 0; i < local_count; i++) {
-                if (strcmp(locals[i].name, stmt->name) == 0) {
-                    if (locals[i].is_float) {
-                        /* movsd [rbp+off], xmm0 */
-                        emit1(0xF2); emit1(0x0F); emit1(0x11);
-                        emit1(0x45); emit1(locals[i].offset & 0xFF);
-                    } else if (locals[i].size == 8) {
-                        /* mov [rbp+off], rax */
-                        emit1(0x48); emit1(0x89); emit1(0x45); emit1(locals[i].offset & 0xFF);
-                    } else {
-                        emit1(0x89); emit1(0x45); emit1(locals[i].offset & 0xFF);
+            if (stmt->expr->kind == AST_ASSIGN) {
+                /* 复合初始化器 {a,b,c}：链中的每个 AST_ASSIGN 自行完成存储 */
+                AstNode *e;
+                for (e = stmt->expr; e; e = e->next)
+                    cgen_expr(e);
+            } else {
+                cgen_expr(stmt->expr);
+                int i;
+                for (i = local_count - 1; i >= 0; i--) {
+                    if (strcmp(locals[i].name, stmt->name) == 0 &&
+                        locals[i].scope_depth <= scope_depth) {
+                        if (locals[i].is_float) {
+                            emit1(0xF2); emit1(0x0F); emit1(0x11);
+                            emit1(0x45); emit1(locals[i].offset & 0xFF);
+                        } else if (locals[i].size == 8) {
+                            emit1(0x48); emit1(0x89); emit1(0x45); emit1(locals[i].offset & 0xFF);
+                        } else {
+                            emit1(0x89); emit1(0x45); emit1(locals[i].offset & 0xFF);
+                        }
+                        break;
                     }
-                    break;
                 }
             }
         }
@@ -592,7 +608,9 @@ static void cgen_func_def(AstNode *func) {
     int is_variadic = func->is_variadic;
 
     reset_labels();
+    scope_depth = 0;
     collect_locals(func);
+    scope_depth = 0;
 
     /* 可变参数函数：在帧底追加 48 字节寄存器保存区（局部变量之后） */
     if (is_variadic) frame_size += 48;
@@ -711,6 +729,7 @@ void cgen_init(void) {
     frame_size = 0;
     reg_save_offset = 0;
     func_nparams = 0;
+    scope_depth = 0;
     strtab_len = 0;
     strtab[strtab_len++] = '\0';
     strpool_size = 0;

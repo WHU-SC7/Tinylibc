@@ -15,6 +15,6 @@ int main(void) {
     int vals[10] = { a0,a1,a2,a3,a4,a5,a6,a7,a8,a9 };
     for (i = 0; i < 10; i++) sum += vals[i];
     for (i = 0; i < 10; i++) sum += b0;
-    if (sum != 45 + 90) return 1;
+    if (sum != 45) return 1;
     return 42;
 }

@@ -87,6 +87,20 @@ static int find_member_offset(const char *struct_tag, const char *member) {
     return 0;
 }
 
+/* 在 struct 中查找成员大小 */
+static int find_member_size(const char *struct_tag, const char *member) {
+    if (struct_tag) {
+        StructType *st = find_struct_tag(struct_tag);
+        if (st) {
+            int i;
+            for (i = 0; i < st->member_count; i++)
+                if (strcmp(st->members[i].name, member) == 0)
+                    return st->members[i].size;
+        }
+    }
+    return 0;
+}
+
 /* ─── 类型系统全局表 ─── */
 
 StructType tag_table[MAX_TAGS];
@@ -410,19 +424,27 @@ static AstNode *parse_postfix(Parser *p) {
             n->member_name = arena_strdup(p->arena, m.start, m.len);
             n->op = TOK_DOT;
             /* 查找成员偏移：优先用 pvar 记录的 struct 标签 */
+            const char *lookup_tag = NULL;
             if (left && left->kind == AST_VAR) {
-                const char *tag = pvar_find_tag(left->name);
-                if (tag) {
-                    n->ival = find_member_offset(tag, n->member_name);
-                } else {
-                    /* 回退：遍历所有 struct tag（含匿名 struct）查找成员偏移 */
-                    int ti, mi;
-                    for (ti = 0; ti < tag_count && n->ival == 0; ti++) {
-                        for (mi = 0; mi < tag_table[ti].member_count; mi++) {
-                            if (strcmp(tag_table[ti].members[mi].name, n->member_name) == 0) {
-                                n->ival = tag_table[ti].members[mi].offset;
-                                break;
-                            }
+                lookup_tag = pvar_find_tag(left->name);
+            } else if (left && left->kind == AST_BINOP && left->op == TOK_LBRACKET &&
+                       left->left && left->left->kind == AST_VAR) {
+                /* a[i].member — 从数组变量查找 struct 标签 */
+                lookup_tag = pvar_find_tag(left->left->name);
+            }
+            if (lookup_tag) {
+                n->ival = find_member_offset(lookup_tag, n->member_name);
+                n->type_size = find_member_size(lookup_tag, n->member_name);
+            }
+            if (n->ival == 0) {
+                /* 回退：遍历所有 struct tag（含匿名 struct）查找成员偏移 */
+                int ti, mi;
+                for (ti = 0; ti < tag_count && n->ival == 0; ti++) {
+                    for (mi = 0; mi < tag_table[ti].member_count; mi++) {
+                        if (strcmp(tag_table[ti].members[mi].name, n->member_name) == 0) {
+                            n->ival = tag_table[ti].members[mi].offset;
+                            n->type_size = tag_table[ti].members[mi].size;
+                            break;
                         }
                     }
                 }
@@ -440,7 +462,8 @@ static AstNode *parse_postfix(Parser *p) {
             if (left && left->kind == AST_VAR) {
                 const char *tag = pvar_find_tag(left->name);
                 if (tag) {
-                    n->ival = find_member_offset(tag, n->member_name);
+					n->ival = find_member_offset(tag, n->member_name);
+					n->type_size = find_member_size(tag, n->member_name);
                 }
             }
             /* 回退：遍历所有 struct tag（含匿名 struct）查找成员偏移 */
@@ -449,7 +472,8 @@ static AstNode *parse_postfix(Parser *p) {
                 for (ti = 0; ti < tag_count && n->ival == 0; ti++) {
                     for (mi = 0; mi < tag_table[ti].member_count; mi++) {
                         if (strcmp(tag_table[ti].members[mi].name, n->member_name) == 0) {
-                            n->ival = tag_table[ti].members[mi].offset;
+							n->ival = tag_table[ti].members[mi].offset;
+							n->type_size = tag_table[ti].members[mi].size;
                             break;
                         }
                     }
@@ -461,6 +485,7 @@ static AstNode *parse_postfix(Parser *p) {
             consume(p);
             AstNode *n = new_ast(p, AST_UNARY);
             n->op = TOK_PLUS_PLUS;
+            n->is_postfix = 1;
             n->expr = left;
             left = n;
 
@@ -468,6 +493,7 @@ static AstNode *parse_postfix(Parser *p) {
             consume(p);
             AstNode *n = new_ast(p, AST_UNARY);
             n->op = TOK_MINUS_MINUS;
+            n->is_postfix = 1;
             n->expr = left;
             left = n;
 
@@ -756,19 +782,60 @@ static AstNode *parse_ternary(Parser *p) {
 /* 赋值: = += -= *= /= %= <<= >>= &= ^= |= */
 static AstNode *parse_assign(Parser *p) {
     AstNode *left = parse_ternary(p);
-    if (peek(p).kind == TOK_EQ || peek(p).kind == TOK_PLUS_EQ ||
-        peek(p).kind == TOK_MINUS_EQ || peek(p).kind == TOK_STAR_EQ ||
-        peek(p).kind == TOK_SLASH_EQ || peek(p).kind == TOK_PERCENT_EQ ||
+    if (peek(p).kind == TOK_EQ) {
+        consume(p);
+        AstNode *right = parse_assign(p);
+        AstNode *n = new_ast(p, AST_ASSIGN);
+        n->left = left;
+        n->right = right;
+        n->op = TOK_EQ;
+        if (right && right->is_float) n->is_float = 1;
+        return n;
+    }
+    /* 复合赋值 += -= *= /= %= <<= >>= &= |= ^= → 展开为 left = left OP right */
+    if (peek(p).kind == TOK_PLUS_EQ || peek(p).kind == TOK_MINUS_EQ ||
+        peek(p).kind == TOK_STAR_EQ || peek(p).kind == TOK_SLASH_EQ ||
+        peek(p).kind == TOK_PERCENT_EQ ||
         peek(p).kind == TOK_LESS_LESS_EQ || peek(p).kind == TOK_GREATER_GREATER_EQ ||
         peek(p).kind == TOK_AND_EQ || peek(p).kind == TOK_OR_EQ ||
         peek(p).kind == TOK_CARET_EQ) {
         Token op = consume(p);
         AstNode *right = parse_assign(p);
+        /* 将 op 转换为对应的二元运算符 */
+        int binop;
+        switch (op.kind) {
+        case TOK_PLUS_EQ:  binop = TOK_PLUS; break;
+        case TOK_MINUS_EQ: binop = TOK_MINUS; break;
+        case TOK_STAR_EQ:  binop = TOK_STAR; break;
+        case TOK_SLASH_EQ: binop = TOK_SLASH; break;
+        case TOK_PERCENT_EQ: binop = TOK_PERCENT; break;
+        case TOK_LESS_LESS_EQ: binop = TOK_LESS_LESS; break;
+        case TOK_GREATER_GREATER_EQ: binop = TOK_GREATER_GREATER; break;
+        case TOK_AND_EQ:   binop = TOK_AMPERSAND; break;
+        case TOK_OR_EQ:    binop = TOK_PIPE; break;
+        case TOK_CARET_EQ: binop = TOK_CARET; break;
+        default: binop = TOK_PLUS; break;
+        }
         AstNode *n = new_ast(p, AST_ASSIGN);
-        n->left = left;
-        n->right = right;
-        n->op = op.kind;
-        if (right && right->is_float) n->is_float = 1;
+        n->left = left;          /* left 需要是左值（AST 共享，代码生成时会被多次访问） */
+        n->op = TOK_EQ;
+        /* 构建 left = left OP right */
+        AstNode *bin = new_ast(p, AST_BINOP);
+        bin->op = binop;
+        /* 复制 left 作为二元运算的左操作数 */
+        if (left && left->kind == AST_VAR) {
+            AstNode *cpy = new_ast(p, AST_VAR);
+            cpy->name = left->name;
+            cpy->type_size = left->type_size;
+            cpy->is_float = left->is_float;
+            bin->left = cpy;
+        } else {
+            bin->left = left;  /* 对非 AST_VAR 的左值，共享原节点 */
+        }
+        bin->right = right;
+        if (right && right->is_float) bin->is_float = 1;
+        n->right = bin;
+        if (bin->is_float) n->is_float = 1;
         return n;
     }
     return left;
@@ -1357,11 +1424,32 @@ AstNode *parse_compound_statement(Parser *p) {
                 /* 第一个变量的初始化 */
                 if (match(p, TOK_EQ)) {
                     if (peek(p).kind == TOK_LBRACE) {
-                        int d = 1; consume(p);
-                        while (d > 0 && peek(p).kind != TOK_EOF) {
-                            if (peek(p).kind == TOK_LBRACE) d++;
-                            if (peek(p).kind == TOK_RBRACE) d--;
-                            if (d) consume(p);
+                        /* { expr1, expr2, ... } — 简单数组初始化 */
+                        consume(p);
+                        AstNode *prev_init = NULL;
+                        int init_idx = 0;
+                        while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            AstNode *ie = parse_expr(p);
+                            if (ie && decl->name) {
+                                /* 构建 a[i] = expr 赋值节点 */
+                                AstNode *idx = new_ast(p, AST_CONSTANT);
+                                idx->ival = init_idx;
+                                AstNode *sub = new_ast(p, AST_BINOP);
+                                sub->op = TOK_LBRACKET;
+                                AstNode *var = new_ast(p, AST_VAR);
+                                var->name = decl->name;
+                                sub->left = var;
+                                sub->right = idx;
+                                AstNode *assign = new_ast(p, AST_ASSIGN);
+                                assign->left = sub;
+                                assign->right = ie;
+                                assign->type_size = 4;
+                                if (prev_init) prev_init->next = assign;
+                                else decl->expr = assign;
+                                prev_init = assign;
+                            }
+                            init_idx++;
+                            if (peek(p).kind == TOK_COMMA) consume(p);
                         }
                         if (peek(p).kind == TOK_RBRACE) consume(p);
                     } else {

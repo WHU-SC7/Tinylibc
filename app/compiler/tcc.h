@@ -219,15 +219,22 @@ typedef struct {
     int sym_idx;      /* 在 .symtab 中的索引（由 ELF 写入时分配） */
 } CgenSym;
 
-/* 代码生成输出的全局状态 */
-extern unsigned char code_buf[CODE_BUF_SIZE];
-extern int code_size;
+/* 代码生成输出的全局状态 — 映射到 elf_write.c 的共享缓冲区 */
+#define code_buf    elf_code_buf
+#define code_size   elf_code_size
+#define syms        elf_syms
+#define sym_count   elf_sym_count
+#define rels        elf_rels
+#define rel_count   elf_rel_count
+/* 注意：tcc 的 CgenSym 必须与 elf_write.h 的 ElfWriteSym 布局兼容 */
+#define CgenSym ElfWriteSym
 
-extern CgenSym syms[MAX_SYMS];
-extern int sym_count;
-
-extern Elf64_Rela rels[MAX_RELS];
-extern int rel_count;
+extern unsigned char elf_code_buf[CODE_BUF_SIZE];
+extern int elf_code_size;
+extern ElfWriteSym elf_syms[MAX_SYMS];
+extern int elf_sym_count;
+extern Elf64_Rela elf_rels[MAX_RELS];
+extern int elf_rel_count;
 
 extern char strtab[STRTAB_SIZE];
 extern int strtab_len;

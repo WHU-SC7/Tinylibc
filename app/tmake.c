@@ -64,6 +64,7 @@ static char *g_core_tools[] = {
     "shell",
     "tcc",
     "tpp",
+    "tas",
     NULL   /* 结尾哨兵，新增工具在上一行追加即可 */
 };
 
@@ -184,16 +185,41 @@ int compile_file_start(const char *file_path, char *output_path){
     get_obj_path(file_path, output_path, obj_file_path, sizeof(obj_file_path));
     if(!needs_rebuild(file_path, obj_file_path))
         return -2;   /* .o 已更新，跳过编译 */
+
+    /* 检查是否为 .S/.s 汇编文件，路由到 tas */
+    const char *ext = strrchr(file_path, '.');
+    int use_tas = (ext && (strcmp(ext, ".S") == 0 || strcmp(ext, ".s") == 0));
+
     int pid = fork();
     if(pid == 0){
-        char *gcc_flags[256];
-        int flag_num = copy_gcc_flags(gcc_flags);
-        gcc_flags[flag_num++] = "-c";
-        gcc_flags[flag_num++] = (char *)file_path;
-        gcc_flags[flag_num++] = "-o";
-        gcc_flags[flag_num++] = obj_file_path;
-        gcc_flags[flag_num] = NULL;
-        execve(default_gcc_path, gcc_flags, default_envp);
+        if (use_tas) {
+            /* 用 tas 编译汇编文件 */
+            char *argv[8];
+            argv[0] = "./build/output/tas";
+            argv[1] = (char *)file_path;
+            argv[2] = "-o";
+            argv[3] = obj_file_path;
+            argv[4] = NULL;
+            execve("./build/output/tas", argv, default_envp);
+            /* tas 不存在时回退到 gcc */
+            char *gcc_flags[256];
+            int flag_num = copy_gcc_flags(gcc_flags);
+            gcc_flags[flag_num++] = "-c";
+            gcc_flags[flag_num++] = (char *)file_path;
+            gcc_flags[flag_num++] = "-o";
+            gcc_flags[flag_num++] = obj_file_path;
+            gcc_flags[flag_num] = NULL;
+            execve(default_gcc_path, gcc_flags, default_envp);
+        } else {
+            char *gcc_flags[256];
+            int flag_num = copy_gcc_flags(gcc_flags);
+            gcc_flags[flag_num++] = "-c";
+            gcc_flags[flag_num++] = (char *)file_path;
+            gcc_flags[flag_num++] = "-o";
+            gcc_flags[flag_num++] = obj_file_path;
+            gcc_flags[flag_num] = NULL;
+            execve(default_gcc_path, gcc_flags, default_envp);
+        }
         exit(127);
     }
     return pid;

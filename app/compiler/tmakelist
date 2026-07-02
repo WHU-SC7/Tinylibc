@@ -3,3 +3,6 @@ tcc: lex parse preproc cgen cgen_expr cgen_asm elf_write
 
 # tpp — 独立预处理器
 tpp: preproc
+
+# tas — x86_64 汇编器
+tas: elf_write

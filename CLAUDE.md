@@ -82,9 +82,37 @@ tmake -j               # 自动检测 CPU 核数并行编译全部
 | `net/` | ndiscover（网络发现）, webserv（HTTP 服务器）, sniffer（抓包）, netprobe（延迟探测）, ping（ICMP 探测）, portscan（端口扫描）, http（HTTP 客户端）, dnsquery（DNS 查询） |
 | `net/old/` | 旧版：ssh, sshd, tclient, tserver, client, server（保留但不再编译） |
 | `term/` | vim, top, __game_pacman, template |
-| `compiler/` | elf_reader（ELF 文件读取器）, elf_maker（ELF 生成器） |
+| `compiler/` | **tcc**（自托管 C 编译器，9/9 自编译通过）：lex/parse/preproc/cgen/cgen_expr/cgen_asm/elf_write | tpp（独立预处理器） |（详见下方编译器章节） |
+| `elf/` | elf_reader（ELF 文件读取器）, elf_maker（ELF 生成器）, elfdump（ELF 反汇编工具） |
 | `test/` | test_string, test_smoke（冒烟测试）, test_iomux（poll/select/epoll 测试）, test_printf（格式化、精度测试）, test_filelist（文件列表测试）, thread（线程测试）, tlibc_free（释放测试）, passwd, quene, test_math（sqrt/sin/cos/exp/log/pow 等 23 个用例） |
 | `paper/` | exp, mempool, memtest, pthread（与 glibc 对比实验） |
+
+### 自托管 C 编译器 `app/compiler/`（~5,500 行，33 次提交）
+
+自举 C 编译器，编译 Tinylibc 自身全部库源文件（27/27）并链接运行。
+入口 `tcc.c`（206 行）读取源文件 → 预处理 → 词法 → 解析 → 代码生成 → ELF 输出。
+
+| 文件 | 行数 | 职责 |
+|------|------|------|
+| `tcc.c` | 206 | 编译器入口：参数解析、读文件、编排编译流水线 |
+| `tcc.h` | 382 | 核心类型：Token/AST 节点/Arena 分配器/符号表/类型系统/局部变量 |
+| `preproc.c` | 691 | C 预处理器：宏定义/展开（对象宏+函数宏+递归+##+stringify）、#include、#if/#ifdef/#ifndef 条件编译、续行符/注释清理 |
+| `lex.c` | 547 | 词法分析器：字符流 → Token 流，覆盖 C 全部关键字和运算符 |
+| `parse.c` | 1,759 | 递归下降解析器：Token 流 → AST，完整运算符优先级链（赋值→后缀），含 struct/union/enum/typedef/goto/label/switch |
+| `cgen.c` | 666 | x86_64 代码生成器：AST → 机器码，管理函数帧/局部变量/控制流跳转标签 |
+| `cgen_expr.c` | 731 | 表达式代码生成：二元/一元运算、函数调用（x86_64 ABI 传参）、浮点 SSE |
+| `cgen_asm.c` | 128 | 内联汇编：识别 ~15 种已知 __asm__ 模板（syscall/lock xadd/lock cmpxchg/TLS）并发射机器码 |
+| `elf_write.c` | 301 | ELF64 可重定位目标文件写入器：接收代码缓冲区和符号表，生成 .o 文件 |
+| `tpp.c` | 48 | 独立预处理器：读 C 源文件 → preprocess() → 输出 .i 文件，用于调试宏展开 |
+| `tmakelist` | 5 | 多文件编译规则：tcc 列出所有模块依赖，tpp 只依赖 preproc |
+
+**编译流水线：** `tcc input.c` → read_file → preprocess → lexer_init → parser_init → parse_program → cgen_init → cgen_program → elf_write_object → `.o` 文件
+
+**已实现的语言特性：** int/char/short/long/void/double 基本类型、struct/union/enum、typedef、指针/数组、const/volatile/register/static/extern 限定符、if/else/while/for/do-while/switch/case/default、goto/label、return/break/continue、函数调用（含可变参数）、sizeof、逗号表达式、字符串字面量、内联汇编（__asm__）、__builtin_va_list/start/arg/end、浮点 SSE 代码生成、double 字面量（含科学计数法）
+
+**预处理器特性：** 对象宏 + 函数式宏（含递归展开、参数预展开）、## 粘贴、# stringify、__VA_ARGS__、#include、#if/#ifdef/#ifndef/#endif、续行符 `\`、注释过滤（`//` / `/* */`）、CRLF 行尾处理
+
+**关键常量：** Arena 16MB、代码缓冲区 256KB、符号表 8192 条、重定位 16384 条、字符串池 256KB、宏 4096 个
 
 ### 头文件（三层结构：核心 → POSIX → 项目自定义）
 
@@ -93,6 +121,7 @@ tmake -j               # 自动检测 CPU 核数并行编译全部
 | 文件 | 内容 |
 |------|------|
 | `core.h` | 所有 syscall 包装声明 + 核心公共头文件引用 |
+| `elf.h` | ELF64 格式定义：Elf64_Ehdr/Shdr/Sym/Rela，被编译器 (tcc) 和 elf 工具 (elf_reader/elf_maker/elfdump) 共用 |
 | `procfs.h` | `/proc` 解析 API：`tlibc_list_pids`, `tlibc_read_proc_status`, `tlibc_read_proc_stat` |
 | `atomic.h` | x86_64 原子操作：lock cmpxchg / lock xadd |
 | `mempool.h` | 内存池 API |

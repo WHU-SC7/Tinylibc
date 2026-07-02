@@ -78,9 +78,57 @@ tmake -b ndiscover       # 第二次调用：跳过已有 .o（增量）
 | `net/` | 5,256 | ndiscover（1,622，网络发现）、webserv（1,343，HTTP 服务器）、sniffer（793，抓包）、netprobe（488，延迟探测）、portscan（377，端口扫描）、http（163，HTTP 客户端）、dnsquery（470，DNS 查询）|
 | `net/old/` | 1,034 | 旧版实现（client、server、ssh、sshd、tclient、tserver），保留但不再由 tmake 编译 |
 | `term/` | 1,543 | vim（546，文本查看器）、top（650，进程监视器）、__game_pacman（271，吃豆人）、template（76，模板） |
-| `compiler/` | 76 | elf_reader（62，ELF 文件读取器）、elf_maker（14，ELF 生成器） |
+| `compiler/` | 5,464 | **tcc** — 自托管 C 编译器（9/9 自编译通过）。模块：tcc（206，入口）、preproc（691，预处理器）、lex（547，词法）、parse（1,759，解析）、cgen（666，代码生成）、cgen_expr（731，表达式）、cgen_asm（128，内联汇编）、elf_write（301，ELF 写入）、tpp（48，独立预处理器）、tcc.h（382，类型定义）、tmakelist（5，构建规则） |
+| `elf/` | 168 | elf_reader（62，ELF 读取器）、elf_maker（14，ELF 生成器）、elfdump（92，ELF 反汇编） |
 | `test/` | 3,158 | test_smoke（816，冒烟测试）、test_iomux（705，poll/select/epoll 测试）、test_string（371，字符串测试）、test_printf（318，格式化测试）、thread（282，线程测试）、tlibc_free（237，释放测试）、quene（223，队列测试）、test_filelist（141，文件列表测试）、passwd（65，passwd 解析测试） |
 | `paper/` | 182 | exp（60）、memtest（55）、mempool（35）、pthread（32），与 glibc 对比实验 |
+
+### `/app/compiler/` — 自托管 C 编译器
+
+自举 C 编译器（33 次提交，~5,500 行），能从源码编译 Tinylibc 自身全部库源文件（27/27）
+并链接运行。仅依赖 tlibc（无 glibc），生成 x86_64 ELF 可重定位目标文件。
+
+**编译流水线：**
+
+```
+tcc input.c → read_file → preprocess → lex → parse → cgen → elf_write → input.o
+```
+
+1. **入口 (tcc.c):** 解析参数、读取源文件、设置 include 路径、编排六阶段流水线
+2. **预处理 (preproc.c):** 展开所有 `#include`/`#define`/条件编译指令，输出纯 C 代码
+3. **词法分析 (lex.c):** 将预处理后的字符流转换为 Token 流（~60 种 Token 类型）
+4. **语法分析 (parse.c):** 递归下降解析器，按运算符优先级链构建 AST（~25 种 AST 节点）
+5. **代码生成 (cgen.c + cgen_expr.c + cgen_asm.c):** 遍历 AST 发射 x86_64 机器码
+6. **ELF 写入 (elf_write.c):** 将代码缓冲区和符号表序列化为 ELF64 .o 文件
+
+**模块详解：**
+
+| 模块 | 行数 | 核心职责 |
+|------|------|---------|
+| `tcc.c` | 206 | 命令行入口：`-o` 输出路径、`-d` 调试模式、include 路径注册（./include, ./include/posix, ./include/tlibc, ./arch, ./arch/x86_64） |
+| `tcc.h` | 382 | 共享类型定义：Token（~70 种）、AST 节点（25 种）、Arena 分配器（16MB）、符号表（8192）、重定位表（16384）、局部变量表（256）、struct/typedef 类型系统 |
+| `preproc.c` | 691 | 递归下降宏展开：对象宏 4096 + 函数宏 1024，支持 ## 粘贴、# stringify、__VA_ARGS__、参数预展开、递归展开保护。#include 支持 16 个搜索路径。#if/#ifdef/#ifndef/#endif 条件编译。续行符 `\\`、CRLF、`//`/`/* */` 注释清理 |
+| `lex.c` | 547 | 词法分析：标识符/关键字映射（37 个关键字）、整数/浮点字面量（含科学计数法）、字符串字面量（转义序列）、全部 C 运算符（含复合赋值） |
+| `parse.c` | 1,759 | 递归下降解析器。表达式按 15 级优先级链解析（赋值→三元→逻辑→位→比较→移位→加减→乘除→一元→后缀→基本）。语句：if/else/while/for/do-while/switch/case/default/goto/label/return/break/continue。声明：变量/函数/struct/union/enum/typedef |
+| `cgen.c` | 666 | x86_64 代码生成：函数序言/尾声（push rbp/mov rbp,rsp/leave/ret）、局部变量帧分配、控制流（jmp/条件跳转/回填标签）、switch 跳转表 |
+| `cgen_expr.c` | 731 | 表达式求值（结果→eax）：二元运算（左入栈→右求值→出栈到ecx→运算）、函数调用（x86_64 ABI：rdi/rsi/rdx/rcx/r8/r9 + xmm0-xmm7 浮点）、一元运算、成员访问（. 和 ->）、浮点 SSE 指令（movsd/addsd/subsd/mulsd/divsd/cvtsi2sd/cvttsd2si） |
+| `cgen_asm.c` | 128 | 内联汇编模板匹配：识别 ~15 种已知模式（syscall、mov $N+syscall、lock xaddq/l、lock cmpxchgq/l、mov %fs:0）并直接发射对应机器码 |
+| `elf_write.c` | 301 | ELF64 目标文件生成：ELF header + .text + .data + .rodata + .shstrtab + .symtab + .strtab + .rela.text，机器类型 x86_64，ABI System V |
+| `tpp.c` | 48 | 独立预处理器：读 .c → preprocess() → 写 .i，用于调试宏展开和头文件包含 |
+| `tmakelist` | 5 | 多文件构建规则：tcc 编译需链接全部 7 个模块；tpp 只依赖 preproc |
+
+**自举状态：** 编译器由 tmake（自托管构建工具）通过 `tmake -b tcc` 编译。
+编译后可用自身重新编译自身（二次自举），生成的 .o 文件与 GCC 编译版本行为一致。
+当前 tcc.c 自编译通过（9/9 lib 源文件全部编译成功并链接）。
+
+**关键设计决策：**
+
+- **固定分配，溢出安全退出：** Arena 16MB、代码缓冲区 256KB、字符串池 256KB，所有缓冲区固定大小，溢出时 `error_at` 打印错误并 `__exit(1)`，不崩溃不越界
+- **无动态重分配：** 整个编译过程不调用 `malloc`/`realloc`（文件读取除外），所有 AST/node 分配走 Arena bump allocator
+- **三地址码跳过：** 直接从 AST 发射 x86_64 机器码，不需要中间 IR 层 — 编译器短小精悍
+- **表达式约定：** 求值结果始终放在 eax 中（浮点在 xmm0），二元运算左操作数入栈
+- **ELF 复用库类型：** `tcc.h` 包含 `elf.h`，直接复用 `Elf64_Ehdr`/`Elf64_Shdr`/`Elf64_Sym`/`Elf64_Rela` 类型定义
+- **内联汇编不是通用汇编器：** 只识别项目中已知的 ~15 种模板，未知模板报错退出
 
 ### `/include/` — 头文件（三层结构）
 

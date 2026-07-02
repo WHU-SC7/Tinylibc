@@ -74,7 +74,7 @@ static int pvar_find_float(const char *name) {
 }
 /* 在 struct 中查找成员偏移 */
 static int find_member_offset(const char *struct_tag, const char *member) {
-    if (struct_tag && *struct_tag) {
+    if (struct_tag) {
         /* 查 struct 标签表 */
         StructType *st = find_struct_tag(struct_tag);
         if (st) {
@@ -415,15 +415,13 @@ static AstNode *parse_postfix(Parser *p) {
                 if (tag) {
                     n->ival = find_member_offset(tag, n->member_name);
                 } else {
-                    /* 回退：遍历所有已注册的 struct tag，查找含此成员的 struct */
+                    /* 回退：遍历所有 struct tag（含匿名 struct）查找成员偏移 */
                     int ti, mi;
                     for (ti = 0; ti < tag_count && n->ival == 0; ti++) {
-                        if (tag_table[ti].tag) {
-                            for (mi = 0; mi < tag_table[ti].member_count; mi++) {
-                                if (strcmp(tag_table[ti].members[mi].name, n->member_name) == 0) {
-                                    n->ival = tag_table[ti].members[mi].offset;
-                                    break;
-                                }
+                        for (mi = 0; mi < tag_table[ti].member_count; mi++) {
+                            if (strcmp(tag_table[ti].members[mi].name, n->member_name) == 0) {
+                                n->ival = tag_table[ti].members[mi].offset;
+                                break;
                             }
                         }
                     }
@@ -441,7 +439,21 @@ static AstNode *parse_postfix(Parser *p) {
             /* 通过指针的 struct 标签查找 — 暂简化 */
             if (left && left->kind == AST_VAR) {
                 const char *tag = pvar_find_tag(left->name);
-                if (tag) n->ival = find_member_offset(tag, n->member_name);
+                if (tag) {
+                    n->ival = find_member_offset(tag, n->member_name);
+                }
+            }
+            /* 回退：遍历所有 struct tag（含匿名 struct）查找成员偏移 */
+            if (n->ival == 0) {
+                int ti, mi;
+                for (ti = 0; ti < tag_count && n->ival == 0; ti++) {
+                    for (mi = 0; mi < tag_table[ti].member_count; mi++) {
+                        if (strcmp(tag_table[ti].members[mi].name, n->member_name) == 0) {
+                            n->ival = tag_table[ti].members[mi].offset;
+                            break;
+                        }
+                    }
+                }
             }
             left = n;
 
@@ -923,9 +935,11 @@ static int parse_struct_type(Parser *p, StructType *out) {
         for (mi = 0; mi < out->member_count && mi < MAX_MEMBERS; mi++)
             last_struct_members[mi] = out->members[mi];
 
-        if (tag) {
-            StructType *existing = find_struct_tag(tag);
-            if (!existing) add_struct_tag(tag, out);
+        /* 始终注册到 tag_table（匿名 struct 用空字符串标记） */
+        {
+            const char *reg_tag = tag ? tag : "";
+            StructType *existing = find_struct_tag(reg_tag);
+            if (!existing) add_struct_tag(reg_tag, out);
         }
     } else if (tag) {
         /* struct tag (前置声明或引用) */

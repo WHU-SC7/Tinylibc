@@ -856,6 +856,26 @@ void cgen_expr(AstNode *node) {
             /* 获取右值实际大小：cgen_expr 已设置 type_size */
             int rsize = node->right ? node->right->type_size : 4;
             if (rsize == 0) rsize = 8;  /* 指针默认 8 字节 */
+            if (node->left->op == TOK_ARROW) {
+                /* ptr->member = expr : 计算地址 -> 求值右操作数 -> 存储 */
+                cgen_expr(node->left->left);     /* 指针值 -> rax */
+                if (moff != 0) {
+                    push_rax();
+                    mov_eax_imm(moff);
+                    pop_rcx();
+                    if (node->left->type_size == 8) binop_add64(); else binop_add();
+                }
+                push_rax();                       /* 保存目标地址 */
+                cgen_expr(node->right);            /* 右值 -> eax/rax */
+                pop_rcx();                        /* rcx = 目标地址 */
+                if (rsize >= 8) {
+                    e1(0x48); e1(0x89); e1(0x01); /* mov [rcx], rax */
+                } else {
+                    e1(0x89); e1(0x01);           /* mov [rcx], eax */
+                }
+                node->type_size = rsize;
+                break;
+            }
             if (node->left->op == TOK_DOT && node->left->left->kind == AST_VAR) {
                 const char *vname = node->left->left->name;
                 int i;

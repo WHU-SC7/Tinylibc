@@ -82,22 +82,22 @@ void cgen_asm(AstNode *node) {
         }
         /* r10 = a4 */
         for (i = 0; i < local_count; i++) {
-            if (strcmp(locals[i].name, "r10") == 0) {
-                e1(0x4C); e1(0x8B); e1(0x45); e1(locals[i].offset & 0xFF);  /* mov r10, [rbp+off] */
+            if (strcmp(locals[i].name, "a4") == 0) {
+                e1(0x4C); e1(0x8B); e1(0x55); e1(locals[i].offset & 0xFF);  /* mov r10, [rbp+off] */
                 break;
             }
         }
         /* r8 = a5 */
         for (i = 0; i < local_count; i++) {
-            if (strcmp(locals[i].name, "r8") == 0) {
-                e1(0x4D); e1(0x8B); e1(0x45); e1(locals[i].offset & 0xFF);  /* mov r8, [rbp+off] */
+            if (strcmp(locals[i].name, "a5") == 0) {
+                e1(0x4C); e1(0x8B); e1(0x45); e1(locals[i].offset & 0xFF);  /* mov r8, [rbp+off] */
                 break;
             }
         }
         /* r9 = a6 */
         for (i = 0; i < local_count; i++) {
-            if (strcmp(locals[i].name, "r9") == 0) {
-                e1(0x4D); e1(0x8B); e1(0x4D); e1(locals[i].offset & 0xFF);  /* mov r9, [rbp+off] */
+            if (strcmp(locals[i].name, "a6") == 0) {
+                e1(0x4C); e1(0x8B); e1(0x4D); e1(locals[i].offset & 0xFF);  /* mov r9, [rbp+off] */
                 break;
             }
         }

@@ -633,6 +633,16 @@ static void cgen_func_def(AstNode *func) {
                                     else { e1(0x44); e1(0x89); e1(0x4D); e1(locals[i].offset & 0xFF); }
                                     break;
                                 }
+                            } else {
+                                /* 7th+ 参数来自栈：[rbp + 0x10 + (int_reg-6)*8] */
+                                int sd = 0x10 + (int_reg - 6) * 8;
+                                if (use64) {
+                                    e1(0x48); e1(0x8B); e1(0x45); e1(sd & 0xFF);       /* mov rax, [rbp+sd] */
+                                    e1(0x48); e1(0x89); e1(0x45); e1(locals[i].offset & 0xFF); /* mov [rbp+off], rax */
+                                } else {
+                                    e1(0x8B); e1(0x45); e1(sd & 0xFF);       /* mov eax, [rbp+sd] */
+                                    e1(0x89); e1(0x45); e1(locals[i].offset & 0xFF); /* mov [rbp+off], eax */
+                                }
                             }
                             int_reg++;
                         }

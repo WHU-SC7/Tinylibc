@@ -32,7 +32,7 @@ mkdir -p "$PROJECT/build/obj/lib/thread"
 
 echo "=== lib/core/*.c ==="
 "$TCC" "$PROJECT/lib/core/io.c"     -o "$PROJECT/build/obj/lib/core/io.o"
-"$TCC" "$PROJECT/lib/core/mem.c"    -o "$PROJECT/build/obj/lib/core/mem.o"
+"$GCC" -I./include -I./include/posix -I./include/tlibc -I./arch -I./arch/x86_64 -DX86_64_TLIBC=1 -nostdlib -ffreestanding -fno-stack-protector -fno-pie -mno-red-zone -static -fno-common -c  "$PROJECT/lib/core/mem.c"    -o "$PROJECT/build/obj/lib/core/mem.o"
 "$TCC" "$PROJECT/lib/core/proc.c"   -o "$PROJECT/build/obj/lib/core/proc.o"
 "$TCC" "$PROJECT/lib/core/signal.c" -o "$PROJECT/build/obj/lib/core/signal.o"
 "$TCC" "$PROJECT/lib/core/sync.c"   -o "$PROJECT/build/obj/lib/core/sync.o"

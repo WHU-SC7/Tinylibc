@@ -915,6 +915,8 @@ void cgen_expr(AstNode *node) {
         }
 
         for (ai = argc - 1; ai >= 0; ai--) {
+            /* 7th+ args stay on stack (x86_64 ABI) */
+            if (ai >= 6) continue;
             if (arg_is_float[ai]) {
                 /* 从栈弹到 xmm[ai] */
                 e1(0xF2); e1(0x0F); e1(0x10);
@@ -957,6 +959,11 @@ void cgen_expr(AstNode *node) {
             e1(0xFF); e1(0xD1); /* call *rcx */
         } else {
             emit_call(node->name);
+        }
+        /* 清理栈上传参（7th+ 参数被调用者未清理） */
+        if (argc > 6) {
+            int stack_args = argc - 6;
+            e1(0x48); e1(0x83); e1(0xC4); e1(stack_args * 8);  /* add rsp, N */
         }
         /* 若调用返回 double，标记节点 */
         if (node->is_float)

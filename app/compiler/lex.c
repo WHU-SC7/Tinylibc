@@ -394,6 +394,7 @@ Token lexer_next(Lexer *lx) {
     t.start = lx->start;
     t.ival = 0;
     t.sval = NULL;
+    t.is_float = 0;
 
     switch (c) {
     case '0': case '1': case '2': case '3': case '4':

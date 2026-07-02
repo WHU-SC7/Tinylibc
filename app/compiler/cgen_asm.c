@@ -48,9 +48,32 @@ void cgen_asm(AstNode *node) {
     /* 匹配已知模板并发射机器码 */
 
     if (strcmp(t, "syscall") == 0) {
-        /* syscall — 0F 05 */
-        /* 参数已由调用者在寄存器中准备好（rdi, rsi, rdx, r10, r8, r9） */
-        e1(0x0F); e1(0x05);
+        /* syscall — 0F 05
+         * 内联汇编约束："=a"(ret) : "a"(n), "D"(a1), "S"(a2), "d"(a3) ...
+         * 需要将 ABI 寄存器映射到 syscall 寄存器：
+         *   rdi(n) → rax, rsi(a1)→rdi, rdx(a2)→rsi, rcx(a3)→rdx
+         * 结果在 rax 中，需要存回 ret 变量（局部变量 "ret" 的栈槽） */
+        /* push rcx; push rdx; push rsi; push rdi; pop rax; pop rdi; pop rsi; pop rdx */
+        e1(0x51);  /* push rcx */
+        e1(0x52);  /* push rdx */
+        e1(0x56);  /* push rsi */
+        e1(0x57);  /* push rdi */
+        e1(0x58);  /* pop rax */
+        e1(0x5F);  /* pop rdi */
+        e1(0x5E);  /* pop rsi */
+        e1(0x5A);  /* pop rdx */
+        e1(0x0F); e1(0x05);  /* syscall */
+        /* 结果在 rax — 存到局部变量 "ret" 的栈槽 */
+        {
+            int i;
+            for (i = 0; i < local_count; i++) {
+                if (strcmp(locals[i].name, "ret") == 0) {
+                    /* mov [rbp+off], rax */
+                    e1(0x48); e1(0x89); e1(0x45); e1(locals[i].offset & 0xFF);
+                    break;
+                }
+            }
+        }
         return;
     }
 

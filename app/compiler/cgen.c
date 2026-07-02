@@ -245,6 +245,28 @@ static void collect_locals(AstNode *node) {
             local_count++;
         }
         break;
+    case AST_IF:
+        collect_locals(node->then_stmt);
+        collect_locals(node->else_stmt);
+        break;
+    case AST_WHILE:
+        collect_locals(node->loop_body);
+        break;
+    case AST_FOR:
+        collect_locals(node->loop_init);
+        collect_locals(node->loop_body);
+        break;
+    case AST_DO_WHILE:
+        collect_locals(node->loop_body);
+        break;
+    case AST_SWITCH:
+        for (AstNode *s = node->stmts; s; s = s->next)
+            collect_locals(s);
+        break;
+    case AST_RETURN:
+        break;
+    case AST_EXPR_STMT:
+        break;
     default:
         break;
     }
@@ -328,6 +350,8 @@ static void cgen_for(AstNode *stmt) {
                         if (locals[i].is_float) {
                             emit1(0xF2); emit1(0x0F); emit1(0x11);
                             emit1(0x45); emit1(locals[i].offset & 0xFF);
+                        } else if (locals[i].size == 8) {
+                            emit1(0x48); emit1(0x89); emit1(0x45); emit1(locals[i].offset & 0xFF);
                         } else {
                             emit1(0x89); emit1(0x45); emit1(locals[i].offset & 0xFF);
                         }
@@ -522,6 +546,9 @@ static void cgen_stmt(AstNode *stmt) {
                         /* movsd [rbp+off], xmm0 */
                         emit1(0xF2); emit1(0x0F); emit1(0x11);
                         emit1(0x45); emit1(locals[i].offset & 0xFF);
+                    } else if (locals[i].size == 8) {
+                        /* mov [rbp+off], rax */
+                        emit1(0x48); emit1(0x89); emit1(0x45); emit1(locals[i].offset & 0xFF);
                     } else {
                         emit1(0x89); emit1(0x45); emit1(locals[i].offset & 0xFF);
                     }
@@ -555,12 +582,14 @@ static void cgen_func_def(AstNode *func) {
 
     emit_prologue();
 
-    /* 保存参数寄存器到局部变量槽（int 和 float 分开计数） */
+    /* 保存参数寄存器到局部变量槽（int 和 float 分开计数）。
+     * 只处理 func_nparams 个参数，因为 func->params 链已包含 body 语句。 */
     {
         int int_reg = 0;
         int float_reg = 0;
         AstNode *p;
-        for (p = func->params; p; p = p->next) {
+        int pi;
+        for (p = func->params, pi = 0; p && pi < func_nparams; p = p->next, pi++) {
             if (p->kind == AST_VAR_DECL && p->name) {
                 int i;
                 for (i = 0; i < local_count; i++) {
@@ -574,14 +603,33 @@ static void cgen_func_def(AstNode *func) {
                             }
                             float_reg++;
                         } else {
+                            int use64 = (locals[i].size == 8);
                             if (int_reg < 6) {
                                 switch (int_reg) {
-                                case 0: e1(0x89); e1(0x7D); e1(locals[i].offset & 0xFF); break;
-                                case 1: e1(0x89); e1(0x75); e1(locals[i].offset & 0xFF); break;
-                                case 2: e1(0x89); e1(0x55); e1(locals[i].offset & 0xFF); break;
-                                case 3: e1(0x89); e1(0x4D); e1(locals[i].offset & 0xFF); break;
-                                case 4: e1(0x44); e1(0x89); e1(0x45); e1(locals[i].offset & 0xFF); break;
-                                case 5: e1(0x44); e1(0x89); e1(0x4D); e1(locals[i].offset & 0xFF); break;
+                                case 0:
+                                    if (use64) { e1(0x48); e1(0x89); e1(0x7D); e1(locals[i].offset & 0xFF); }
+                                    else { e1(0x89); e1(0x7D); e1(locals[i].offset & 0xFF); }
+                                    break;
+                                case 1:
+                                    if (use64) { e1(0x48); e1(0x89); e1(0x75); e1(locals[i].offset & 0xFF); }
+                                    else { e1(0x89); e1(0x75); e1(locals[i].offset & 0xFF); }
+                                    break;
+                                case 2:
+                                    if (use64) { e1(0x48); e1(0x89); e1(0x55); e1(locals[i].offset & 0xFF); }
+                                    else { e1(0x89); e1(0x55); e1(locals[i].offset & 0xFF); }
+                                    break;
+                                case 3:
+                                    if (use64) { e1(0x48); e1(0x89); e1(0x4D); e1(locals[i].offset & 0xFF); }
+                                    else { e1(0x89); e1(0x4D); e1(locals[i].offset & 0xFF); }
+                                    break;
+                                case 4:
+                                    if (use64) { e1(0x4C); e1(0x89); e1(0x45); e1(locals[i].offset & 0xFF); }
+                                    else { e1(0x44); e1(0x89); e1(0x45); e1(locals[i].offset & 0xFF); }
+                                    break;
+                                case 5:
+                                    if (use64) { e1(0x4C); e1(0x89); e1(0x4D); e1(locals[i].offset & 0xFF); }
+                                    else { e1(0x44); e1(0x89); e1(0x4D); e1(locals[i].offset & 0xFF); }
+                                    break;
                                 }
                             }
                             int_reg++;

@@ -172,6 +172,12 @@ static AstNode *new_ast(Parser *p, AstKind kind) {
     AstNode *n = arena_alloc(p->arena, sizeof(AstNode));
     n->kind = kind;
     n->next = NULL;
+    n->type_size = 4;  /* 默认 int 大小 */
+    n->is_float = 0;
+    n->is_static = 0;
+    n->ival = 0;
+    n->dval = 0.0;
+    n->op = 0;
     return n;
 }
 
@@ -1071,9 +1077,12 @@ static AstNode *parse_for_statement(Parser *p) {
         int loop_is_double = (peek(p).kind == TOK_DOUBLE);
         int ts = parse_type_specifier(p);
         if (ts >= 0) {
+            int loop_ptrs = 0;
             n->loop_init = new_ast(p, AST_VAR_DECL);
-            n->loop_init->name = parse_declarator(p, NULL);
-            n->loop_init->is_float = loop_is_double;
+            n->loop_init->name = parse_declarator(p, &loop_ptrs);
+            n->loop_init->ival = loop_ptrs > 0 ? 8 : (ts > 0 ? ts : 4);
+            n->loop_init->type_size = n->loop_init->ival;
+            n->loop_init->is_float = (loop_is_double && loop_ptrs == 0);
             if (n->loop_init->name && *n->loop_init->name)
                 pvar_add(n->loop_init->name, NULL, loop_is_double);
             if (match(p, TOK_EQ))
@@ -1205,6 +1214,7 @@ AstNode *parse_compound_statement(Parser *p) {
                 int dv_ptrs = 0;
                 decl->name = parse_declarator(p, &dv_ptrs);
                 decl->ival = dv_ptrs > 0 ? 8 : (ts > 0 ? ts : 4);
+                decl->type_size = decl->ival;
                 decl->is_float = (decl_is_double && dv_ptrs == 0);
                 if (decl->name && *decl->name) {
                     if (last_struct_tag || last_struct_member_count > 0) {
@@ -1471,6 +1481,7 @@ static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
             pd->name = pname;
             /* 指针类型统一为 8 字节，避免与相邻局部变量偏移重叠 */
             pd->ival = (ptr_level > 0) ? 8 : (psz > 0 ? psz : 4);
+            pd->type_size = pd->ival;
             pd->is_float = (param_is_double && ptr_level == 0);
             pvar_add(pname, NULL, pd->is_float);
             *tail = pd;
@@ -1701,6 +1712,8 @@ AstNode *parse_program(Parser *p) {
             } else {
                 /* 函数定义 */
                 AstNode *fbody = parse_compound_statement(p);
+                /* 先统计参数个数（在链入 body 之前） */
+                int pcount = 0; { AstNode *pp; for (pp = fparams; pp; pp = pp->next) pcount++; }
                 /* 将参数声明前置到函数体 */
                 if (fparams) {
                     AstNode *last_p = fparams;
@@ -1708,7 +1721,6 @@ AstNode *parse_program(Parser *p) {
                     last_p->next = fbody->stmts;
                     fbody->stmts = fparams;
                 }
-                int pcount = 0; { AstNode *pp; for (pp = fparams; pp; pp = pp->next) pcount++; }
                 AstNode *func = new_ast(p, AST_FUNC_DEF);
                 func->name = fname;
                 func->params = fparams;

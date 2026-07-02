@@ -202,6 +202,7 @@ typedef struct AstNode {
     int op;
     /* 修饰标记 */
     int is_static;
+    int type_size;       /* 类型大小（字节）：4=int, 8=指针/long/double, 1=char, 2=short */
 } AstNode;
 
 /* ─── 符号表（代码生成输出用） ─── */

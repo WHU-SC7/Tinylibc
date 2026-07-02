@@ -1292,7 +1292,7 @@ AstNode *parse_compound_statement(Parser *p) {
                 decl->name = parse_declarator(p, &dv_ptrs);
                 decl->ival = dv_ptrs > 0 ? 8 : (ts > 0 ? ts : 4);
                 decl->type_size = decl->ival;
-                decl->elem_size = (dv_ptrs > 1) ? 8 : (dv_ptrs == 1 ? ts : 4);
+                decl->elem_size = (dv_ptrs > 1) ? 8 : (dv_ptrs == 1 ? ts : (ts > 0 ? ts : 4));
                 decl->is_float = (decl_is_double && dv_ptrs == 0);
                 decl->is_static = q_static;
                 if (decl->name && *decl->name) {
@@ -1315,9 +1315,15 @@ AstNode *parse_compound_statement(Parser *p) {
                     }
                 }
                 last_struct_tag = NULL;
-                /* 跳过数组后缀 [...] */
+                /* 处理数组后缀 [N]（将数组维数乘入 ival；表达式维数跳过处理） */
                 while (peek(p).kind == TOK_LBRACKET) {
-                    int d = 1; consume(p);
+                    consume(p);
+                    if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
+                        decl->ival *= peek(p).ival;
+                        consume(p);
+                    }
+                    /* 跳过到匹配的 ]（处理表达式维数如 4*1024 或 MAX*1024） */
+                    int d = 1;
                     while (d > 0 && peek(p).kind != TOK_EOF) {
                         if (peek(p).kind == TOK_LBRACKET) d++;
                         if (peek(p).kind == TOK_RBRACKET) d--;

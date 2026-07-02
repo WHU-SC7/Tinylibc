@@ -41,9 +41,9 @@ echo "=== lib/core/*.c ==="
 echo "=== lib/init/ ==="
 "$TCC" "$PROJECT/lib/init/init.c"   -o "$PROJECT/build/obj/lib/init/init.o"
 
-echo "=== lib/stdio/ ==="
-"$TCC" "$PROJECT/lib/stdio/printf.c"   -o "$PROJECT/build/obj/lib/stdio/printf.o"
-"$TCC" "$PROJECT/lib/stdio/snprintf.c" -o "$PROJECT/build/obj/lib/stdio/snprintf.o"
+echo "=== lib/stdio/ （用 gcc，tcc 的 idiv 优化在复合赋值中有 bug） ==="
+"$GCC" -I./include -I./include/posix -I./include/tlibc -I./arch -I./arch/x86_64 -DX86_64_TLIBC=1 -nostdlib -ffreestanding -fno-stack-protector -fno-pie -mno-red-zone -static -fno-common -c "$PROJECT/lib/stdio/printf.c"   -o "$PROJECT/build/obj/lib/stdio/printf.o"
+"$GCC" -I./include -I./include/posix -I./include/tlibc -I./arch -I./arch/x86_64 -DX86_64_TLIBC=1 -nostdlib -ffreestanding -fno-stack-protector -fno-pie -mno-red-zone -static -fno-common -c "$PROJECT/lib/stdio/snprintf.c" -o "$PROJECT/build/obj/lib/stdio/snprintf.o"
 
 echo "=== lib/thread/ （用 gcc，tcc 不支持 TLS） ==="
 "$GCC" -I./include -I./include/posix -I./include/tlibc -I./arch -I./arch/x86_64 -DX86_64_TLIBC=1 -nostdlib -ffreestanding -fno-stack-protector -fno-pie -mno-red-zone -static -fno-common -c "$PROJECT/lib/thread/mempool.c" -o "$PROJECT/build/obj/lib/thread/mempool.o"

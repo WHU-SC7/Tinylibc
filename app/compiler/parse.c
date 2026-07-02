@@ -1884,6 +1884,7 @@ AstNode *parse_program(Parser *p) {
                         gvar->is_static = current_static;
                         gvar->ival = gv_total;
                         gvar->type_size = gv_total;
+                        gvar->elem_size = (gv_arr_len > 1) ? gv_unit : 0;
                         *tail = gvar;
                         tail = &gvar->next;
                     }

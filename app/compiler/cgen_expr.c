@@ -333,7 +333,11 @@ void cgen_expr(AstNode *node) {
                 /* 全局变量：使用符号表记录的大小确定加载宽度 */
                 int gsz = syms[si].size > 0 ? syms[si].size :
                           (node->type_size > 0 ? node->type_size : 4);
-                if (gsz == 8) {
+                if (gsz > 8) {
+                    /* 数组/大结构体：数组→指针衰减（lea rax, [rip + disp32]） */
+                    e1(0x48); e1(0x8D); e1(0x05);
+                    node->type_size = 8;
+                } else if (gsz == 8) {
                     e1(0x48); e1(0x8B); e1(0x05);  /* mov rax, [rip + disp32] */
                 } else {
                     e1(0x8B); e1(0x05);             /* mov eax, [rip + disp32] */
@@ -373,6 +377,16 @@ void cgen_expr(AstNode *node) {
                         if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
                         break;
+                    }
+                }
+                if (i >= local_count) {
+                    /* 全局数组：查找 global_elem_size */
+                    for (i = 0; i < sym_count; i++) {
+                        if (syms[i].name && strcmp(syms[i].name, node->left->name) == 0) {
+                            if (i < MAX_SYMS && global_elem_size[i] > 0)
+                                elem_size = global_elem_size[i];
+                            break;
+                        }
                     }
                 }
             }
@@ -710,6 +724,15 @@ void cgen_expr(AstNode *node) {
                         if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
                         break;
+                    }
+                }
+                if (i >= local_count) {
+                    for (i = 0; i < sym_count; i++) {
+                        if (syms[i].name && strcmp(syms[i].name, node->left->left->name) == 0) {
+                            if (i < MAX_SYMS && global_elem_size[i] > 0)
+                                elem_size = global_elem_size[i];
+                            break;
+                        }
                     }
                 }
             }

@@ -84,7 +84,34 @@ off_t __lseek(int fd, off_t offset, int whence)
 void *__mmap(void *addr, size_t length, int prot, int flags,
              int fd, off_t offset)
 {
+#if defined(__GNUC__)
+    /*
+     * GCC/clang 版本：使用 syscall() 宏，正确处理 7 个参数。
+     */
     return (void *)syscall(SYS_mmap, addr, length, prot, flags, fd, offset);
+#else
+    /*
+     * TCC 版本：tcc 的函数调用只支持最多 6 个参数，
+     * 而 __syscall6 需要 7 个参数（n + a1..a6），
+     * 第 7 个参数会丢失。
+     *
+     * 通过定义与 cgen_asm 约定同名的局部变量
+     * （n, a1..a6, ret），让 __asm__("syscall") 自动从
+     * 局部变量表加载寄存器值。
+     */
+    long n    = SYS_mmap;
+    long a1   = (long)addr;
+    long a2   = (long)length;
+    long a3   = (long)prot;
+    long a4   = (long)flags;
+    long a5   = (long)fd;
+    long a6   = (long)offset;
+    long ret;
+    __asm__ __volatile__("syscall"
+        : "=a"(ret) : "a"(n)
+        : "rcx", "r11", "memory");
+    return (void *)ret;
+#endif
 }
 
 int __munmap(void *addr, size_t length)

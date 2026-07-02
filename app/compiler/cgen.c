@@ -201,6 +201,9 @@ static void emit_epilogue(void) {
 
 /* ─── 符号辅助 ─── */
 
+/* 全局变量的元素大小（供数组下标运算确定偏移量） */
+int global_elem_size[MAX_SYMS];
+
 static int add_sym(const char *name, int offset, int size,
                    int is_global, int is_func) {
     /*
@@ -713,6 +716,8 @@ void cgen_init(void) {
     strpool_size = 0;
     str_info_count = 0;
     elf_bss_size = 0;
+    for (int _i = 0; _i < MAX_SYMS; _i++)
+        global_elem_size[_i] = 0;
 }
 
 void cgen_program(AstNode *prog) {
@@ -726,7 +731,8 @@ void cgen_program(AstNode *prog) {
             /* 对齐到 8 字节 */
             bss_offset = (bss_offset + 7) & ~7;
             if (sym_count < MAX_SYMS) {
-                CgenSym *s = &syms[sym_count++];
+                int si = sym_count;
+                CgenSym *s = &syms[si];
                 s->name = node->name;
                 s->offset = bss_offset;
                 s->size = vsize;
@@ -734,6 +740,8 @@ void cgen_program(AstNode *prog) {
                 s->is_func = 0;
                 s->shndx = 3;  /* .bss section */
                 s->sym_idx = -1;
+                global_elem_size[si] = (vsize > 8) ? node->elem_size : 0;
+                sym_count++;
             }
             bss_offset += vsize;
         }

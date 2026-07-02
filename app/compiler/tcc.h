@@ -243,6 +243,9 @@ extern int elf_bss_size;
 extern char strtab[STRTAB_SIZE];
 extern int strtab_len;
 
+/* 全局变量的元素大小（数组下标运算用） */
+extern int global_elem_size[MAX_SYMS];
+
 /* 字符串字面量池 — cgen_expr 追加，cgen_program 结尾刷入 code_buf */
 extern unsigned char strpool_buf[STRPOOL_SIZE];
 extern int strpool_size;

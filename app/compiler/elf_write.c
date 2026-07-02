@@ -120,8 +120,8 @@ int elf_write_object(const char *path) {
     /* e_shnum (2) */
     b[p++] = num_sections; b[p++] = 0;
 
-    /* e_shstrndx (2) */
-    b[p++] = 5; b[p++] = 0;
+    /* e_shstrndx (2) — 指向 .shstrtab 节区（索引 6） */
+    b[p++] = 6; b[p++] = 0;
 
     /* ── Section header table (占位) ── */
     int shdr_start = p;

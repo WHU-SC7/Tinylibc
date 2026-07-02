@@ -1297,21 +1297,21 @@ AstNode *parse_compound_statement(Parser *p) {
                 decl->is_static = q_static;
                 if (decl->name && *decl->name) {
                     if (last_struct_tag || last_struct_member_count > 0) {
-                        pvar_add(decl->name, last_struct_tag ? last_struct_tag : "",
-                                 decl->is_float);
+                        pvar_add_ex(decl->name, last_struct_tag ? last_struct_tag : "",
+                                 decl->is_float, decl->ival);
                     } else {
                         int ti;
                         int found_typedef = 0;
                         for (ti = 0; ti < typedef_count; ti++) {
                             if (typedef_table[ti].member_count > 0 && ts == typedef_table[ti].size) {
-                                pvar_add(decl->name, typedef_table[ti].name,
-                                         decl->is_float);
+                                pvar_add_ex(decl->name, typedef_table[ti].name,
+                                         decl->is_float, decl->ival);
                                 found_typedef = 1;
                                 break;
                             }
                         }
                         if (!found_typedef)
-                            pvar_add(decl->name, NULL, decl->is_float);
+                            pvar_add_ex(decl->name, NULL, decl->is_float, decl->ival);
                     }
                 }
                 last_struct_tag = NULL;
@@ -1331,35 +1331,18 @@ AstNode *parse_compound_statement(Parser *p) {
                     }
                     if (peek(p).kind == TOK_RBRACKET) consume(p);
                 }
-                /* 跳过逗号分隔的声明：int a, b, c; */
-                while (peek(p).kind == TOK_COMMA) {
-                    consume(p);
-                    parse_declarator(p, NULL);
-                    while (peek(p).kind == TOK_LBRACKET) {
-                        int d = 1; consume(p);
-                        while (d > 0 && peek(p).kind != TOK_EOF) {
-                            if (peek(p).kind == TOK_LBRACKET) d++;
-                            if (peek(p).kind == TOK_RBRACKET) d--;
-                            if (d) consume(p);
-                        }
-                        if (peek(p).kind == TOK_RBRACKET) consume(p);
-                    }
+                /* 数组处理后更新 pvar 中的变量大小 */
+                if (decl->name && *decl->name && decl->ival > 4) {
+                    int pi;
+                    for (pi = 0; pi < pvar_count; pi++)
+                        if (strcmp(pvar_name[pi], decl->name) == 0)
+                            { pvar_size_arr[pi] = decl->ival; break; }
                 }
-                /* 函数原型 int snprintf(...); — 跳过 */
-                if (peek(p).kind == TOK_LPAREN) {
-                    int d = 1; consume(p);
-                    while (d > 0 && peek(p).kind != TOK_EOF) {
-                        if (peek(p).kind == TOK_LPAREN) d++;
-                        if (peek(p).kind == TOK_RPAREN) d--;
-                        if (d) consume(p);
-                    }
-                    if (peek(p).kind == TOK_RPAREN) consume(p);
-                    expect(p, TOK_SEMI);
-                    continue;
-                }
+                /* 逗号分隔的多变量声明（含初始化）：int a = 1, b = 2, c; */
+                AstNode *chain_tail = decl;
+                /* 第一个变量的初始化 */
                 if (match(p, TOK_EQ)) {
                     if (peek(p).kind == TOK_LBRACE) {
-                        /* 跳过 brace-initializer { ... } */
                         int d = 1; consume(p);
                         while (d > 0 && peek(p).kind != TOK_EOF) {
                             if (peek(p).kind == TOK_LBRACE) d++;
@@ -1371,12 +1354,30 @@ AstNode *parse_compound_statement(Parser *p) {
                         decl->expr = parse_expr(p);
                     }
                 }
-                /* 逗号分隔的多变量声明：int a = 1, b = 2; */
+                /* 逗号后的后续变量 */
                 while (peek(p).kind == TOK_COMMA) {
                     consume(p);
-                    parse_declarator(p, NULL);
+                    int c_ptrs = 0;
+                    const char *cname = parse_declarator(p, &c_ptrs);
+                    AstNode *cdecl = new_ast(p, AST_VAR_DECL);
+                    cdecl->name = cname;
+                    cdecl->ival = (c_ptrs > 0) ? 8 : (ts > 0 ? ts : 4);
+                    cdecl->type_size = cdecl->ival;
+                    cdecl->elem_size = (c_ptrs > 1) ? 8
+                        : (c_ptrs == 1 ? ts : (ts > 0 ? ts : 4));
+                    cdecl->is_float = (decl_is_double && c_ptrs == 0);
+                    cdecl->is_static = q_static;
+                    /* 注册局部变量名 */
+                    if (cname && *cname)
+                        pvar_add_ex(cname, NULL, cdecl->is_float, cdecl->ival);
+                    /* 处理数组后缀 */
                     while (peek(p).kind == TOK_LBRACKET) {
-                        int d = 1; consume(p);
+                        consume(p);
+                        if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
+                            cdecl->ival *= peek(p).ival;
+                            consume(p);
+                        }
+                        int d = 1;
                         while (d > 0 && peek(p).kind != TOK_EOF) {
                             if (peek(p).kind == TOK_LBRACKET) d++;
                             if (peek(p).kind == TOK_RBRACKET) d--;
@@ -1384,6 +1385,14 @@ AstNode *parse_compound_statement(Parser *p) {
                         }
                         if (peek(p).kind == TOK_RBRACKET) consume(p);
                     }
+                    /* 数组处理后更新 pvar 中的变量大小 */
+                    if (cname && *cname && cdecl->ival > 4) {
+                        int pi;
+                        for (pi = 0; pi < pvar_count; pi++)
+                            if (strcmp(pvar_name[pi], cname) == 0)
+                                { pvar_size_arr[pi] = cdecl->ival; break; }
+                    }
+                    /* 后续变量的初始化 */
                     if (match(p, TOK_EQ)) {
                         if (peek(p).kind == TOK_LBRACE) {
                             int d = 1; consume(p);
@@ -1394,13 +1403,32 @@ AstNode *parse_compound_statement(Parser *p) {
                             }
                             if (peek(p).kind == TOK_RBRACE) consume(p);
                         } else {
-                            parse_expr(p);
+                            cdecl->expr = parse_expr(p);
                         }
                     }
+                    chain_tail->next = cdecl;
+                    chain_tail = cdecl;
+                }
+                /* 函数原型 int snprintf(...); — 遇 LPAREN 则跳过 */
+                if (peek(p).kind == TOK_LPAREN) {
+                    int d = 1; consume(p);
+                    while (d > 0 && peek(p).kind != TOK_EOF) {
+                        if (peek(p).kind == TOK_LPAREN) d++;
+                        if (peek(p).kind == TOK_RPAREN) d--;
+                        if (d) consume(p);
+                    }
+                    if (peek(p).kind == TOK_RPAREN) consume(p);
+                    expect(p, TOK_SEMI);
+                    continue;
                 }
                 expect(p, TOK_SEMI);
                 *tail = decl;
-                tail = &decl->next;
+                /* 找到链条末尾的 next 指针（逗号循环可能已添加多个节点） */
+                {
+                    AstNode *last = decl;
+                    while (last->next) last = last->next;
+                    tail = &last->next;
+                }
             } else {
                 AstNode *stmt = parse_statement(p);
                 if (stmt) {

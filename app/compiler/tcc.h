@@ -19,13 +19,13 @@
 
 /* ─── 缓冲区容量（固定分配，溢出时安全报错退出） ─── */
 
-#define CODE_BUF_SIZE  (256 * 1024)  /* 代码生成缓冲区 */
-#define STRTAB_SIZE    (256 * 1024)  /* ELF 字符串表 */
-#define STRPOOL_SIZE   (256 * 1024)  /* 字符串字面量池 */
+#define CODE_BUF_SIZE  262144  /* 代码生成缓冲区 (256*1024) */
+#define STRTAB_SIZE    262144  /* ELF 字符串表 (256*1024) */
+#define STRPOOL_SIZE   262144  /* 字符串字面量池 (256*1024) */
 
 /* ─── Arena 分配器 ─── */
 
-#define ARENA_SIZE (16 * 1024 * 1024)
+#define ARENA_SIZE 16777216  /* (16*1024*1024) */
 
 typedef struct {
     char *ptr;
@@ -202,8 +202,10 @@ typedef struct AstNode {
     /* AST_UNARY / AST_BINOP 操作符标记 */
     int op;
     /* 修饰标记 */
-    int is_static;
+    int is_static;       /* static 存储类 */
+    int is_variadic;     /* 变参函数（...） */
     int type_size;       /* 类型大小（字节）：4=int, 8=指针/long/double, 1=char, 2=short */
+    int elem_size;       /* AST_VAR_DECL: 指针变量的元素大小（int*→4, char**→8） */
 } AstNode;
 
 /* ─── 符号表（代码生成输出用） ─── */
@@ -236,6 +238,7 @@ extern ElfWriteSym elf_syms[MAX_SYMS];
 extern int elf_sym_count;
 extern Elf64_Rela elf_rels[MAX_RELS];
 extern int elf_rel_count;
+extern int elf_bss_size;
 
 extern char strtab[STRTAB_SIZE];
 extern int strtab_len;
@@ -291,6 +294,7 @@ typedef struct {
     int size;    /* 类型大小 */
     const char *struct_tag;  /* 如果是 struct 类型，存标签名 */
     int is_float;            /* 1 表示 double 类型变量 */
+    int element_size;        /* 指针变量的元素大小（用于指针运算：int*→4, char**→8） */
 } LocalVar;
 
 extern LocalVar locals[MAX_LOCALS];
@@ -336,6 +340,21 @@ typedef struct {
 
 extern TypedefEntry typedef_table[MAX_TYPEDEFS];
 extern int typedef_count;
+
+/* ─── enum 值表 ─── */
+
+#define MAX_ENUM_VALS 2048
+
+typedef struct {
+    const char *name;
+    int value;
+} EnumEntry;
+
+extern EnumEntry enum_vals[MAX_ENUM_VALS];
+extern int enum_val_count;
+
+void register_enum_val(const char *name, int value);
+int find_enum_val(const char *name);
 
 /* 判断名字是否为 typedef */
 int is_typedef_name(const char *name);

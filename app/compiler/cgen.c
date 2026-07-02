@@ -210,6 +210,7 @@ static int add_sym(const char *name, int offset, int size,
     s->size = size;
     s->is_global = is_global;
     s->is_func = is_func;
+    s->shndx = 1;  /* 默认 .text */
     s->sym_idx = -1;
     return sym_count - 1;
 }
@@ -242,6 +243,7 @@ static void collect_locals(AstNode *node) {
             locals[local_count].size = sz;
             locals[local_count].struct_tag = NULL;
             locals[local_count].is_float = node->is_float;
+            locals[local_count].element_size = node->elem_size;
             local_count++;
         }
         break;
@@ -565,7 +567,7 @@ static void cgen_stmt(AstNode *stmt) {
 /* ─── 函数代码生成 ─── */
 
 static void cgen_func_def(AstNode *func) {
-    int is_variadic = func->is_static;
+    int is_variadic = func->is_variadic;
 
     reset_labels();
     collect_locals(func);
@@ -654,8 +656,8 @@ static void cgen_func_def(AstNode *func) {
 
     cgen_block(func->body);
 
-    /* 如果函数体没有 return（空函数），加隐式 return */
-    if (code_size == func_start + (frame_size > 0 ? (frame_size > 127 ? 11 : 7) : 4)) {
+    /* 如果函数体末尾没有 ret，加隐式 return */
+    if (code_size <= 0 || code_buf[code_size - 1] != 0xC3) {
         emit_epilogue();
     }
 
@@ -664,7 +666,7 @@ static void cgen_func_def(AstNode *func) {
     apply_fixups();
 
     add_sym(func->name ? func->name : "", func_start,
-            func_end - func_start, 1, 1);
+            func_end - func_start, !func->is_static, 1);
 }
 
 /* ─── 程序入口 ─── */
@@ -681,14 +683,38 @@ void cgen_init(void) {
     strtab[strtab_len++] = '\0';
     strpool_size = 0;
     str_info_count = 0;
+    elf_bss_size = 0;
 }
 
 void cgen_program(AstNode *prog) {
     if (!prog || prog->kind != AST_PROGRAM) return;
 
-    for (AstNode *func = prog->body; func; func = func->next) {
-        if (func->kind == AST_FUNC_DEF)
-            cgen_func_def(func);
+    /* Phase 1: 收集全局变量到 .bss */
+    int bss_offset = 0;
+    for (AstNode *node = prog->body; node; node = node->next) {
+        if (node->kind == AST_VAR_DECL) {
+            int vsize = node->ival > 0 ? node->ival : 4;
+            /* 对齐到 8 字节 */
+            bss_offset = (bss_offset + 7) & ~7;
+            if (sym_count < MAX_SYMS) {
+                CgenSym *s = &syms[sym_count++];
+                s->name = node->name;
+                s->offset = bss_offset;
+                s->size = vsize;
+                s->is_global = !node->is_static;
+                s->is_func = 0;
+                s->shndx = 3;  /* .bss section */
+                s->sym_idx = -1;
+            }
+            bss_offset += vsize;
+        }
+    }
+    elf_bss_size = bss_offset;
+
+    /* Phase 2: 生成函数代码 */
+    for (AstNode *node = prog->body; node; node = node->next) {
+        if (node->kind == AST_FUNC_DEF)
+            cgen_func_def(node);
     }
 
     /* 在全部函数代码之后追加字符串池 */

@@ -176,6 +176,7 @@ static int add_sym(const char *name, int offset, int size,
     s->size = size;
     s->is_global = is_global;
     s->is_func = is_func;
+    s->shndx = 1;  /* .text */
     s->sym_idx = -1;
     elf_sym_count++;
     return elf_sym_count - 1;

@@ -169,6 +169,7 @@ static void emit_call(const char *name) {
         s->size = 0;
         s->is_global = 1;   /* GLOBAL 以便链接器解析 */
         s->is_func = 1;
+        s->shndx = 0;       /* SHN_UNDEF — 外部符号 */
         s->sym_idx = -1;
     }
 
@@ -244,6 +245,7 @@ void cgen_expr(AstNode *node) {
             syms[sym_idx].size = len;
             syms[sym_idx].is_global = 0;
             syms[sym_idx].is_func = 0;
+            syms[sym_idx].shndx = 1;  /* .text */
             syms[sym_idx].sym_idx = -1;
         }
 
@@ -291,23 +293,85 @@ void cgen_expr(AstNode *node) {
                 return;
             }
         }
-        /* 未找到：当作外部符号（全局变量），留空（Phase 3+） */
-        mov_eax_imm(0);
+        /* 未找到局部变量：当作全局或外部符号，生成带重定位的加载 */
+        if (node->name && *node->name) {
+            int si = -1;
+            for (i = 0; i < sym_count; i++) {
+                if (syms[i].name && strcmp(syms[i].name, node->name) == 0)
+                    { si = i; break; }
+            }
+            if (si < 0 && sym_count < MAX_SYMS) {
+                si = sym_count;
+                CgenSym *s = &syms[sym_count++];
+                s->name = node->name;
+                s->offset = 0; s->size = 0;
+                s->is_global = 1;
+                s->is_func = 0;
+                s->shndx = 0;  /* SHN_UNDEF — 外部符号 */
+                s->sym_idx = -1;
+            }
+            if (si >= 0) {
+                /* mov eax, [rip + disp32]   (R_X86_64_PC32) */
+                e1(0x8B); e1(0x05);
+                int ro = code_size;
+                e4(0);
+                if (rel_count < MAX_RELS) {
+                    Elf64_Rela *r = &rels[rel_count++];
+                    r->r_offset = ro;
+                    r->r_info = ELF64_R_INFO(si + 1, R_X86_64_PC32);
+                    r->r_addend = -4;
+                }
+            } else {
+                mov_eax_imm(0);
+            }
+        } else {
+            mov_eax_imm(0);
+        }
         break;
     }
 
     case AST_BINOP: {
-        /* 数组下标 a[i] = *(a + i) */
+        /* 数组下标 a[i] = *(a + i) — 支持指针运算 */
         if (node->op == TOK_LBRACKET) {
             cgen_expr(node->left);   /* 指针 → rax */
             push_rax();
             cgen_expr(node->right);  /* 索引 → eax */
             pop_rcx();               /* rcx = 指针 */
-            /* add rcx, rax → rax = ptr + idx */
+
+            /* 确定元素大小（默认 1 = char*） */
+            int elem_size = 1;
+            if (node->left && node->left->kind == AST_VAR) {
+                int i;
+                for (i = 0; i < local_count; i++) {
+                    if (strcmp(locals[i].name, node->left->name) == 0) {
+                        if (locals[i].element_size > 0)
+                            elem_size = locals[i].element_size;
+                        break;
+                    }
+                }
+            }
+
+            /* 索引 * 元素大小（移位加速） */
+            if (elem_size == 2)
+                { e1(0xC1); e1(0xE0); e1(0x01); }    /* shl eax, 1 */
+            else if (elem_size == 4)
+                { e1(0xC1); e1(0xE0); e1(0x02); }    /* shl eax, 2 */
+            else if (elem_size == 8)
+                { e1(0xC1); e1(0xE0); e1(0x03); }    /* shl eax, 3 */
+
+            /* ptr + offset → rax */
             e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx */
-            /* 从地址加载 1 字节：movsbl (%rax), %eax */
-            e1(0x0F); e1(0xBE); e1(0x00);
-            node->type_size = 1;
+
+            /* 按元素大小加载结果 */
+            if (elem_size >= 8)
+                { e1(0x48); e1(0x8B); e1(0x00); }    /* mov rax, [rax] */
+            else if (elem_size == 4) {
+                e1(0x8B); e1(0x00);                   /* mov eax, [rax] */
+            } else {
+                e1(0x0F); e1(0xBE); e1(0x00);          /* movsbl eax, [rax] */
+            }
+
+            node->type_size = elem_size;
             break;
         }
 
@@ -522,7 +586,9 @@ void cgen_expr(AstNode *node) {
                         CgenSym *s = &syms[sym_count++];
                         s->name = node->expr->name;
                         s->offset = 0; s->size = 0;
-                        s->is_global = 1; s->is_func = 1;
+                        s->is_global = 1;
+                        s->is_func = 0;  /* 数据符号（不确定类型时保守设 0） */
+                        s->shndx = 0;    /* SHN_UNDEF — 外部符号 */
                         s->sym_idx = -1;
                     }
                     int reloc_off = code_size;
@@ -542,9 +608,72 @@ void cgen_expr(AstNode *node) {
     }
 
     case AST_ASSIGN: {
-        cgen_expr(node->right);
         int rhs_float = node->right && node->right->is_float;
         int rhs_size = node->right ? node->right->type_size : 4;
+
+        /* 数组下标赋值 a[i] = expr — 先计算地址，再求值右操作数并存储 */
+        if (node->left && node->left->kind == AST_BINOP &&
+            node->left->op == TOK_LBRACKET) {
+            /* 计算左地址：指针 + 索引 * 元素大小 */
+            cgen_expr(node->left->left);     /* 指针 → rax */
+            push_rax();
+            cgen_expr(node->left->right);    /* 索引 → eax */
+            pop_rcx();                        /* rcx = 指针 */
+            int elem_size = 1;
+            if (node->left->left && node->left->left->kind == AST_VAR) {
+                int i;
+                for (i = 0; i < local_count; i++) {
+                    if (strcmp(locals[i].name, node->left->left->name) == 0) {
+                        if (locals[i].element_size > 0)
+                            elem_size = locals[i].element_size;
+                        break;
+                    }
+                }
+            }
+            if (elem_size == 2)
+                { e1(0xC1); e1(0xE0); e1(0x01); }
+            else if (elem_size == 4)
+                { e1(0xC1); e1(0xE0); e1(0x02); }
+            else if (elem_size == 8)
+                { e1(0xC1); e1(0xE0); e1(0x03); }
+            e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx → 目标地址 */
+            push_rax();                      /* 保存目标地址 */
+
+            /* 求值右操作数 */
+            cgen_expr(node->right);
+
+            /* 存储到目标地址 */
+            pop_rcx();  /* rcx = 目标地址 */
+            if (rhs_float) {
+                /* movsd [rcx], xmm0 */
+                e1(0xF2); e1(0x0F); e1(0x11); e1(0x01);
+            } else if (rhs_size >= 8) {
+                e1(0x48); e1(0x89); e1(0x01);  /* mov [rcx], rax */
+            } else {
+                e1(0x89); e1(0x01);             /* mov [rcx], eax */
+            }
+            node->type_size = rhs_size;
+            break;
+        }
+
+        /* 指针解引用赋值 *ptr = expr */
+        if (node->left && node->left->kind == AST_UNARY &&
+            node->left->op == TOK_STAR) {
+            cgen_expr(node->left->expr);       /* 指针 → rax */
+            push_rax();
+            cgen_expr(node->right);
+            pop_rcx();                          /* rcx = 目标地址 */
+            if (rhs_float) {
+                e1(0xF2); e1(0x0F); e1(0x11); e1(0x01);  /* movsd [rcx], xmm0 */
+            } else if (rhs_size >= 8) {
+                e1(0x48); e1(0x89); e1(0x01);  /* mov [rcx], rax */
+            } else {
+                e1(0x89); e1(0x01);             /* mov [rcx], eax */
+            }
+            break;
+        }
+
+        cgen_expr(node->right);
         if (node->left && node->left->kind == AST_VAR) {
             const char *vname = node->left->name;
             int i;
@@ -568,15 +697,103 @@ void cgen_expr(AstNode *node) {
                     break;
                 }
             }
+            /* 全局变量赋值 — 用重定位生成 mov [rip+disp32], rax/eax */
+            if (i == local_count && vname && *vname) {
+                int si = -1;
+                for (i = 0; i < sym_count; i++) {
+                    if (syms[i].name && strcmp(syms[i].name, vname) == 0)
+                        { si = i; break; }
+                }
+                if (si < 0 && sym_count < MAX_SYMS) {
+                    si = sym_count;
+                    CgenSym *s = &syms[sym_count++];
+                    s->name = vname;
+                    s->offset = 0; s->size = 0;
+                    s->is_global = 1;
+                    s->is_func = 0;
+                    s->shndx = 0;  /* SHN_UNDEF */
+                    s->sym_idx = -1;
+                }
+                if (si >= 0) {
+                    /* mov rax, [rip + disp32] 的逆操作 */
+                    int size8 = (rhs_size == 8 ||
+                                 (node->right && node->right->type_size == 8));
+                    if (size8) {
+                        e1(0x48); e1(0x89); e1(0x05);  /* mov [rip+disp32], rax */
+                    } else {
+                        e1(0x89); e1(0x05);             /* mov [rip+disp32], eax */
+                    }
+                    int ro = code_size;
+                    e4(0);
+                    if (rel_count < MAX_RELS) {
+                        Elf64_Rela *r = &rels[rel_count++];
+                        r->r_offset = ro;
+                        r->r_info = ELF64_R_INFO(si + 1, R_X86_64_PC32);
+                        r->r_addend = -4;
+                    }
+                }
+            }
         } else if (node->left && node->left->kind == AST_MEMBER) {
             int moff = node->left->ival;
+            /* 获取右值实际大小：cgen_expr 已设置 type_size */
+            int rsize = node->right ? node->right->type_size : 4;
+            if (rsize == 0) rsize = 8;  /* 指针默认 8 字节 */
             if (node->left->op == TOK_DOT && node->left->left->kind == AST_VAR) {
                 const char *vname = node->left->left->name;
                 int i;
                 for (i = 0; i < local_count; i++) {
                     if (strcmp(locals[i].name, vname) == 0) {
-                        e1(0x89); e1(0x45); e1((locals[i].offset + moff) & 0xFF);
+                        int store_off = locals[i].offset + moff;
+                        if (rsize >= 8) {
+                            e1(0x48); e1(0x89); e1(0x45); e1(store_off & 0xFF);
+                        } else {
+                            e1(0x89); e1(0x45); e1(store_off & 0xFF);
+                        }
                         break;
+                    }
+                }
+                /* 全局 struct 变量成员赋值 */
+                if (i == local_count) {
+                    /* 保存右值（已在 eax 中） */
+                    push_rax();
+                    /* 计算全局变量基址：lea rax, [rip+disp32] */
+                    int si = -1;
+                    for (i = 0; i < sym_count; i++) {
+                        if (syms[i].name && strcmp(syms[i].name, vname) == 0)
+                            { si = i; break; }
+                    }
+                    if (si < 0 && sym_count < MAX_SYMS) {
+                        si = sym_count;
+                        CgenSym *s = &syms[sym_count++];
+                        s->name = vname; s->offset = 0; s->size = 0;
+                        s->is_global = 1; s->is_func = 0;
+                        s->shndx = 0; s->sym_idx = -1;
+                    }
+                    if (si >= 0) {
+                        e1(0x48); e1(0x8D); e1(0x05);
+                        int ro = code_size; e4(0);
+                        if (rel_count < MAX_RELS) {
+                            Elf64_Rela *r = &rels[rel_count++];
+                            r->r_offset = ro;
+                            r->r_info = ELF64_R_INFO(si + 1, R_X86_64_PC32);
+                            r->r_addend = -4;
+                        }
+                        /* 加上成员偏移 → rax = 目标地址 */
+                        if (moff != 0) {
+                            push_rax();
+                            mov_eax_imm(moff);
+                            pop_rcx();
+                            binop_add();
+                        }
+                        /* 恢复右值到 rcx，然后存到 [rax] */
+                        pop_rcx();  /* rcx = 右值 */
+                        if (rsize >= 8) {
+                            e1(0x48); e1(0x89); e1(0x08);  /* mov [rax], rcx */
+                        } else {
+                            e1(0x89); e1(0x08);             /* mov [rax], ecx */
+                        }
+                    } else {
+                        pop_rax();  /* 平衡栈 */
                     }
                 }
             }

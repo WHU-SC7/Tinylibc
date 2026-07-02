@@ -16,7 +16,7 @@ int main(int argc, char *argv[]);
 static void setup_main_thread_tls(void)
 {
     /* 初始化主线程的 struct pthread */
-    __memset(&main_pthread, 0, sizeof(main_pthread));
+    __memset(&main_pthread, 0, sizeof(struct pthread));
     main_pthread.self        = &main_pthread;
     main_pthread.dtv         = NULL;
     main_pthread.canary      = 0;

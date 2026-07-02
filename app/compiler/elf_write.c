@@ -12,17 +12,6 @@
 
 #include "elf_write.h"
 
-/* ─── 全局缓冲区 ─── */
-
-unsigned char elf_code_buf[ELF_CODE_BUF_SIZE];
-int elf_code_size;
-
-ElfWriteSym elf_syms[ELF_MAX_SYMS];
-int elf_sym_count;
-
-Elf64_Rela elf_rels[ELF_MAX_RELS];
-int elf_rel_count;
-
 /* ─── 构建 .shstrtab ─── */
 
 static int build_shstrtab(unsigned char *buf, const char *names[], int n) {

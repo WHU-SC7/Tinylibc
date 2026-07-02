@@ -15,6 +15,7 @@
 
 #include "tlibc_everything.h"
 #include "elf.h"
+#include "elf_write.h"
 
 /* ─── 缓冲区容量（固定分配，溢出时安全报错退出） ─── */
 

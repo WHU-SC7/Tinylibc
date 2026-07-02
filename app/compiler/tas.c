@@ -22,6 +22,15 @@
 
 #include "elf_write.h"
 
+/* ─── 全局缓冲区（elf_write.c 需要，由调用者定义）─── */
+
+unsigned char elf_code_buf[ELF_CODE_BUF_SIZE];
+int elf_code_size;
+ElfWriteSym elf_syms[ELF_MAX_SYMS];
+int elf_sym_count;
+Elf64_Rela elf_rels[ELF_MAX_RELS];
+int elf_rel_count;
+
 /* ─── 寄存器 ─── */
 
 /* 寄存器编码：低 4 位 = 寄存器号 (0-15)，bit4+ = 标志 */

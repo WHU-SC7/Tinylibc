@@ -57,6 +57,7 @@ int flag_count = 0;
 static int g_max_jobs = 1;     // 并行编译任务数，默认自动检测 CPU 核数
 static int g_jobs_explicit = 0; // 用户是否显式指定了 -j
 static char *g_build_target = NULL;  // 指定编译目标，NULL 表示全量构建
+static int g_self_host = 0;    // -T: 使用 tcc/tas 自托管编译，不依赖 gcc
 
 /* 核心工具链：全量构建后额外安装到 ~/.local/bin/ 方便日常调用 */
 static char *g_core_tools[] = {
@@ -186,31 +187,44 @@ int compile_file_start(const char *file_path, char *output_path){
     if(!needs_rebuild(file_path, obj_file_path))
         return -2;   /* .o 已更新，跳过编译 */
 
-    /* 检查是否为 .S/.s 汇编文件，路由到 tas */
     const char *ext = strrchr(file_path, '.');
-    int use_tas = (ext && (strcmp(ext, ".S") == 0 || strcmp(ext, ".s") == 0));
+    int is_asm = (ext && (strcmp(ext, ".S") == 0 || strcmp(ext, ".s") == 0));
+
+    /* 打印使用的编译命令 */
+    {
+        const char *tool;
+        if (g_self_host)
+            tool = is_asm ? "tas" : "tcc";
+        else
+            tool = "gcc";
+        printf("  %-40s → %s\n", file_path, tool);
+    }
 
     int pid = fork();
     if(pid == 0){
-        if (use_tas) {
-            /* 用 tas 编译汇编文件 */
-            char *argv[8];
-            argv[0] = "./build/output/tas";
-            argv[1] = (char *)file_path;
-            argv[2] = "-o";
-            argv[3] = obj_file_path;
-            argv[4] = NULL;
-            execve("./build/output/tas", argv, default_envp);
-            /* tas 不存在时回退到 gcc */
-            char *gcc_flags[256];
-            int flag_num = copy_gcc_flags(gcc_flags);
-            gcc_flags[flag_num++] = "-c";
-            gcc_flags[flag_num++] = (char *)file_path;
-            gcc_flags[flag_num++] = "-o";
-            gcc_flags[flag_num++] = obj_file_path;
-            gcc_flags[flag_num] = NULL;
-            execve(default_gcc_path, gcc_flags, default_envp);
-        } else {
+        /* ── 自托管模式：优先用 tcc/tas ── */
+        if (g_self_host) {
+            if (is_asm) {
+                char *argv[8];
+                argv[0] = "./build/output/tas";
+                argv[1] = (char *)file_path;
+                argv[2] = "-o";
+                argv[3] = obj_file_path;
+                argv[4] = NULL;
+                execve("./build/output/tas", argv, default_envp);
+            } else {
+                char *argv[8];
+                argv[0] = "./build/output/tcc";
+                argv[1] = (char *)file_path;
+                argv[2] = "-o";
+                argv[3] = obj_file_path;
+                argv[4] = NULL;
+                execve("./build/output/tcc", argv, default_envp);
+            }
+            /* tcc/tas 不存在时回退到 gcc */
+        }
+        /* ── 回退：gcc 编译 ── */
+        {
             char *gcc_flags[256];
             int flag_num = copy_gcc_flags(gcc_flags);
             gcc_flags[flag_num++] = "-c";
@@ -1551,11 +1565,11 @@ static void install_core_tools(void)
 
 int main(int argc, char *argv[]){
 
-    // 先处理 --help / -h，以及 -b（这两者都不依赖项目目录）
+    // 先处理 --help / -h，以及 -b / -T（这些不依赖项目目录）
     for(int i = 1; i < argc; i++){
         if(strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0){
             printf("Tinylibc 自托管构建工具\n");
-            printf("\n用法: tmake [-j [N]] [-b <程序名>]\n");
+            printf("\n用法: tmake [-j [N]] [-b <程序名>] [-T]\n");
             printf("\n选项:\n");
             printf("  -h, --help     显示本帮助信息\n");
             printf("  -j [N]         并行编译，N 为并行任务数（默认自动检测 CPU 核数）\n");
@@ -1563,6 +1577,8 @@ int main(int argc, char *argv[]){
             printf("  -b <程序名>    只构建指定程序（增量，跳过已有 .o）\n");
             printf("                  例如: tmake -b ndiscover\n");
             printf("                  重复调用跳过已编译文件，修改源码后自动重编\n");
+            printf("  -T             自托管模式：用 tcc/tas 编译，不依赖 gcc\n");
+            printf("                  tcc/tas 不存在时自动回退到 gcc\n");
             printf("\n多文件模块:\n");
             printf("  子目录下可放 tmakelist 文件定义多文件目标:\n");
             printf("    <目标名>: <源文件1> <源文件2> ...\n");
@@ -1575,6 +1591,8 @@ int main(int argc, char *argv[]){
                 printf("Error: -b 需要指定程序名\n");
                 return 1;
             }
+        } else if(strcmp(argv[i], "-T") == 0){
+            g_self_host = 1;
         }
     }
 
@@ -1588,12 +1606,20 @@ int main(int argc, char *argv[]){
     }
 
     // 删除build然后重新创建（单应用构建跳过，加速）
+    // 自托管模式(-T)：保留 build/output 中的 tcc/tas/tmake 工具
     if(!g_build_target){
-        ret = tlibc_recursive_rm_dir("build");
-        printf("删除build目录成功\n");
+        if (g_self_host) {
+            /* 只清理 lib/app 子目录，保留 build/output */
+            tlibc_recursive_rm_dir("build/lib");
+            tlibc_recursive_rm_dir("build/app");
+            printf("清理build目录成功 (保留工具链)\n");
+        } else {
+            ret = tlibc_recursive_rm_dir("build");
+            printf("删除build目录成功\n");
+        }
     }
     //创建build目录
-    ret = tlibc_recursive_mkdir(build_path); //如果build目录的父目录不存在就创建父目录
+    ret = tlibc_recursive_mkdir(build_path);
     if(ret < 0){
         printf("无法创建build目录, 错误码: %d\n", ret);
         return 1;

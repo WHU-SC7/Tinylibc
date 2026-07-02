@@ -18,10 +18,11 @@
  *   keyword_lookup     标识符关键字映射
  */
 
-#include "tcc.h"
+/* 文件结束标志（非 EOF 宏，避免与 TOK_EOF 冲突）。
+ * 直接使用字面值 (-1)，不依赖宏展开
+ * （tcc 自编译时预处理器有展开 bug）。 */
 
-/* 文件结束标志（非 EOF 宏，避免与 TOK_EOF 冲突） */
-#define INPUT_END (-1)
+#include "tcc.h"
 
 /* ─── 关键字表 ─── */
 
@@ -135,7 +136,7 @@ static void advance(Lexer *lx) {
 }
 
 static int input_peek(Lexer *lx) {
-    return (lx->pos < lx->end) ? (unsigned char)*lx->pos : INPUT_END;
+    return (lx->pos < lx->end) ? (unsigned char)*lx->pos : (-1);
 }
 
 /* ─── 跳过注释 ─── */
@@ -143,14 +144,14 @@ static int input_peek(Lexer *lx) {
 static void skip_comment(Lexer *lx, int style) {
     if (style == '/') {
         /* // 行注释 */
-        while (input_peek(lx) != '\n' && input_peek(lx) != INPUT_END)
+        while (input_peek(lx) != '\n' && input_peek(lx) != (-1))
             advance(lx);
     } else {
         /* 块注释：跳过直到遇见星号斜线 */
         advance(lx); /* 跳过 *，当前在星号后 */
         while (1) {
             int c = input_peek(lx);
-            if (c == INPUT_END)
+            if (c == (-1))
                 return;
             if (c == '*' && lx->pos + 1 < lx->end && *(lx->pos + 1) == '/') {
                 advance(lx);
@@ -229,7 +230,7 @@ static Token read_number(Lexer *lx) {
     t.ival = 0;
     t.dval = 0.0;
     t.is_float = 0;
-    t.sval = NULL;
+    t.sval = 0;
 
     int base = 10;
     int maybe_float = 0;
@@ -309,7 +310,7 @@ static Token read_ident(Lexer *lx) {
     t.start = lx->pos - 1;
     t.kind = TOK_IDENT;
     t.ival = 0;
-    t.sval = NULL;
+    t.sval = 0;
 
     while (is_alnum(input_peek(lx)))
         advance(lx);
@@ -326,7 +327,7 @@ static Token read_string(Lexer *lx) {
     t.start = lx->pos - 1;
     t.kind = TOK_STRING;
     t.ival = 0;
-    t.sval = NULL;
+    t.sval = 0;
 
     while (1) {
         int c = input_peek(lx);
@@ -334,13 +335,13 @@ static Token read_string(Lexer *lx) {
             advance(lx);
             break;
         }
-        if (c == '\n' || c == INPUT_END) {
+        if (c == '\n' || c == (-1)) {
             t.kind = TOK_ERROR;
             break;
         }
         if (c == '\\') {
             advance(lx);
-            if (input_peek(lx) != INPUT_END) advance(lx);
+            if (input_peek(lx) != (-1)) advance(lx);
         } else {
             advance(lx);
         }
@@ -355,13 +356,13 @@ Token lexer_next(Lexer *lx) {
     /* 跳过空白和注释 */
     while (1) {
         int c = input_peek(lx);
-        if (c == INPUT_END) {
+        if (c == (-1)) {
             Token t;
             t.kind = TOK_EOF;
             t.start = lx->pos;
             t.len = 0;
             t.ival = 0;
-            t.sval = NULL;
+            t.sval = 0;
             lx->cur = t;
             return t;
         }
@@ -375,7 +376,7 @@ Token lexer_next(Lexer *lx) {
         }
         /* 跳过预处理器行（# 行号 "file"） */
         if (c == '#' && lx->col <= 2) {
-            while (input_peek(lx) != '\n' && input_peek(lx) != INPUT_END)
+            while (input_peek(lx) != '\n' && input_peek(lx) != (-1))
                 advance(lx);
             continue;
         }
@@ -393,7 +394,7 @@ Token lexer_next(Lexer *lx) {
     Token t;
     t.start = lx->start;
     t.ival = 0;
-    t.sval = NULL;
+    t.sval = 0;
     t.is_float = 0;
 
     switch (c) {

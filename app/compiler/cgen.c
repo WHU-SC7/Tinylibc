@@ -203,6 +203,25 @@ static void emit_epilogue(void) {
 
 static int add_sym(const char *name, int offset, int size,
                    int is_global, int is_func) {
+    /*
+     * 先查同名 UNDEF 符号（由 emit_call 前向引用创建），
+     * 若存在则原地更新为 DEFINED，这样 emit_call 创建的
+     * 重定位条目指向的符号索引不变，链接器即可解析。
+     */
+    if (name) {
+        int i;
+        for (i = 0; i < sym_count; i++) {
+            if (syms[i].name && syms[i].shndx == 0 &&
+                strcmp(syms[i].name, name) == 0) {
+                /* 更新 UNDEF → DEFINED */
+                syms[i].offset = offset;
+                syms[i].size   = size;
+                syms[i].is_func = is_func;
+                syms[i].shndx  = 1;   /* .text */
+                return i;
+            }
+        }
+    }
     if (sym_count >= MAX_SYMS) return -1;
     CgenSym *s = &syms[sym_count++];
     s->name = name;

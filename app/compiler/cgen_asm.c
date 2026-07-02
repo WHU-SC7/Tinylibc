@@ -47,31 +47,66 @@ void cgen_asm(AstNode *node) {
 
     /* 匹配已知模板并发射机器码 */
 
-    if (strcmp(t, "syscall") == 0) {
-        /* syscall — 0F 05
-         * 内联汇编约束："=a"(ret) : "a"(n), "D"(a1), "S"(a2), "d"(a3) ...
-         * 需要将 ABI 寄存器映射到 syscall 寄存器：
-         *   rdi(n) → rax, rsi(a1)→rdi, rdx(a2)→rsi, rcx(a3)→rdx
-         * 结果在 rax 中，需要存回 ret 变量（局部变量 "ret" 的栈槽） */
-        /* push rcx; push rdx; push rsi; push rdi; pop rax; pop rdi; pop rsi; pop rdx */
-        e1(0x51);  /* push rcx */
-        e1(0x52);  /* push rdx */
-        e1(0x56);  /* push rsi */
-        e1(0x57);  /* push rdi */
-        e1(0x58);  /* pop rax */
-        e1(0x5F);  /* pop rdi */
-        e1(0x5E);  /* pop rsi */
-        e1(0x5A);  /* pop rdx */
+    if (str_contains(t, "syscall")) {
+        /* 通用 syscall 模板：从局部变量加载参数到 syscall 寄存器
+         * x86_64 syscall 约定：rax=num, rdi, rsi, rdx, r10, r8, r9
+         * 参数映射：n→rax, a1→rdi, a2→rsi, a3→rdx, a4→r10, a5→r8, a6→r9 */
+        int i;
+        /* rax = n (syscall number) */
+        for (i = 0; i < local_count; i++) {
+            if (strcmp(locals[i].name, "n") == 0) {
+                e1(0x48); e1(0x8B); e1(0x45); e1(locals[i].offset & 0xFF);  /* mov rax, [rbp+off] */
+                break;
+            }
+        }
+        /* rdi = a1 */
+        for (i = 0; i < local_count; i++) {
+            if (strcmp(locals[i].name, "a1") == 0) {
+                e1(0x48); e1(0x8B); e1(0x7D); e1(locals[i].offset & 0xFF);  /* mov rdi, [rbp+off] */
+                break;
+            }
+        }
+        /* rsi = a2 */
+        for (i = 0; i < local_count; i++) {
+            if (strcmp(locals[i].name, "a2") == 0) {
+                e1(0x48); e1(0x8B); e1(0x75); e1(locals[i].offset & 0xFF);  /* mov rsi, [rbp+off] */
+                break;
+            }
+        }
+        /* rdx = a3 */
+        for (i = 0; i < local_count; i++) {
+            if (strcmp(locals[i].name, "a3") == 0) {
+                e1(0x48); e1(0x8B); e1(0x55); e1(locals[i].offset & 0xFF);  /* mov rdx, [rbp+off] */
+                break;
+            }
+        }
+        /* r10 = a4 */
+        for (i = 0; i < local_count; i++) {
+            if (strcmp(locals[i].name, "r10") == 0) {
+                e1(0x4C); e1(0x8B); e1(0x45); e1(locals[i].offset & 0xFF);  /* mov r10, [rbp+off] */
+                break;
+            }
+        }
+        /* r8 = a5 */
+        for (i = 0; i < local_count; i++) {
+            if (strcmp(locals[i].name, "r8") == 0) {
+                e1(0x4D); e1(0x8B); e1(0x45); e1(locals[i].offset & 0xFF);  /* mov r8, [rbp+off] */
+                break;
+            }
+        }
+        /* r9 = a6 */
+        for (i = 0; i < local_count; i++) {
+            if (strcmp(locals[i].name, "r9") == 0) {
+                e1(0x4D); e1(0x8B); e1(0x4D); e1(locals[i].offset & 0xFF);  /* mov r9, [rbp+off] */
+                break;
+            }
+        }
         e1(0x0F); e1(0x05);  /* syscall */
         /* 结果在 rax — 存到局部变量 "ret" 的栈槽 */
-        {
-            int i;
-            for (i = 0; i < local_count; i++) {
-                if (strcmp(locals[i].name, "ret") == 0) {
-                    /* mov [rbp+off], rax */
-                    e1(0x48); e1(0x89); e1(0x45); e1(locals[i].offset & 0xFF);
-                    break;
-                }
+        for (i = 0; i < local_count; i++) {
+            if (strcmp(locals[i].name, "ret") == 0) {
+                e1(0x48); e1(0x89); e1(0x45); e1(locals[i].offset & 0xFF);  /* mov [rbp+off], rax */
+                break;
             }
         }
         return;

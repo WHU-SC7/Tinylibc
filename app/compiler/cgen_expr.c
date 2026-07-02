@@ -1000,6 +1000,7 @@ void cgen_expr(AstNode *node) {
         int member_off = node->ival;
         if (node->op == TOK_DOT) {
             /* s.member：加载结构的基地址 + 成员偏移 */
+            int is_local = 0;
             if (node->left && node->left->kind == AST_VAR) {
                 int i;
                 for (i = 0; i < local_count; i++) {
@@ -1008,17 +1009,52 @@ void cgen_expr(AstNode *node) {
                         if (total_off >= -128 && total_off < 0) {
                             load_eax_from_rbp(total_off);
                         }
+                        is_local = 1;
                         break;
                     }
                 }
-            } else {
-                cgen_expr(node->left);
+            }
+            if (!is_local) {
+                /* 全局 struct 变量或表达式：用 LEA 计算地址 */
+                const char *gname = (node->left && node->left->kind == AST_VAR) ? node->left->name : NULL;
+                if (gname) {
+                    /* lea rax, [rip+disp32] 取全局变量地址 */
+                    int si = -1;
+                    int i;
+                    for (i = 0; i < sym_count; i++) {
+                        if (syms[i].name && strcmp(syms[i].name, gname) == 0)
+                            { si = i; break; }
+                    }
+                    if (si < 0 && sym_count < MAX_SYMS) {
+                        si = sym_count;
+                        CgenSym *s = &syms[sym_count++];
+                        s->name = gname; s->offset = 0; s->size = 0;
+                        s->is_global = 1; s->is_func = 0;
+                        s->shndx = 3; s->sym_idx = -1;
+                    }
+                    if (si >= 0) {
+                        e1(0x48); e1(0x8D); e1(0x05);  /* lea rax, [rip+disp32] */
+                        int ro = code_size; e4(0);
+                        if (rel_count < MAX_RELS) {
+                            Elf64_Rela *r = &rels[rel_count++];
+                            r->r_offset = ro;
+                            r->r_info = ELF64_R_INFO(si + 1, R_X86_64_PC32);
+                            r->r_addend = -4;
+                        }
+                    }
+                } else {
+                    cgen_expr(node->left);
+                }
+                /* 加上成员偏移 */
                 if (member_off != 0) {
                     push_rax();
                     mov_eax_imm(member_off);
                     pop_rcx();
                     binop_add();
                 }
+                /* 从地址加载值 */
+                /* 暂时始终用 32-bit 加载，后续完善类型系统 */
+                e1(0x8B); e1(0x00);  /* mov eax, [rax] */
             }
         } else {
             /* p->member：解引用指针 + 偏移 */

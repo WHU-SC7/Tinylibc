@@ -35,7 +35,7 @@ static int last_struct_member_count = 0;
 
 /* ─── 局部变量类型追踪（解析阶段用，供 .m 成员访问计算偏移） ─── */
 
-#define MAX_PVARS 256
+#define MAX_PVARS 4096
 static const char *pvar_name[MAX_PVARS];   /* 变量名 */
 static const char *pvar_tag[MAX_PVARS];    /* struct 标签 */
 static int pvar_is_float_arr[MAX_PVARS];  /* 是否为 double 类型 */
@@ -60,8 +60,10 @@ static const char *pvar_find_tag(const char *name) {
 }
 static int pvar_find_size(const char *name) {
     int i;
-    for (i = 0; i < pvar_count; i++)
-        if (strcmp(pvar_name[i], name) == 0) return pvar_size_arr[i];
+    for (i = 0; i < pvar_count; i++) {
+        int match = strcmp(pvar_name[i], name);
+        if (match == 0) return pvar_size_arr[i];
+    }
     return 0;
 }
 static int pvar_find_float(const char *name) {
@@ -73,17 +75,7 @@ static int pvar_find_float(const char *name) {
 /* 在 struct 中查找成员偏移 */
 static int find_member_offset(const char *struct_tag, const char *member) {
     if (struct_tag && *struct_tag) {
-        /* 先查 typedef 表 */
-        int ti;
-        for (ti = 0; ti < typedef_count; ti++) {
-            if (strcmp(typedef_table[ti].name, struct_tag) == 0 && typedef_table[ti].member_count > 0) {
-                int mi;
-                for (mi = 0; mi < typedef_table[ti].member_count; mi++)
-                    if (strcmp(typedef_table[ti].members[mi].name, member) == 0)
-                        return typedef_table[ti].members[mi].offset;
-            }
-        }
-        /* 再查 struct 标签表 */
+        /* 查 struct 标签表 */
         StructType *st = find_struct_tag(struct_tag);
         if (st) {
             int i;
@@ -92,11 +84,6 @@ static int find_member_offset(const char *struct_tag, const char *member) {
                     return st->members[i].offset;
         }
     }
-    /* 回退：查 last_struct_members */
-    int i;
-    for (i = 0; i < last_struct_member_count; i++)
-        if (strcmp(last_struct_members[i].name, member) == 0)
-            return last_struct_members[i].offset;
     return 0;
 }
 
@@ -422,10 +409,25 @@ static AstNode *parse_postfix(Parser *p) {
             n->left = left;
             n->member_name = arena_strdup(p->arena, m.start, m.len);
             n->op = TOK_DOT;
-            /* 查找成员偏移 */
+            /* 查找成员偏移：优先用 pvar 记录的 struct 标签 */
             if (left && left->kind == AST_VAR) {
                 const char *tag = pvar_find_tag(left->name);
-                if (tag) n->ival = find_member_offset(tag, n->member_name);
+                if (tag) {
+                    n->ival = find_member_offset(tag, n->member_name);
+                } else {
+                    /* 回退：遍历所有已注册的 struct tag，查找含此成员的 struct */
+                    int ti, mi;
+                    for (ti = 0; ti < tag_count && n->ival == 0; ti++) {
+                        if (tag_table[ti].tag) {
+                            for (mi = 0; mi < tag_table[ti].member_count; mi++) {
+                                if (strcmp(tag_table[ti].members[mi].name, n->member_name) == 0) {
+                                    n->ival = tag_table[ti].members[mi].offset;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
             }
             left = n;
 
@@ -1833,6 +1835,13 @@ AstNode *parse_program(Parser *p) {
                     {
                         const char *gvn = arena_strdup(p->arena, gv_name.start, gv_name.len);
                         pvar_add_ex(gvn, last_struct_tag ? last_struct_tag : "", 0, gv_total);
+                        if (pvar_count > 3800) {
+                            int _na = 0; while (gvn[_na]) _na++;
+                            __write(2, "PVAR_FULL:", 10);
+                            __write(2, gvn, _na);
+                            __write(2, " cnt=", 5);
+                            { char _bb[8]; int _nv=pvar_count; int _ii=0; do{_bb[_ii++]='0'+_nv%10;_nv/=10;}while(_nv>0);int _jj;for(_jj=0;_jj<_ii/2;_jj++){char _t=_bb[_jj];_bb[_jj]=_bb[_ii-1-_jj];_bb[_ii-1-_jj]=_t;}_bb[_ii]='\n';__write(2,_bb,_ii+1); }
+                        }
                     }
                     /* extern 声明不产生定义，不创建 AST 节点 */
                     if (!current_extern) {

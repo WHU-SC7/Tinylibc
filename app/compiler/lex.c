@@ -238,6 +238,10 @@ static Token read_number(Lexer *lx) {
     if (t.start[0] == '0' && (input_peek(lx) == 'x' || input_peek(lx) == 'X')) {
         base = 16;
         advance(lx);
+    } else if (t.start[0] == '0' && is_digit(input_peek(lx))) {
+        /* 以 0 开头且后跟数字：八进制字面量（如 0777 = 511） */
+        base = 8;
+        t.ival = 0;
     } else if (t.start[0] == '.') {
         /* 以 . 开头的浮点数：.5 .25 等 */
         maybe_float = 1;
@@ -245,10 +249,18 @@ static Token read_number(Lexer *lx) {
         t.ival = t.start[0] - '0';  /* 把已消费的首位算回来 */
     }
 
-    /* 读取整数位（十进制/十六进制） */
+    /* 读取整数位（十进制/十六进制/八进制） */
     while (1) {
         int c = input_peek(lx);
-        if (is_digit(c)) {
+        if (base == 8) {
+            /* 八进制：只接受 0-7 */
+            if (c >= '0' && c <= '7') {
+                t.ival = t.ival * 8 + (c - '0');
+                advance(lx);
+            } else {
+                break;
+            }
+        } else if (is_digit(c)) {
             t.ival = t.ival * base + (c - '0');
             advance(lx);
         } else if (base == 16 && ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
@@ -423,17 +435,42 @@ Token lexer_next(Lexer *lx) {
         t.kind = TOK_NUMBER;
         if (input_peek(lx) == '\\') {
             advance(lx);
-            switch (input_peek(lx)) {
-            case 'n': t.ival = '\n'; break;
-            case 't': t.ival = '\t'; break;
-            case 'r': t.ival = '\r'; break;
-            case '0': t.ival = '\0'; break;
-            case '\\': t.ival = '\\'; break;
-            case '\'': t.ival = '\''; break;
-            case '"': t.ival = '"'; break;
-            default:  t.ival = input_peek(lx); break;
+            if (input_peek(lx) == 'x') {
+                /* \xAB 十六进制转义 */
+                advance(lx);
+                int hex_val = 0;
+                int hex_digits = 0;
+                while (hex_digits < 2) {
+                    int c = input_peek(lx);
+                    if (c >= '0' && c <= '9') { hex_val = hex_val * 16 + (c - '0'); advance(lx); hex_digits++; }
+                    else if (c >= 'a' && c <= 'f') { hex_val = hex_val * 16 + (c - 'a' + 10); advance(lx); hex_digits++; }
+                    else if (c >= 'A' && c <= 'F') { hex_val = hex_val * 16 + (c - 'A' + 10); advance(lx); hex_digits++; }
+                    else break;
+                }
+                t.ival = hex_val;
+            } else if (input_peek(lx) >= '0' && input_peek(lx) <= '7') {
+                /* \NNN 八进制转义：读取最多 3 位 */
+                int oct_val = 0;
+                int oct_digits = 0;
+                while (oct_digits < 3) {
+                    int c = input_peek(lx);
+                    if (c >= '0' && c <= '7') { oct_val = oct_val * 8 + (c - '0'); advance(lx); oct_digits++; }
+                    else break;
+                }
+                t.ival = oct_val;
+            } else {
+                switch (input_peek(lx)) {
+                case 'n': t.ival = '\n'; break;
+                case 't': t.ival = '\t'; break;
+                case 'r': t.ival = '\r'; break;
+                case '0': t.ival = '\0'; break;
+                case '\\': t.ival = '\\'; break;
+                case '\'': t.ival = '\''; break;
+                case '"': t.ival = '"'; break;
+                default:  t.ival = input_peek(lx); break;
+                }
+                advance(lx);
             }
-            advance(lx);
         } else {
             t.ival = input_peek(lx);
             advance(lx);

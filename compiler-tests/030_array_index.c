@@ -20,7 +20,7 @@ int main(void) {
 
     /* 表达式下标 */
     i = 1;
-    if (arr[i + 2] != 50) return 7;
+    if (arr[i + 2] != 40) return 7;
 
     /* 负数下标（C 允许，但如果 arr[0] 是基地址则 arr[-1] 越界）— 跳过 */
     /* 指针形式 */

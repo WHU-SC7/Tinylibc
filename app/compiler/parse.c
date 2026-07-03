@@ -125,7 +125,13 @@ int find_enum_val(const char *name) {
     for (i = 0; i < enum_val_count; i++)
         if (strcmp(enum_vals[i].name, name) == 0)
             return enum_vals[i].value;
-    return -1;  /* 未找到 */
+    return -1;
+}
+int find_enum_val_ex(const char *name, int *val) {
+    int i;
+    for (i = 0; i < enum_val_count; i++)
+        if (strcmp(enum_vals[i].name, name) == 0) { if (val) *val = enum_vals[i].value; return 1; }
+    return 0;
 }
 
 int is_typedef_name(const char *name) {
@@ -242,7 +248,21 @@ static const char *decode_string_literal(Parser *p, const Token *t) {
             case '0': *out++ = '\0'; break;
             case '\\': *out++ = '\\'; break;
             case '"': *out++ = '"'; break;
-            default:   *out++ = esc;  break;
+            default:
+                /* \NNN octal escape */
+                if (esc >= '0' && esc <= '7') {
+                    int oct_val = esc - '0';
+                    int od = 1;
+                    while (od < 3 && i < src_len) {
+                        char oc = src[i];
+                        if (oc >= '0' && oc <= '7') { oct_val = oct_val * 8 + (oc - '0'); i++; od++; }
+                        else break;
+                    }
+                    *out++ = (char)oct_val;
+                } else {
+                    *out++ = esc;
+                }
+                break;
             }
         } else {
             *out++ = c;
@@ -272,8 +292,8 @@ static AstNode *parse_primary(Parser *p) {
         consume(p);
         /* 检查是否为 enum 常量 */
         if (t.kind == TOK_IDENT) {
-            int eval = find_enum_val(arena_strdup(p->arena, t.start, t.len));
-            if (eval >= 0) {
+            int eval = 0;
+            if (find_enum_val_ex(arena_strdup(p->arena, t.start, t.len), &eval)) {
                 AstNode *n = new_ast(p, AST_CONSTANT);
                 n->ival = eval;
                 return n;
@@ -322,7 +342,21 @@ static AstNode *parse_primary(Parser *p) {
                     case '0': dst[pos++] = '\0'; break;
                     case '\\': dst[pos++] = '\\'; break;
                     case '"': dst[pos++] = '"'; break;
-                    default:   dst[pos++] = esc;  break;
+                    default:
+                        /* \NNN octal escape */
+                        if (esc >= '0' && esc <= '7') {
+                            int oct_val = esc - '0';
+                            int od = 1;
+                            while (od < 3 && i < src_len) {
+                                char oc = src[i];
+                                if (oc >= '0' && oc <= '7') { oct_val = oct_val * 8 + (oc - '0'); i++; od++; }
+                                else break;
+                            }
+                            dst[pos++] = (char)oct_val;
+                        } else {
+                            dst[pos++] = esc;
+                        }
+                        break;
                     }
                 } else {
                     dst[pos++] = c;
@@ -1028,6 +1062,36 @@ static int parse_struct_type(Parser *p, StructType *out) {
 
 /* ─── 类型说明符 ─── */
 
+/* evaluate compile-time constant expression */
+static int eval_const_expr(AstNode *n) {
+    if (!n) return 0;
+    switch (n->kind) {
+    case AST_CONSTANT: return n->ival;
+    case AST_UNARY:
+        switch (n->op) {
+        case TOK_MINUS: return -eval_const_expr(n->expr);
+        case TOK_TILDE: return ~eval_const_expr(n->expr);
+        case TOK_EXCLAM: return !eval_const_expr(n->expr);
+        default: return eval_const_expr(n->expr);
+        }
+    case AST_BINOP:
+        switch (n->op) {
+        case TOK_PLUS:  return eval_const_expr(n->left) + eval_const_expr(n->right);
+        case TOK_MINUS: return eval_const_expr(n->left) - eval_const_expr(n->right);
+        case TOK_STAR:  return eval_const_expr(n->left) * eval_const_expr(n->right);
+        case TOK_SLASH: return eval_const_expr(n->left) / eval_const_expr(n->right);
+        case TOK_PERCENT: return eval_const_expr(n->left) % eval_const_expr(n->right);
+        case TOK_AMPERSAND: return eval_const_expr(n->left) & eval_const_expr(n->right);
+        case TOK_PIPE:  return eval_const_expr(n->left) | eval_const_expr(n->right);
+        case TOK_CARET: return eval_const_expr(n->left) ^ eval_const_expr(n->right);
+        case TOK_LESS_LESS: return eval_const_expr(n->left) << eval_const_expr(n->right);
+        case TOK_GREATER_GREATER: return eval_const_expr(n->left) >> eval_const_expr(n->right);
+        default: return 0;
+        }
+    default: return 0;
+    }
+}
+
 int parse_type_specifier(Parser *p) {
     Token t = peek(p);
     /* 检查 typedef 名（先提取词素，t.start 不是 null 终止的） */
@@ -1072,7 +1136,7 @@ int parse_type_specifier(Parser *p) {
                     const char *ename = arena_strdup(p->arena, en.start, en.len);
                     if (match(p, TOK_EQ)) {
                         AstNode *init = parse_expr(p);
-                        if (init) enum_val = init->ival;
+                        if (init) enum_val = eval_const_expr(init);
                     }
                     register_enum_val(ename, enum_val);
                     enum_val++;
@@ -1980,8 +2044,9 @@ AstNode *parse_program(Parser *p) {
                         }
                     }
                     /* extern 声明不产生定义，不创建 AST 节点 */
+                    AstNode *gvar = NULL;
                     if (!current_extern) {
-                        AstNode *gvar = new_ast(p, AST_VAR_DECL);
+                        gvar = new_ast(p, AST_VAR_DECL);
                         gvar->name = arena_strdup(p->arena, gv_name.start, gv_name.len);
                         gvar->is_static = current_static;
                         gvar->ival = gv_total;
@@ -1990,7 +2055,7 @@ AstNode *parse_program(Parser *p) {
                         *tail = gvar;
                         tail = &gvar->next;
                     }
-                    /* 跳过初始化器 */
+                    /* 保存初始化器 */
                     if (match(p, TOK_EQ)) {
                         if (peek(p).kind == TOK_LBRACE) {
                             int d = 1; consume(p);
@@ -2000,6 +2065,8 @@ AstNode *parse_program(Parser *p) {
                                 if (d) consume(p);
                             }
                             if (peek(p).kind == TOK_RBRACE) consume(p);
+                        } else if (gvar) {
+                            gvar->expr = parse_expr(p);
                         } else {
                             parse_expr(p);
                         }

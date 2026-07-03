@@ -361,6 +361,7 @@ extern int enum_val_count;
 
 void register_enum_val(const char *name, int value);
 int find_enum_val(const char *name);
+int find_enum_val_ex(const char *name, int *val);
 
 /* 判断名字是否为 typedef */
 int is_typedef_name(const char *name);

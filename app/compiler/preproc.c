@@ -322,6 +322,17 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
     (void)had_nl;
     int i = 0;
     while (i < len) {
+        /* conditional compilation state */
+        static int cond_skip = 0;
+        static int cond_depth = 0;
+        static int cond_emit[32];
+
+        /* skip mode: if inside a #ifdef block that should be skipped, consume line */
+        if (cond_skip > 0 && s[i] != '#') {
+            while (i < len && s[i] != '\n') i++;
+            if (i < len && s[i] == '\n') i++;
+            continue;
+        }
         if (s[i] == '#') {
             int is_directive = 0;
             if (i == 0) is_directive = 1;
@@ -338,6 +349,72 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                         else le++;
                     } else { le++; }
                 }
+                /* handle #ifdef/#ifndef/#else/#endif inline */
+                int cpos = ls;
+                while (cpos < le && (s[cpos] == ' ' || s[cpos] == '\t')) cpos++;
+                if (cpos < le && s[cpos] == '#') {
+                    int cw = cpos + 1; while (cw < le && (s[cw] == ' ' || s[cw] == '\t')) cw++;
+                    int wlen = le - cw;
+                    if (wlen >= 4 && s[cw]=='e'&&s[cw+1]=='l'&&s[cw+2]=='s'&&s[cw+3]=='e') {
+                        if (cond_depth > 0) {
+                            if (cond_emit[cond_depth-1]) {
+                                cond_skip++;
+                            } else {
+                                if (cond_skip > 0) cond_skip--;
+                            }
+                            cond_emit[cond_depth-1] = !cond_emit[cond_depth-1];
+                        }
+                        i = le; if (i < len && s[i] == '\n') i++;
+                        continue;
+                    }
+                    if (wlen >= 5 && s[cw]=='e'&&s[cw+1]=='n'&&s[cw+2]=='d'&&s[cw+3]=='i'&&s[cw+4]=='f') {
+                        if (cond_depth > 0) {
+                            if (!cond_emit[cond_depth-1] && cond_skip > 0) cond_skip--;
+                            cond_depth--;
+                        }
+                        i = le; if (i < len && s[i] == '\n') i++;
+                        continue;
+                    }
+                    if (wlen >= 5 && s[cw]=='i'&&s[cw+1]=='f') {
+                        int is_ifndef = (wlen >= 6 && s[cw+2]=='n');
+                        int is_ifdef = !is_ifndef && (wlen < 6 || s[cw+2]!='n');
+                        if (is_ifdef || is_ifndef) {
+                            int mp = cw + (is_ifndef ? 6 : 5);
+                            while (mp < le && (s[mp] == ' ' || s[mp] == '\t')) mp++;
+                            int ms = mp;
+                            while (mp < le && ((s[mp] >= 'a' && s[mp] <= 'z') || (s[mp] >= 'A' && s[mp] <= 'Z') || s[mp] == '_' || (s[mp] >= '0' && s[mp] <= '9'))) mp++;
+                            int is_def = 0;
+                            if (mp > ms) {
+                                char mn[256];
+                                int ci;
+                                for (ci = 0; ci < mp-ms && ci < 255; ci++) mn[ci] = s[ms+ci];
+                                mn[mp-ms] = '\0';
+                                is_def = macro_defined(mn);
+                            }
+                            int emit_block;
+                            if (is_ifdef) emit_block = is_def;
+                            else emit_block = !is_def;
+                            if (cond_depth < 32) {
+                                if (emit_block) {
+                                    cond_emit[cond_depth] = 1;
+                                } else {
+                                    cond_emit[cond_depth] = 0;
+                                    cond_skip++;
+                                }
+                                cond_depth++;
+                            }
+                            i = le; if (i < len && s[i] == '\n') i++;
+                            continue;
+                        }
+                    }
+                }
+
+                /* if in skip mode, directives that we handle (#ifdef etc) are already consumed above */
+                if (cond_skip > 0) {
+                    i = le; if (i < len && s[i] == '\n') i++;
+                    continue;
+                }
+
                 do_directive(s, ls, le, out, depth);
                 i = le; if (i < len && s[i] == '\n') i++;
                 continue;

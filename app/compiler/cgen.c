@@ -243,6 +243,7 @@ static int add_sym(const char *name, int offset, int size,
 /* ─── 前向声明 ─── */
 
 static void cgen_stmt(AstNode *stmt);
+static AstNode *global_init_prog;  /* 用于全局变量初始化 */
 
 /* ─── 为函数收集局部变量 ─── */
 
@@ -624,6 +625,38 @@ static void cgen_func_def(AstNode *func) {
 
     emit_prologue();
 
+    /* 如果是 main 函数，发射全局变量初始化代码 */
+    if (func->name && strcmp(func->name, "main") == 0 && global_init_prog) {
+        AstNode *gn;
+        for (gn = global_init_prog->body; gn; gn = gn->next) {
+            if (gn->kind == AST_VAR_DECL && gn->expr) {
+                cgen_expr(gn->expr);
+                int si = -1;
+                int i;
+                for (i = 0; i < sym_count; i++) {
+                    if (syms[i].name && gn->name &&
+                        strcmp(syms[i].name, gn->name) == 0) { si = i; break; }
+                }
+                if (si >= 0) {
+                    int vsize = gn->ival > 0 ? gn->ival : 4;
+                    if (vsize == 8) {
+                        e1(0x48); e1(0x89); e1(0x05);
+                    } else {
+                        e1(0x89); e1(0x05);
+                    }
+                    int ro = code_size;
+                    e4(0);
+                    if (rel_count < MAX_RELS) {
+                        Elf64_Rela *r = &rels[rel_count++];
+                        r->r_offset = ro;
+                        r->r_info = ELF64_R_INFO(si + 1, R_X86_64_PC32);
+                        r->r_addend = -4;
+                    }
+                }
+            }
+        }
+    }
+
     /* 保存参数寄存器到局部变量槽（int 和 float 分开计数）。
      * 只处理 func_nparams 个参数，因为 func->params 链已包含 body 语句。 */
     {
@@ -741,6 +774,8 @@ void cgen_init(void) {
 
 void cgen_program(AstNode *prog) {
     if (!prog || prog->kind != AST_PROGRAM) return;
+
+    global_init_prog = prog;
 
     /* Phase 1: 收集全局变量到 .bss */
     int bss_offset = 0;

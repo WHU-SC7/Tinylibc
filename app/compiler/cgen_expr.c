@@ -597,16 +597,68 @@ void cgen_expr(AstNode *node) {
         }
 
         if (node->op == TOK_AND_AND || node->op == TOK_OR_OR) {
+            /* 短路求值：用条件跳转避免求值不必要的右操作数 */
             cgen_expr(node->left);
-            push_rax();
+            e1(0x85); e1(0xC0);                          /* test eax, eax */
+
+            int is_or = (node->op == TOK_OR_OR);
+            int j1_pos = code_size;
+
+            if (is_or) {
+                /* a || b: a 为 true 则跳到 true_path */
+                e1(0x0F); e1(0x85); e4(0);               /* jnz L_true */
+            } else {
+                /* a && b: a 为 false 则跳到 false_path */
+                e1(0x0F); e1(0x84); e4(0);               /* jz L_false */
+            }
+
             cgen_expr(node->right);
-            pop_rcx();
-            e1(0x85); e1(0xC9); e1(0x0F); e1(0x95); e1(0xC2);
-            e1(0x0F); e1(0xB6); e1(0xD2);
-            e1(0x85); e1(0xC0); e1(0x0F); e1(0x95); e1(0xC0);
-            e1(0x0F); e1(0xB6); e1(0xC0);
-            if (node->op == TOK_AND_AND) { e1(0x21); e1(0xD0); }
-            else { e1(0x09); e1(0xD0); }
+            e1(0x85); e1(0xC0);
+            int j2_pos = code_size;
+
+            if (is_or) {
+                /* b 也为 true → 跳到 true_path */
+                e1(0x0F); e1(0x85); e4(0);               /* jnz L_true */
+            } else {
+                /* b 为 false → 跳到 false_path */
+                e1(0x0F); e1(0x84); e4(0);               /* jz L_false */
+            }
+
+            if (is_or) {
+                /* a||b: 两个条件都假 → false_path */
+                int false_pos = code_size;
+                mov_eax_imm(0);
+                int ep = code_size;
+                e1(0xE9); e4(0);                          /* jmp L_end */
+                int true_pos = code_size;
+                /* 回填 j1 和 j2 到 true_pos */
+                { int d = true_pos - (j1_pos + 6); code_buf[j1_pos+2]=d&0xFF; code_buf[j1_pos+3]=(d>>8)&0xFF;
+                  code_buf[j1_pos+4]=(d>>16)&0xFF; code_buf[j1_pos+5]=(d>>24)&0xFF; }
+                { int d = true_pos - (j2_pos + 6); code_buf[j2_pos+2]=d&0xFF; code_buf[j2_pos+3]=(d>>8)&0xFF;
+                  code_buf[j2_pos+4]=(d>>16)&0xFF; code_buf[j2_pos+5]=(d>>24)&0xFF; }
+                mov_eax_imm(1);
+                /* 回填 ep */
+                int end = code_size;
+                { int d = end - (ep + 5); code_buf[ep+1]=d&0xFF; code_buf[ep+2]=(d>>8)&0xFF;
+                  code_buf[ep+3]=(d>>16)&0xFF; code_buf[ep+4]=(d>>24)&0xFF; }
+            } else {
+                /* a&&b: 两个条件都真 → true_path（fallthrough），第一个假 → false_path */
+                int true_pos = code_size;
+                mov_eax_imm(1);
+                int ep = code_size;
+                e1(0xE9); e4(0);                          /* jmp L_end */
+                int false_pos = code_size;
+                /* 回填 j1 和 j2 到 false_pos */
+                { int d = false_pos - (j1_pos + 6); code_buf[j1_pos+2]=d&0xFF; code_buf[j1_pos+3]=(d>>8)&0xFF;
+                  code_buf[j1_pos+4]=(d>>16)&0xFF; code_buf[j1_pos+5]=(d>>24)&0xFF; }
+                { int d = false_pos - (j2_pos + 6); code_buf[j2_pos+2]=d&0xFF; code_buf[j2_pos+3]=(d>>8)&0xFF;
+                  code_buf[j2_pos+4]=(d>>16)&0xFF; code_buf[j2_pos+5]=(d>>24)&0xFF; }
+                mov_eax_imm(0);
+                /* 回填 ep */
+                int end = code_size;
+                { int d = end - (ep + 5); code_buf[ep+1]=d&0xFF; code_buf[ep+2]=(d>>8)&0xFF;
+                  code_buf[ep+3]=(d>>16)&0xFF; code_buf[ep+4]=(d>>24)&0xFF; }
+            }
             break;
         }
 
@@ -683,6 +735,52 @@ void cgen_expr(AstNode *node) {
         cgen_expr(node->right);
         pop_rcx();  /* rcx = left, rax = right */
 
+        /* 指针算术缩放：ptr + int 或 int + ptr 时，整数操作数乘以元素大小 */
+        if ((node->op == TOK_PLUS || node->op == TOK_MINUS) &&
+            ((node->left && node->left->type_size == 8 &&
+              node->right && node->right->type_size <= 4) ||
+             (node->right && node->right->type_size == 8 &&
+              node->left && node->left->type_size <= 4))) {
+            /* 找到指针操作数及其元素大小 */
+            int ptelem = 1;
+            AstNode *ptr_node = (node->left->type_size == 8) ? node->left : node->right;
+            int right_is_ptr = (node->right->type_size == 8);
+            if (ptr_node && ptr_node->kind == AST_VAR && ptr_node->name) {
+                int vi;
+                for (vi = local_count - 1; vi >= 0; vi--) {
+                    if (strcmp(locals[vi].name, ptr_node->name) == 0 &&
+                        locals[vi].scope_depth <= scope_depth) {
+                        if (locals[vi].element_size > 0) ptelem = locals[vi].element_size;
+                        break;
+                    }
+                }
+            }
+            if (ptelem > 1) {
+                /* 缩放整数操作数（此后由下方 binop_add64/binop_sub... 完成加法） */
+                if (right_is_ptr) {
+                    /* left 是整数（在 rcx 中），right 是指针（在 rax 中） */
+                    /* xchg 使指针在 rcx，整数在 rax：之后 binop 做 add rax,rcx 得到 ptr+scaled_int */
+                    e1(0x48); e1(0x91);           /* xchg rax, rcx — rax=int, rcx=ptr */
+                    if (ptelem == 2)      { e1(0xC1); e1(0xE0); e1(0x01); }      /* shl eax, 1 */
+                    else if (ptelem == 4) { e1(0xC1); e1(0xE0); e1(0x02); }      /* shl eax, 2 */
+                    else if (ptelem == 8) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x03); }  /* shl rax, 3 */
+                    else                  { e1(0x50); e1(0xB8); e4(ptelem);       /* push rax; mov eax, ptelem */
+                                            e1(0x0F); e1(0xAF); e1(0x04); e1(0x24);  /* imul eax, [rsp] */
+                                            e1(0x48); e1(0x83); e1(0xC4); e1(0x08); } /* add rsp, 8 */
+                    /* rcx=ptr, rax=scaled_int → 下方 binop_add64 做 add rax,rcx 得到 ptr+scaled_int */
+                } else {
+                    /* right 是整数（在 rax 中），left 是指针（在 rcx 中） */
+                    if (ptelem == 2)      { e1(0xC1); e1(0xE0); e1(0x01); }      /* shl eax, 1 */
+                    else if (ptelem == 4) { e1(0xC1); e1(0xE0); e1(0x02); }      /* shl eax, 2 */
+                    else if (ptelem == 8) { e1(0x48); e1(0xC1); e1(0xE0); e1(0x03); }  /* shl rax, 3 */
+                    else                  { push_rax(); mov_eax_imm(ptelem);
+                                            e1(0x0F); e1(0xAF); e1(0x04); e1(0x24);  /* imul eax, [rsp] */
+                                            e1(0x48); e1(0x83); e1(0xC4); e1(0x08); }
+                    /* rcx=ptr, rax=scaled_int → 下方 binop_add64 做 add rax,rcx 得到 ptr+scaled_int */
+                }
+            }
+        }
+
         /* 判断是否需要 64-bit 运算（任一操作数为 64 位） */
         if (node->left && node->left->type_size == 8)
             { switch (node->op) {
@@ -744,6 +842,32 @@ void cgen_expr(AstNode *node) {
             case TOK_CARET:     binop_xor(); break;
             default: break;
             } }
+
+        /* 指针减法：q-p 结果需要除以元素大小（以元素个数为单位的差值） */
+        if (node->op == TOK_MINUS &&
+            node->left && node->left->type_size == 8 &&
+            node->right && node->right->type_size == 8) {
+            /* 查找指针元素大小 */
+            int ptelem = 1;
+            if (node->left->kind == AST_VAR && node->left->name) {
+                int vi;
+                for (vi = local_count - 1; vi >= 0; vi--) {
+                    if (strcmp(locals[vi].name, node->left->name) == 0 &&
+                        locals[vi].scope_depth <= scope_depth) {
+                        if (locals[vi].element_size > 0) ptelem = locals[vi].element_size;
+                        break;
+                    }
+                }
+            }
+            if (ptelem > 1) {
+                /* 用 imul 取倒数不可行，用 idiv：eax 中已有差值，除以 ptelem */
+                /* 差值已在 eax（从 64-bit 减法后的 32-bit 截断） */
+                /* 正确做法：用 64-bit 差值 */
+                /* 先将差值从 eax 符号扩展到 edx:eax */
+                e1(0x99);                          /* cdq: sign-extend eax→edx:eax */
+                e1(0xB9); e4(ptelem); e1(0xF7); e1(0xF9);  /* mov ecx, ptelem; idiv ecx */
+            }
+        }
         break;
     }
 
@@ -825,13 +949,29 @@ void cgen_expr(AstNode *node) {
             /* *ptr — 从指针地址加载值 */
             if (node->expr) {
                 /* 推测被指向的类型大小。
-                 * 指针变量本身 size==8（x86_64），解引用默认加载 1 字节（适合 char*），
-                 * 后续有完整类型系统后再精确判断。 */
+                 * 在局部变量表中查找指针变量的 element_size：
+                 * int * → 4, char * → 1, long * / double * → 8 */
                 int deref_size = 1;  /* 默认 char* 解引用 */
-                /* 对指针解引用：emit movsbl (char) 或 mov (int) */
+                if (node->expr->kind == AST_VAR && node->expr->name) {
+                    int vi;
+                    for (vi = local_count - 1; vi >= 0; vi--) {
+                        if (strcmp(locals[vi].name, node->expr->name) == 0 &&
+                            locals[vi].scope_depth <= scope_depth) {
+                            if (locals[vi].element_size > 0)
+                                deref_size = locals[vi].element_size;
+                            break;
+                        }
+                    }
+                }
                 if (deref_size == 1) {
                     /* movsbl (%rax), %eax — 字节加载符号扩展 */
                     e1(0x0F); e1(0xBE); e1(0x00);
+                } else if (deref_size == 8) {
+                    /* mov rax, [rax] — 64-bit 加载 */
+                    e1(0x48); e1(0x8B); e1(0x00);
+                } else if (deref_size == 2) {
+                    /* movswl (%rax), %eax — 字加载符号扩展 */
+                    e1(0x0F); e1(0xBF); e1(0x00);
                 } else {
                     /* mov (%rax), %eax — 32-bit 加载 */
                     e1(0x8B); e1(0x00);
@@ -878,6 +1018,9 @@ void cgen_expr(AstNode *node) {
                         r->r_addend = 0;
                     }
                 }
+            } else if (node->expr) {
+                /* &arr[i], &s.member, &*ptr — 用 cgen_addr 计算地址 */
+                cgen_addr(node->expr);
             }
             break;
         default: break;
@@ -1079,12 +1222,13 @@ void cgen_expr(AstNode *node) {
         int argc = 0;
         AstNode *arg = node->args;
         while (arg) { argc++; arg = arg->next; }
-        if (argc > 6) argc = 6;
+        /* 根据 x86_64 ABI 限制已消除 — 超出 6 个的参数通过栈传递 */
+        if (argc > 14) argc = 14;  /* 硬上限防止内部缓冲区溢出 */
 
         /* 记录各实参的类型 */
-        int arg_is_float[8] = {0};
+        int arg_is_float[16] = {0};
         { AstNode *a = node->args; int ai = 0;
-          while (a && ai < 8) {
+          while (a && ai < 16) {
               arg_is_float[ai] = (a->is_float != 0);
               ai++; a = a->next;
           }
@@ -1177,9 +1321,9 @@ void cgen_expr(AstNode *node) {
 
         /* 参数入寄存器（逆序） */
         /* 收集各参数的类型大小 */
-        int arg_sizes[8] = {0};
+        int arg_sizes[16] = {0};
         { AstNode *a = node->args; int asi = 0;
-          while (a && asi < 8) {
+          while (a && asi < 16) {
               arg_sizes[asi] = a->type_size;
               asi++; a = a->next;
           }

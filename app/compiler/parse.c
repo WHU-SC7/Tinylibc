@@ -1480,6 +1480,18 @@ AstNode *parse_compound_statement(Parser *p) {
                 continue;
             }
             int decl_is_double = (peek(p).kind == TOK_DOUBLE);
+            /* 检查类型说明符是否是指针 typedef（提前到 parse_type_specifier 之前 peek） */
+            int ptr_typedef_pts = 0;
+            {
+                Token pt = peek(p);
+                if (pt.kind == TOK_IDENT) {
+                    char ptn[128];
+                    int pnl = pt.len < 127 ? pt.len : 127;
+                    int pci; for (pci = 0; pci < pnl; pci++) ptn[pci] = pt.start[pci]; ptn[pnl] = '\0';
+                    for (int pti = 0; pti < typedef_count; pti++) {
+                        if (strcmp(typedef_table[pti].name, ptn) == 0 && typedef_table[pti].ptr_level > 0) {
+                            ptr_typedef_pts = typedef_table[pti].points_to; break; } } }
+            }
             int ts = parse_type_specifier(p);
             if (ts < 0 && nq > 0) {
                 /* 限定符后没有类型说明符 — 恢复，当作表达式处理 */
@@ -1497,11 +1509,9 @@ AstNode *parse_compound_statement(Parser *p) {
                 decl->ival = dv_ptrs > 0 ? 8 : (ts > 0 ? ts : 4);
                 decl->type_size = decl->ival;
                 decl->elem_size = (dv_ptrs > 1) ? 8 : (dv_ptrs == 1 ? ts : 0);
-                /* 检查 typedef 是否为指针类型 */
-                if (dv_ptrs == 0 && ts > 0) {
-                    int pti; for (pti = 0; pti < typedef_count; pti++) {
-                        if (typedef_table[pti].size == ts && typedef_table[pti].ptr_level > 0) {
-                            decl->elem_size = typedef_table[pti].points_to; break; } } }
+                /* 检查类型本身是否是指针 typedef（如 typedef char* string; string s;） */
+                if (dv_ptrs == 0 && ts > 0 && ptr_typedef_pts > 0) {
+                    decl->elem_size = ptr_typedef_pts; }
                 decl->is_float = (decl_is_double && dv_ptrs == 0);
                 decl->is_static = q_static;
                 if (decl->name && *decl->name) {

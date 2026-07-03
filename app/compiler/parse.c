@@ -1472,7 +1472,7 @@ AstNode *parse_compound_statement(Parser *p) {
                 decl->name = parse_declarator(p, &dv_ptrs);
                 decl->ival = dv_ptrs > 0 ? 8 : (ts > 0 ? ts : 4);
                 decl->type_size = decl->ival;
-                decl->elem_size = (dv_ptrs > 1) ? 8 : (dv_ptrs == 1 ? ts : (ts > 0 ? ts : 4));
+                decl->elem_size = (dv_ptrs > 1) ? 8 : (dv_ptrs == 1 ? ts : 0);
                 /* 检查 typedef 是否为指针类型 */
                 if (dv_ptrs == 0 && ts > 0) {
                     int pti; for (pti = 0; pti < typedef_count; pti++) {
@@ -1520,10 +1520,14 @@ AstNode *parse_compound_statement(Parser *p) {
                     }
                     if (peek(p).kind == TOK_RBRACKET) consume(p);
                 }
-                /* 多维数组：elem_size 改为内层数组大小（row size），base_elem_size 保留原始元素大小 */
-                if (dim_count > 1 && first_dim > 0) {
-                    decl->base_elem_size = decl->elem_size;  /* 原 elem_size（如 int→4） */
-                    decl->elem_size = decl->ival / first_dim; /* row size */
+                if (dim_count > 0 && first_dim > 0) {
+                    /* 数组：elem_size = 元素/行大小，base_elem_size = 基础元素类型 */
+                    int elem_ts = (dv_ptrs > 0) ? 8 : (ts > 0 ? ts : 4);
+                    decl->base_elem_size = elem_ts;
+                    if (dim_count > 1)
+                        decl->elem_size = decl->ival / first_dim; /* row size */
+                    else
+                        decl->elem_size = elem_ts;
                 } else {
                     decl->base_elem_size = decl->elem_size;
                 }
@@ -1583,7 +1587,7 @@ AstNode *parse_compound_statement(Parser *p) {
                     cdecl->ival = (c_ptrs > 0) ? 8 : (ts > 0 ? ts : 4);
                     cdecl->type_size = cdecl->ival;
                     cdecl->elem_size = (c_ptrs > 1) ? 8
-                        : (c_ptrs == 1 ? ts : (ts > 0 ? ts : 4));
+                        : (c_ptrs == 1 ? ts : 0);
                     cdecl->is_float = (decl_is_double && c_ptrs == 0);
                     cdecl->is_static = q_static;
                     /* 注册局部变量名 */
@@ -1817,7 +1821,7 @@ static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
             /* 指针类型统一为 8 字节，避免与相邻局部变量偏移重叠 */
             pd->ival = (effective_ptr > 0) ? 8 : (psz > 0 ? psz : 4);
             pd->type_size = pd->ival;
-            pd->elem_size = (effective_ptr > 1) ? 8 : (effective_ptr == 1 ? psz : 4);
+            pd->elem_size = (effective_ptr > 1) ? 8 : (effective_ptr == 1 ? psz : 0);
             pd->is_float = (param_is_double && ptr_level == 0);
             pvar_add(pname, NULL, pd->is_float);
             *tail = pd;

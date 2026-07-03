@@ -1146,17 +1146,18 @@ void cgen_expr(AstNode *node) {
             /* 求值右操作数 */
             cgen_expr(node->right);
 
-            /* 存储到目标地址 */
+            /* 存储到目标地址 — cgen_expr 可能更新了 node->right->type_size，重新读取 */
             pop_rcx();  /* rcx = 目标地址 */
+            int rhs_sz_after = node->right ? node->right->type_size : 4;
             if (rhs_float) {
                 /* movsd [rcx], xmm0 */
                 e1(0xF2); e1(0x0F); e1(0x11); e1(0x01);
-            } else if (rhs_size >= 8) {
+            } else if (rhs_sz_after >= 8) {
                 e1(0x48); e1(0x89); e1(0x01);  /* mov [rcx], rax */
             } else {
                 e1(0x89); e1(0x01);             /* mov [rcx], eax */
             }
-            node->type_size = rhs_size;
+            node->type_size = rhs_sz_after;
             break;
         }
 
@@ -1167,9 +1168,11 @@ void cgen_expr(AstNode *node) {
             push_rax();
             cgen_expr(node->right);
             pop_rcx();                          /* rcx = 目标地址 */
+            /* cgen_expr 已更新 node->right->type_size，重新读取 */
+            int rhs_sz_deref = node->right ? node->right->type_size : 4;
             if (rhs_float) {
                 e1(0xF2); e1(0x0F); e1(0x11); e1(0x01);  /* movsd [rcx], xmm0 */
-            } else if (rhs_size >= 8) {
+            } else if (rhs_sz_deref >= 8) {
                 e1(0x48); e1(0x89); e1(0x01);  /* mov [rcx], rax */
             } else {
                 e1(0x89); e1(0x01);             /* mov [rcx], eax */

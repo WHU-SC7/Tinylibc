@@ -1608,7 +1608,9 @@ AstNode *parse_compound_statement(Parser *p) {
                 /* 处理数组后缀 [N]（将数组维数乘入 ival；表达式维数跳过处理） */
                 int first_dim = 0;
                 int dim_count = 0;
+                int bracket_count = 0;
                 while (peek(p).kind == TOK_LBRACKET) {
+                    bracket_count++;
                     consume(p);
                     if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
                         if (dim_count == 0) first_dim = peek(p).ival;
@@ -1634,7 +1636,12 @@ AstNode *parse_compound_statement(Parser *p) {
                     else
                         decl->elem_size = elem_ts;
                 } else {
-                    decl->base_elem_size = decl->elem_size;
+                    if (dv_ptrs > 0 && bracket_count > 0) {
+                        decl->elem_size = 8;
+                        decl->base_elem_size = ts > 0 ? ts : 4;
+                    } else {
+                        decl->base_elem_size = decl->elem_size;
+                    }
                 }
                 /* 数组处理后更新 pvar 中的变量大小 */
                 if (decl->name && *decl->name && decl->ival > 4) {
@@ -1927,6 +1934,7 @@ static AstNode *parse_parameter_list(Parser *p, int *is_variadic) {
             pd->ival = (effective_ptr > 0) ? 8 : (psz > 0 ? psz : 4);
             pd->type_size = pd->ival;
             pd->elem_size = (effective_ptr > 1) ? 8 : (effective_ptr == 1 ? psz : 0);
+            pd->base_elem_size = (effective_ptr > 1) ? (psz > 0 ? psz : 4) : (effective_ptr == 1 ? psz : 0);
             pd->is_float = (param_is_double && ptr_level == 0);
             pvar_add(pname, NULL, pd->is_float);
             *tail = pd;

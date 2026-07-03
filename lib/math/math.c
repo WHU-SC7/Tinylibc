@@ -8,6 +8,7 @@
  *   - 超越函数用泰勒级数 + 范围归约，精度 ~1e-10～1e-12
  *   - 用 union 做 double 位操作，避免依赖 stdint.h 的 uint64_t
  *   - 每类函数独立，无全局状态
+ *   - 仅使用 C89 兼容语法（无混合声明、无指派初始化器）
  *
  * 系统调用：无（纯计算）
  *
@@ -36,22 +37,32 @@ typedef union { double d; unsigned long long u; } dbl_t;
 #define DBL_EXP(u)   ((int)(((u) >> 52) & 0x7ff) - 1023)
 #define DBL_MANT(u)  ((u) & 0x000fffffffffffffULL)
 
+/* 辅助：用 union 把 double 装入位域（C89 无指派初始化器） */
+static dbl_t dbl_from_double(double x) {
+    dbl_t v;
+    v.d = x;
+    return v;
+}
+
 /* ================================================================== */
 /*  sqrt — 牛顿迭代                                                   */
 /* ================================================================== */
 
 double sqrt(double x)
 {
+    dbl_t v;
+    double r;
+
     if (x <= 0.0) return 0.0;
     if (x == 1.0) return 1.0;
 
     /* 经典初始猜测：将 double 按整数右移 1 位 + 魔术常数 */
     /* 效果 ≈ 将指数减半，尾数近似 sqrt(m) */
-    dbl_t v = { .d = x };
+    v = dbl_from_double(x);
     v.u = (v.u >> 1) + 0x1FF8000000000000ULL;
-    double r = v.d;
+    r = v.d;
 
-    /* 牛顿迭代（3 次已够双精度） */
+    /* 牛顿迭代（5 次已够双精度） */
     r = 0.5 * (r + x / r);
     r = 0.5 * (r + x / r);
     r = 0.5 * (r + x / r);
@@ -66,7 +77,7 @@ double sqrt(double x)
 
 double fabs(double x)
 {
-    dbl_t v = { .d = x };
+    dbl_t v = dbl_from_double(x);
     v.u &= 0x7fffffffffffffffULL;
     return v.d;
 }
@@ -77,15 +88,16 @@ double fabs(double x)
 
 double trunc(double x)
 {
-    dbl_t v = { .d = x };
+    dbl_t v = dbl_from_double(x);
     int e = DBL_EXP(v.u);
-    /* |x| ≥ 2^53 → 已无小数部分 */
+    unsigned long long mask;
+    /* |x| ≥ 2^53 — 已无小数部分 */
     if (e >= 52) return x;
-    /* |x| < 1 → 截断到 0（保留符号位） */
+    /* |x| < 1 — 截断到 0（保留符号位） */
     if (e < 0) { v.u &= 0x8000000000000000ULL; return v.d; }
 
     /* 清除低 (52 - e) 位（小数部分） */
-    unsigned long long mask = 0xffffffffffffffffULL << (52 - e);
+    mask = 0xffffffffffffffffULL << (52 - e);
     v.u &= mask;
     return v.d;
 }
@@ -108,16 +120,18 @@ double floor(double x)
 
 double round(double x)
 {
-    dbl_t v = { .d = x };
+    dbl_t v = dbl_from_double(x);
     int e = DBL_EXP(v.u);
+    double t, r;
+
     if (e >= 52) return x;
     if (e < 0) {
         /* |x| ∈ (0, 0.5) → 0; [0.5, 1) → ±1 */
         return fabs(x) >= 0.5 ? (x > 0.0 ? 1.0 : -1.0) : 0.0;
     }
 
-    double t = trunc(x);
-    double r = x - t;              /* 小数部分 */
+    t = trunc(x);
+    r = x - t;              /* 小数部分 */
     if (r >= 0.5) return t + 1.0;
     if (r <= -0.5) return t - 1.0;
     return t;
@@ -129,8 +143,9 @@ double round(double x)
 
 double fmod(double x, double y)
 {
+    double q;
     if (y == 0.0) return 0.0;
-    double q = trunc(x / y);
+    q = trunc(x / y);
     return x - q * y;
 }
 
@@ -140,9 +155,10 @@ double fmod(double x, double y)
 
 long long isqrt(long long n)
 {
+    long long x, y;
     if (n <= 0) return 0;
-    long long x = n;
-    long long y = (x + 1) / 2;
+    x = n;
+    y = (x + 1) / 2;
     while (y < x) {
         x = y;
         y = (x + n / x) / 2;
@@ -178,8 +194,8 @@ static void sin_cos_reduce(double x, double *rv, int *quadrant)
     const double two_over_pi = 0.63661977236758134308;  /* 2/π */
     double n = round(x * two_over_pi);
     double r = x - n * M_PI_2;  /* r ∈ [-π/4, π/4] */
-
     int q = ((int)n & 3);       /* 象限 0-3 */
+
     if (q < 0) q += 4;
 
     *quadrant = q;
@@ -235,32 +251,40 @@ static double atan_poly(double x)
 
 double atan(double x)
 {
+    double r, s, result;
+
     if (x < 0.0) return -atan(-x);
 
     if (x > 1.0) return M_PI_2 - atan(1.0 / x);
 
     /* |x| ≤ 1: 用二倍角归约到小范围后泰勒 */
     /* atan(x) = 2·atan(x / (1 + √(1+x²)))  —— 每次约减半 */
-    double r = x;
-    int k = 0;
-    while (r > 0.2) {
-        double s = 1.0 + sqrt(1.0 + r * r);
-        /* 防止除以 0（不会发生，因为 s ≥ 1） */
-        r = r / s;
-        k++;
-    }
+    r = x;
+    result = 0.0;  /* 仅用于抑制假告警 */
 
-    double result = atan_poly(r);
-    while (k-- > 0) result *= 2.0;
+    {
+        int k = 0;
+        while (r > 0.2) {
+            s = 1.0 + sqrt(1.0 + r * r);
+            /* 防止除以 0（不会发生，因为 s ≥ 1） */
+            r = r / s;
+            k++;
+        }
+
+        result = atan_poly(r);
+        while (k-- > 0) result *= 2.0;
+    }
     return result;
 }
 
 double atan2(double y, double x)
 {
+    double a;
+
     if (x == 0.0 && y == 0.0) return 0.0;
     if (x == 0.0) return y > 0.0 ? M_PI_2 : -M_PI_2;
 
-    double a = atan(y / x);
+    a = atan(y / x);
     if (x < 0.0) {
         return y >= 0.0 ? a + M_PI : a - M_PI;
     }
@@ -274,24 +298,29 @@ double atan2(double y, double x)
 
 double exp(double x)
 {
+    double k, r, r2, r4, exp_r;
+    dbl_t v;
+    int e;
+    long long kk;
+
     if (x < -745.0) return 0.0;      /* 下溢 */
     if (x > 709.0) return HUGE_VAL;  /* 上溢 */
 
     /* x = k·ln2 + r, |r| ≤ ln2/2 */
-    double k = round(x * M_LOG2E);
-    double r = x - k * M_LN2;
+    k = round(x * M_LOG2E);
+    r = x - k * M_LN2;
 
     /* 泰勒: eʳ = Σ rⁿ/n! */
-    double r2 = r * r;
-    double r4 = r2 * r2;
-    double exp_r = 1.0 + r + r2/2.0 + r*r2/6.0 + r4/24.0 +
-                   r*r4/120.0 + r2*r4/720.0 + r*r2*r4/5040.0 +
-                   r4*r4/40320.0 + r*r4*r4/362880.0;
+    r2 = r * r;
+    r4 = r2 * r2;
+    exp_r = 1.0 + r + r2/2.0 + r*r2/6.0 + r4/24.0 +
+            r*r4/120.0 + r2*r4/720.0 + r*r2*r4/5040.0 +
+            r4*r4/40320.0 + r*r4*r4/362880.0;
 
     /* 2ᵏ 缩放: 操作指数位 */
-    dbl_t v = { .d = exp_r };
-    int e = DBL_EXP(v.u);
-    long long kk = (long long)k;
+    v = dbl_from_double(exp_r);
+    e = DBL_EXP(v.u);
+    kk = (long long)k;
     if (e + kk > 1023) return HUGE_VAL;   /* 上溢 */
     if (e + kk < -1022) return 0.0;        /* 下溢 */
 
@@ -307,25 +336,29 @@ double exp(double x)
 
 double log(double x)
 {
+    dbl_t v;
+    int e;
+    double m, t, t2, s;
+
     if (x <= 0.0) return -HUGE_VAL;
 
     /* 提取指数 e 和尾数 m ∈ [1, 2) */
-    dbl_t v = { .d = x };
-    int e = DBL_EXP(v.u);
+    v = dbl_from_double(x);
+    e = DBL_EXP(v.u);
     v.u = (v.u & 0x800fffffffffffffULL) | 0x3ff0000000000000ULL;
-    double m = v.d;
+    m = v.d;
 
     /* 归约到 [1/√2, √2] */
     if (m > M_SQRT2) { m *= 0.5; e++; }
 
     /* t = (m-1)/(m+1) ∈ [-0.172, 0.172] */
-    double t = (m - 1.0) / (m + 1.0);
-    double t2 = t * t;
+    t = (m - 1.0) / (m + 1.0);
+    t2 = t * t;
 
     /* log(m) = 2·(t + t³/3 + t⁵/5 + …) */
-    double s = t * (1.0 + t2 * (1.0/3.0 + t2 * (1.0/5.0 + t2 *
-                     (1.0/7.0 + t2 * (1.0/9.0 + t2 * (1.0/11.0 + t2 *
-                      (1.0/13.0 + t2 * (1.0/15.0))))))));
+    s = t * (1.0 + t2 * (1.0/3.0 + t2 * (1.0/5.0 + t2 *
+                (1.0/7.0 + t2 * (1.0/9.0 + t2 * (1.0/11.0 + t2 *
+                 (1.0/13.0 + t2 * (1.0/15.0))))))));
 
     return 2.0 * s + (double)e * M_LN2;
 }
@@ -343,22 +376,27 @@ double log10(double x)
 
 double pow(double x, double y)
 {
+    long long n;
+    int neg;
+
     if (x == 0.0) return (y == 0.0) ? 1.0 : 0.0;
     if (x == 1.0) return 1.0;
 
     /* 整数幂快速路径 */
-    long long n = (long long)round(y);
+    n = (long long)round(y);
     if ((double)n == y) {
         if (n == 0) return 1.0;
-        int neg = (n < 0);
+        neg = (n < 0);
         if (neg) { n = -n; x = 1.0 / x; }
-        double r = 1.0;
-        while (n) {
-            if (n & 1) r *= x;
-            x *= x;
-            n >>= 1;
+        {
+            double r = 1.0;
+            while (n) {
+                if (n & 1) r *= x;
+                x *= x;
+                n >>= 1;
+            }
+            return r;
         }
-        return r;
     }
 
     /* 一般情况: 需要 x > 0 */

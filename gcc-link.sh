@@ -17,7 +17,7 @@ if [ $# -ne 1 ]; then
 fi
 
 SRC="$1"
-PROJECT="/mnt/d/Tinylibc"
+PROJECT="/mnt/c/Users/15259/Desktop/Tinylibc"
 CC="/usr/bin/x86_64-linux-gnu-gcc"
 LD="/usr/bin/x86_64-linux-gnu-ld"
 LD_SCRIPT="$PROJECT/ld.script"

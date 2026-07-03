@@ -1544,7 +1544,9 @@ AstNode *parse_compound_statement(Parser *p) {
                         AstNode *prev_init = NULL;
                         int init_idx = 0;
                         while (peek(p).kind != TOK_RBRACE && peek(p).kind != TOK_EOF) {
+                            const char *ipos = p->lexer->pos;  /* 防死循环：不支持 .member 指派初始化器 */
                             AstNode *ie = parse_expr(p);
+                            if (!ie && p->lexer->pos == ipos) { consume(p); continue; }
                             if (ie && decl->name) {
                                 /* 构建 a[i] = expr 赋值节点 */
                                 AstNode *idx = new_ast(p, AST_CONSTANT);

@@ -4,7 +4,7 @@
 #
 # 硬编码路径，从项目根目录执行。
 # 用法：
-#   cd /mnt/d/Tinylibc
+#   cd /mnt/c/Users/15259/Desktop/Tinylibc
 #   bash build_lib_tcc.sh
 #
 # 输出到 build/obj/lib/ 下，保持 lib/ 目录结构。
@@ -16,7 +16,7 @@ TCC="$HOME/tlibc/bin/tcc"
 TAS="$HOME/tlibc/bin/tas"
 GCC="/usr/bin/x86_64-linux-gnu-gcc"
 AR="/usr/bin/x86_64-linux-gnu-ar"
-PROJECT="/mnt/d/Tinylibc"
+PROJECT="/mnt/c/Users/15259/Desktop/Tinylibc"
 
 # ─── 创建输出目录 ──────────────────────────────────────────────
 

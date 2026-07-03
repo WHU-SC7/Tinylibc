@@ -501,14 +501,29 @@ static AstNode *parse_postfix(Parser *p) {
 					n->type_size = find_member_size(tag, n->member_name);
                 }
             }
+            /* 回退：遍历所有 typedef struct 查找成员偏移（匿名 struct 只存在 typedef 表中） */
+            if (n->ival == 0) {
+                int ti, mi;
+                for (ti = 0; ti < typedef_count && n->ival == 0; ti++) {
+                    if (typedef_table[ti].member_count > 0) {
+                        for (mi = 0; mi < typedef_table[ti].member_count; mi++) {
+                            if (strcmp(typedef_table[ti].members[mi].name, n->member_name) == 0) {
+                                n->ival = typedef_table[ti].members[mi].offset;
+                                n->type_size = typedef_table[ti].members[mi].size;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
             /* 回退：遍历所有 struct tag（含匿名 struct）查找成员偏移 */
             if (n->ival == 0) {
                 int ti, mi;
                 for (ti = 0; ti < tag_count && n->ival == 0; ti++) {
                     for (mi = 0; mi < tag_table[ti].member_count; mi++) {
                         if (strcmp(tag_table[ti].members[mi].name, n->member_name) == 0) {
-							n->ival = tag_table[ti].members[mi].offset;
-							n->type_size = tag_table[ti].members[mi].size;
+                            n->ival = tag_table[ti].members[mi].offset;
+                            n->type_size = tag_table[ti].members[mi].size;
                             break;
                         }
                     }
@@ -1448,6 +1463,15 @@ AstNode *parse_compound_statement(Parser *p) {
                             int mi;
                             for (mi = 0; mi < last_struct_member_count && mi < MAX_MEMBERS; mi++)
                                 te->members[mi] = last_struct_members[mi];
+                            /* reg anonymous struct to tag_table for member lookup */
+                            if (tag_count < MAX_TAGS) {
+                                StructType *st = &tag_table[tag_count++];
+                                st->tag = tname;
+                                st->total_size = tsz;
+                                st->member_count = last_struct_member_count;
+                                for (mi = 0; mi < last_struct_member_count && mi < MAX_MEMBERS; mi++)
+                                    st->members[mi] = last_struct_members[mi];
+                            }
                         }
                         typedef_count++;
                     }

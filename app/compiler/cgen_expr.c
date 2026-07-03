@@ -391,6 +391,10 @@ void cgen_expr(AstNode *node) {
             strpool_buf[strpool_size++] = str[i];
 
         /* 在 syms[] 中创建 LOCAL 符号（必须早于后续 GLOBAL 创建，确保 ELF 顺序正确） */
+        if (str_info_count >= MAX_STRINGS) {
+            __write(2, "tcc: string info overflow\n", 26);
+            __exit(1);
+        }
         /* 先构建符号名 .LC%d */
         char name_buf[16];
         int si = str_info_count;

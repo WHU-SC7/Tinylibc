@@ -1001,6 +1001,9 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
         if (id.kind == TOK_IDENT) {
             consume(p);
             if (count < MAX_MEMBERS) {
+                /* 按类型自然对齐（指针/long long/double=8 字节对齐） */
+                int member_align = (sz >= 8) ? 8 : (sz >= 4) ? 4 : (sz >= 2) ? 2 : 1;
+                offset = (offset + member_align - 1) & ~(member_align - 1);
                 members[count].name = arena_strdup(p->arena, id.start, id.len);
                 members[count].offset = offset;
                 members[count].size = sz;
@@ -1045,6 +1048,8 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
             if (cid.kind == TOK_IDENT) {
                 consume(p);
                 if (count < MAX_MEMBERS) {
+                    int member_align = (sz >= 8) ? 8 : (sz >= 4) ? 4 : (sz >= 2) ? 2 : 1;
+                    offset = (offset + member_align - 1) & ~(member_align - 1);
                     members[count].name = arena_strdup(p->arena, cid.start, cid.len);
                     members[count].offset = offset;
                     members[count].size = sz;
@@ -1068,8 +1073,8 @@ static int parse_struct_body(Parser *p, Member *members, int *out_count) {
     }
     expect(p, TOK_RBRACE);
 
-    /* 对齐到最大成员对齐（简单四字节对齐） */
-    offset = (offset + 3) & ~3;
+    /* 对齐到 8 字节（支持指针/long long/double 等 8 字节类型） */
+    offset = (offset + 7) & ~7;
 
     *out_count = count;
     return offset;
@@ -1687,6 +1692,15 @@ AstNode *parse_compound_statement(Parser *p) {
                         if (peek(p).kind == TOK_RBRACE) consume(p);
                     } else {
                         decl->expr = parse_expr(p);
+                        /* char buf[] = "str" — 用字符串长度修正数组类型大小 */
+                        if (ts == 1 && bracket_count > 0 && dim_count == 0 &&
+                            decl->expr && decl->expr->kind == AST_STRING) {
+                            int slen = 0;
+                            while (decl->expr->str_val[slen]) slen++;
+                            slen++; /* 包含 null 终止符 */
+                            decl->ival = slen;
+                            decl->type_size = slen;
+                        }
                     }
                 }
                 /* 逗号后的后续变量 */

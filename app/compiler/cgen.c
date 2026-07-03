@@ -273,6 +273,7 @@ static void collect_locals(AstNode *node) {
             locals[local_count].struct_tag = NULL;
             locals[local_count].is_float = node->is_float;
             locals[local_count].element_size = node->elem_size;
+            locals[local_count].base_elem_size = node->base_elem_size;
             locals[local_count].scope_depth = scope_depth;
             local_count++;
         }

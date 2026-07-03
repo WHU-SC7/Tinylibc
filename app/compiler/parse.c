@@ -227,6 +227,7 @@ static AstNode *new_ast(Parser *p, AstKind kind) {
     n->ival = 0;
     n->dval = 0.0;
     n->op = 0;
+    n->base_elem_size = 0;
     return n;
 }
 
@@ -1406,7 +1407,7 @@ AstNode *parse_compound_statement(Parser *p) {
             skip_register_asm(p);
             continue;
         }
-        /* 跳过限定符（const/volatile/restrict）和存储类（static/extern/inline） */
+        /* 跳过限定符（const/volatile/restrict）和存储类（static/extern/inline/typedef） */
         {
             const char *qpos = p->lexer->pos;
             int qline = p->lexer->line;
@@ -1414,11 +1415,45 @@ AstNode *parse_compound_statement(Parser *p) {
             Token qtok = p->tok;
             int nq = 0;
             int q_static = 0;
+            int q_typedef = 0;
             while (peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
                    peek(p).kind == TOK_RESTRICT || peek(p).kind == TOK_STATIC ||
-                   peek(p).kind == TOK_EXTERN || peek(p).kind == TOK_INLINE) {
+                   peek(p).kind == TOK_EXTERN || peek(p).kind == TOK_INLINE ||
+                   peek(p).kind == TOK_TYPEDEF) {
                 if (peek(p).kind == TOK_STATIC) q_static = 1;
+                if (peek(p).kind == TOK_TYPEDEF) q_typedef = 1;
                 consume(p); nq++;
+            }
+            /* 处理函数体中的 typedef */
+            if (q_typedef) {
+                while (peek(p).kind == TOK_CONST || peek(p).kind == TOK_VOLATILE ||
+                       peek(p).kind == TOK_RESTRICT || peek(p).kind == TOK__ATTRIBUTE__)
+                    consume(p);
+                int tsz = parse_type_specifier(p);
+                int tptr_level = 0;
+                const char *tname = parse_declarator(p, &tptr_level);
+                if (tname && *tname && typedef_count < MAX_TYPEDEFS) {
+                    int dup = 0, ti;
+                    for (ti = 0; ti < typedef_count; ti++)
+                        if (strcmp(typedef_table[ti].name, tname) == 0) { dup = 1; break; }
+                    if (!dup) {
+                        TypedefEntry *te = &typedef_table[typedef_count];
+                        te->name = tname;
+                        te->size = tptr_level > 0 ? 8 : tsz;
+                        te->type_kind = tptr_level > 0 ? 2 : (last_struct_member_count > 0 ? 1 : 0);
+                        te->ptr_level = tptr_level;
+                        te->points_to = tptr_level > 0 ? tsz : 0;
+                        if (last_struct_member_count > 0) {
+                            te->member_count = last_struct_member_count;
+                            int mi;
+                            for (mi = 0; mi < last_struct_member_count && mi < MAX_MEMBERS; mi++)
+                                te->members[mi] = last_struct_members[mi];
+                        }
+                        typedef_count++;
+                    }
+                }
+                expect(p, TOK_SEMI);
+                continue;
             }
             int decl_is_double = (peek(p).kind == TOK_DOUBLE);
             int ts = parse_type_specifier(p);
@@ -1438,6 +1473,11 @@ AstNode *parse_compound_statement(Parser *p) {
                 decl->ival = dv_ptrs > 0 ? 8 : (ts > 0 ? ts : 4);
                 decl->type_size = decl->ival;
                 decl->elem_size = (dv_ptrs > 1) ? 8 : (dv_ptrs == 1 ? ts : (ts > 0 ? ts : 4));
+                /* 检查 typedef 是否为指针类型 */
+                if (dv_ptrs == 0 && ts > 0) {
+                    int pti; for (pti = 0; pti < typedef_count; pti++) {
+                        if (typedef_table[pti].size == ts && typedef_table[pti].ptr_level > 0) {
+                            decl->elem_size = typedef_table[pti].points_to; break; } } }
                 decl->is_float = (decl_is_double && dv_ptrs == 0);
                 decl->is_static = q_static;
                 if (decl->name && *decl->name) {
@@ -1461,11 +1501,15 @@ AstNode *parse_compound_statement(Parser *p) {
                 }
                 last_struct_tag = NULL;
                 /* 处理数组后缀 [N]（将数组维数乘入 ival；表达式维数跳过处理） */
+                int first_dim = 0;
+                int dim_count = 0;
                 while (peek(p).kind == TOK_LBRACKET) {
                     consume(p);
                     if (peek(p).kind == TOK_NUMBER && peek(p).ival > 0) {
+                        if (dim_count == 0) first_dim = peek(p).ival;
                         decl->ival *= peek(p).ival;
                         consume(p);
+                        dim_count++;
                     }
                     /* 跳过到匹配的 ]（处理表达式维数如 4*1024 或 MAX*1024） */
                     int d = 1;
@@ -1475,6 +1519,13 @@ AstNode *parse_compound_statement(Parser *p) {
                         if (d) consume(p);
                     }
                     if (peek(p).kind == TOK_RBRACKET) consume(p);
+                }
+                /* 多维数组：elem_size 改为内层数组大小（row size），base_elem_size 保留原始元素大小 */
+                if (dim_count > 1 && first_dim > 0) {
+                    decl->base_elem_size = decl->elem_size;  /* 原 elem_size（如 int→4） */
+                    decl->elem_size = decl->ival / first_dim; /* row size */
+                } else {
+                    decl->base_elem_size = decl->elem_size;
                 }
                 /* 数组处理后更新 pvar 中的变量大小 */
                 if (decl->name && *decl->name && decl->ival > 4) {
@@ -1818,7 +1869,9 @@ AstNode *parse_program(Parser *p) {
                     TypedefEntry *te = &typedef_table[typedef_count];
                     te->name = tname;
                     te->size = tptr_level > 0 ? 8 : tsz;
-                    te->type_kind = (last_struct_member_count > 0) ? 1 : 0;
+                    te->type_kind = tptr_level > 0 ? 2 : (last_struct_member_count > 0 ? 1 : 0);
+                    te->ptr_level = tptr_level;
+                    te->points_to = tptr_level > 0 ? tsz : 0;
                     te->struct_idx = -1;
                     /* 对 struct typedef 保存成员信息 */
                     if (last_struct_member_count > 0) {

@@ -207,6 +207,7 @@ typedef struct AstNode {
     int is_postfix;      /* 1 表示 x++/x--（后缀），0 表示 ++x/--x（前缀） */
     int type_size;       /* 类型大小（字节）：4=int, 8=指针/long/double, 1=char, 2=short */
     int elem_size;       /* AST_VAR_DECL: 指针变量的元素大小（int*→4, char**→8） */
+    int base_elem_size;  /* AST_VAR_DECL: 数组的基础元素大小（多维数组中内层元素大小） */
 } AstNode;
 
 /* ─── 符号表（代码生成输出用） ─── */
@@ -299,6 +300,7 @@ typedef struct {
     const char *struct_tag;  /* 如果是 struct 类型，存标签名 */
     int is_float;            /* 1 表示 double 类型变量 */
     int element_size;        /* 指针变量的元素大小（用于指针运算：int*→4, char**→8） */
+    int base_elem_size;      /* 数组变量：单个元素的类型尺寸（多维数组的内层 elem_size） */
     int scope_depth;         /* 声明时的作用域深度（用于块作用域变量阴影） */
 } LocalVar;
 
@@ -338,7 +340,9 @@ extern int tag_count;
 typedef struct {
     const char *name;
     int size;        /* 类型大小（字节） */
-    int type_kind;   /* 0=基本, 1=struct */
+    int type_kind;   /* 0=基本, 1=struct, 2=pointer */
+    int ptr_level;   /* 指针层数（0=非指针） */
+    int points_to;   /* 指针指向的类型大小（ptr_level>0 时有效） */
     int struct_idx;
     Member members[MAX_MEMBERS];
     int member_count;

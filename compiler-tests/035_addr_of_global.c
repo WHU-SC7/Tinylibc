@@ -7,9 +7,15 @@
  */
 
 int global_x = 42;
-int global_arr[4] = {10, 20, 30, 40};
+int global_arr[4];
 
 int main(void) {
+    /* 全局数组初始化（当前 tcc 不支持全局花括号初始化器） */
+    global_arr[0] = 10;
+    global_arr[1] = 20;
+    global_arr[2] = 30;
+    global_arr[3] = 40;
+
     int *p;
 
     p = &global_x;

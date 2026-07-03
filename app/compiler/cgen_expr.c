@@ -534,11 +534,33 @@ void cgen_expr(AstNode *node) {
                     }
                 }
                 if (i < 0) {
-                    /* 全局数组：查找 global_elem_size */
                     for (i = 0; i < sym_count; i++) {
                         if (syms[i].name && strcmp(syms[i].name, node->left->name) == 0) {
                             if (i < MAX_SYMS && global_elem_size[i] > 0)
                                 elem_size = global_elem_size[i];
+                            break;
+                        }
+                    }
+                }
+            } else if (node->left && node->left->kind == AST_BINOP &&
+                       node->left->op == TOK_LBRACKET &&
+                       node->left->left && node->left->left->kind == AST_VAR) {
+                /* 多维数组外层下标：使用 base_elem_size（内层元素大小） */
+                int i;
+                for (i = local_count - 1; i >= 0; i--) {
+                    if (strcmp(locals[i].name, node->left->left->name) == 0 &&
+                        locals[i].scope_depth <= scope_depth) {
+                        if (locals[i].base_elem_size > 0)
+                            elem_size = locals[i].base_elem_size;
+                        else if (locals[i].element_size > 0)
+                            elem_size = locals[i].element_size;
+                        break;
+                    }
+                }
+                if (i < 0) {
+                    for (i = 0; i < sym_count; i++) {
+                        if (syms[i].name && strcmp(syms[i].name, node->left->left->name) == 0) {
+                            elem_size = 4;  /* 默认 int */
                             break;
                         }
                     }
@@ -583,16 +605,20 @@ void cgen_expr(AstNode *node) {
             /* ptr + offset → rax */
             e1(0x48); e1(0x01); e1(0xC8);  /* add rax, rcx */
 
-            /* 按元素大小加载结果 */
-            if (elem_size >= 8)
-                { e1(0x48); e1(0x8B); e1(0x00); }    /* mov rax, [rax] */
-            else if (elem_size == 4) {
+            /* 按元素大小加载结果（elem_size > 8 表示子数组/结构体→不加载，退化为指针） */
+            if (elem_size > 8) {
+                /* 子数组/大结构体：不加载，rax 中已是指针 */
+                node->type_size = 8;
+            } else if (elem_size >= 8) {
+                e1(0x48); e1(0x8B); e1(0x00);    /* mov rax, [rax] */
+                node->type_size = elem_size;
+            } else if (elem_size == 4) {
                 e1(0x8B); e1(0x00);                   /* mov eax, [rax] */
+                node->type_size = elem_size;
             } else {
                 e1(0x0F); e1(0xBE); e1(0x00);          /* movsbl eax, [rax] */
+                node->type_size = elem_size;
             }
-
-            node->type_size = elem_size;
             break;
         }
 
@@ -1042,10 +1068,11 @@ void cgen_expr(AstNode *node) {
             pop_rcx();                        /* rcx = 指针 */
             int elem_size = 1;
             int idx_is64 = (node->left->right && node->left->right->type_size == 8);
-            if (node->left->left && node->left->left->kind == AST_VAR) {
+            AstNode *arr_base = node->left->left;
+            if (arr_base && arr_base->kind == AST_VAR) {
                 int i;
                 for (i = local_count - 1; i >= 0; i--) {
-                    if (strcmp(locals[i].name, node->left->left->name) == 0 &&
+                    if (strcmp(locals[i].name, arr_base->name) == 0 &&
                         locals[i].scope_depth <= scope_depth) {
                         if (locals[i].element_size > 0)
                             elem_size = locals[i].element_size;
@@ -1054,11 +1081,26 @@ void cgen_expr(AstNode *node) {
                 }
                 if (i < 0) {
                     for (i = 0; i < sym_count; i++) {
-                        if (syms[i].name && strcmp(syms[i].name, node->left->left->name) == 0) {
+                        if (syms[i].name && strcmp(syms[i].name, arr_base->name) == 0) {
                             if (i < MAX_SYMS && global_elem_size[i] > 0)
                                 elem_size = global_elem_size[i];
                             break;
                         }
+                    }
+                }
+            } else if (arr_base && arr_base->kind == AST_BINOP &&
+                       arr_base->op == TOK_LBRACKET &&
+                       arr_base->left && arr_base->left->kind == AST_VAR) {
+                /* 多维数组外层下标：使用 base_elem_size */
+                int i;
+                for (i = local_count - 1; i >= 0; i--) {
+                    if (strcmp(locals[i].name, arr_base->left->name) == 0 &&
+                        locals[i].scope_depth <= scope_depth) {
+                        if (locals[i].base_elem_size > 0)
+                            elem_size = locals[i].base_elem_size;
+                        else if (locals[i].element_size > 0)
+                            elem_size = locals[i].element_size;
+                        break;
                     }
                 }
             }

@@ -23,6 +23,11 @@ static void push_rcx(void) { e1(0x51); }  /* push rcx */
 /* ─── 加载常量到 eax ─── */
 
 static void mov_eax_imm(int v) { e1(0xB8); e4(v); }
+static void mov_rax_imm64(long long v) {
+    e1(0x48); e1(0xB8);
+    e1(v & 0xFF); e1((v>>8) & 0xFF); e1((v>>16) & 0xFF); e1((v>>24) & 0xFF);
+    e1((v>>32) & 0xFF); e1((v>>40) & 0xFF); e1((v>>48) & 0xFF); e1((v>>56) & 0xFF);
+}
 
 /* ─── 加载/存储局部变量 [rbp+disp8] ─── */
 /* mov eax, [rbp+disp8] */
@@ -363,7 +368,7 @@ void cgen_expr(AstNode *node) {
         if (node->is_float)
             load_double_imm(node->dval);
         else
-            mov_eax_imm(node->ival);
+            if (node->ival >= -2147483648LL && node->ival <= 2147483647LL) mov_eax_imm((int)node->ival); else mov_rax_imm64(node->ival);
         break;
 
     case AST_STRING: {

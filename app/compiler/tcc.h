@@ -126,7 +126,7 @@ typedef struct {
     TokenKind kind;
     const char *start;   /* 指向源文件中的起始位置 */
     int len;             /* 词素的字节长度 */
-    int ival;            /* TOK_NUMBER 的整数值 */
+    long long ival;      /* TOK_NUMBER 的整数值（64 位） */
     double dval;          /* 浮点字面量的值 */
     int is_float;         /* 1 表示浮点字面量（dval 有效） */
     const char *sval;    /* TOK_IDENT 的名称指针（arena 分配） */
@@ -177,7 +177,7 @@ typedef struct AstNode {
     /* AST_RETURN / AST_EXPR_STMT */
     struct AstNode *expr;
     /* AST_CONSTANT */
-    int ival;
+    long long ival;
     double dval;      /* 浮点常量值（is_float=1 时有效） */
     int is_float;     /* 1 表示此表达式结果为 double 类型 */
     /* AST_BINOP */

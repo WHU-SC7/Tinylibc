@@ -1064,7 +1064,7 @@ static int parse_struct_type(Parser *p, StructType *out) {
 /* ─── 类型说明符 ─── */
 
 /* evaluate compile-time constant expression */
-static int eval_const_expr(AstNode *n) {
+static long long eval_const_expr(AstNode *n) {
     if (!n) return 0;
     switch (n->kind) {
     case AST_CONSTANT: return n->ival;

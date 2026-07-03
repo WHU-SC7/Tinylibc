@@ -33,7 +33,7 @@ int main(void) {
         if (i == 2) continue;
         sum = sum + i;
     }
-    if (sum != 13) return 3;  /* 0+1+3+4 = 13 */
+    if (sum != 8) return 3;  /* 0+1+3+4 = 8 */
 
     return 0;
 }

@@ -1,8 +1,11 @@
 /*
  * 060_extern_decl.c — extern 声明
  *
- * 验证：extern 变量声明（链接时解析）
- * 预期：退出码 0
+ * 机制：extern 声明 + 同文件定义，验证编译器和链接器正确处理 extern 符号。
+ * 系统调用：无
+ *
+ * 用法：
+ *   单文件编译链接即可
  */
 
 extern int external_var;
@@ -12,7 +15,6 @@ void set_external(int x) {
 }
 
 int main(void) {
-    /* external_var 由链接提供 */
     external_var = 42;
     if (external_var != 42) return 1;
 
@@ -21,3 +23,6 @@ int main(void) {
 
     return 0;
 }
+
+/* extern 变量的定义 */
+int external_var = 0;

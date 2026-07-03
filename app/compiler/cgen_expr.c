@@ -1250,8 +1250,10 @@ void cgen_expr(AstNode *node) {
         } else if (node->left && node->left->kind == AST_MEMBER) {
             /* s.member = expr 或 p->member = expr
              * 注意：此时 eax 中已有 RHS 值（来自上方公共 cgen_expr），
-             * 需先保存再计算地址（cgen_addr 会覆写 eax）。 */
-            int rsize = node->right ? node->right->type_size : 4;
+             * 需先保存再计算地址（cgen_addr 会覆写 eax）。
+             * 存储宽度用成员类型而非 RHS 类型（long 成员赋 int 常量时用 8 字节）。 */
+            int rsize = node->left->type_size > 0 ? node->left->type_size :
+                        (node->right ? node->right->type_size : 4);
             if (rsize == 0) rsize = 8;
 
             push_rax();              /* 保存 RHS 值 */

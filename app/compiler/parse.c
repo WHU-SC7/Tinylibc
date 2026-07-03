@@ -467,12 +467,40 @@ static AstNode *parse_postfix(Parser *p) {
                 /* a[i].member — 从数组变量查找 struct 标签 */
                 lookup_tag = pvar_find_tag(left->left->name);
             }
+            int struct_found = 0;
             if (lookup_tag) {
-                n->ival = find_member_offset(lookup_tag, n->member_name);
-                n->type_size = find_member_size(lookup_tag, n->member_name);
+                StructType *st = find_struct_tag(lookup_tag);
+                if (st) {
+                    struct_found = 1;
+                    int fi;
+                    for (fi = 0; fi < st->member_count; fi++) {
+                        if (strcmp(st->members[fi].name, n->member_name) == 0) {
+                            n->ival = st->members[fi].offset;
+                            n->type_size = st->members[fi].size;
+                            break;
+                        }
+                    }
+                } else {
+                    /* 回退到 typedef 表（匿名 struct typedef 没有 tag 名） */
+                    int ti;
+                    for (ti = 0; ti < typedef_count; ti++) {
+                        if (strcmp(typedef_table[ti].name, lookup_tag) == 0 && typedef_table[ti].member_count > 0) {
+                            struct_found = 1;
+                            int mi;
+                            for (mi = 0; mi < typedef_table[ti].member_count; mi++) {
+                                if (strcmp(typedef_table[ti].members[mi].name, n->member_name) == 0) {
+                                    n->ival = typedef_table[ti].members[mi].offset;
+                                    n->type_size = typedef_table[ti].members[mi].size;
+                                    break;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
             }
-            if (n->ival == 0) {
-                /* 回退：遍历所有 struct tag（含匿名 struct）查找成员偏移 */
+            /* 回退：仅当未确认 struct 类型时遍历所有 struct tag */
+            if (!struct_found && n->ival == 0) {
                 int ti, mi;
                 for (ti = 0; ti < tag_count && n->ival == 0; ti++) {
                     for (mi = 0; mi < tag_table[ti].member_count; mi++) {
@@ -493,38 +521,67 @@ static AstNode *parse_postfix(Parser *p) {
             n->left = left;
             n->member_name = arena_strdup(p->arena, m.start, m.len);
             n->op = TOK_ARROW;
-            /* 通过指针的 struct 标签查找 — 暂简化 */
+            /* 通过指针的 struct 标签查找成员偏移 */
+            int struct_found = 0;
             if (left && left->kind == AST_VAR) {
                 const char *tag = pvar_find_tag(left->name);
                 if (tag) {
-					n->ival = find_member_offset(tag, n->member_name);
-					n->type_size = find_member_size(tag, n->member_name);
-                }
-            }
-            /* 回退：遍历所有 typedef struct 查找成员偏移（匿名 struct 只存在 typedef 表中） */
-            if (n->ival == 0) {
-                int ti, mi;
-                for (ti = 0; ti < typedef_count && n->ival == 0; ti++) {
-                    if (typedef_table[ti].member_count > 0) {
-                        for (mi = 0; mi < typedef_table[ti].member_count; mi++) {
-                            if (strcmp(typedef_table[ti].members[mi].name, n->member_name) == 0) {
-                                n->ival = typedef_table[ti].members[mi].offset;
-                                n->type_size = typedef_table[ti].members[mi].size;
+                    StructType *st = find_struct_tag(tag);
+                    if (st) {
+                        struct_found = 1;
+                        int fi;
+                        for (fi = 0; fi < st->member_count; fi++) {
+                            if (strcmp(st->members[fi].name, n->member_name) == 0) {
+                                n->ival = st->members[fi].offset;
+                                n->type_size = st->members[fi].size;
+                                break;
+                            }
+                        }
+                    } else {
+                        /* 回退到 typedef 表（匿名 struct typedef 没有 tag 名） */
+                        int ti;
+                        for (ti = 0; ti < typedef_count; ti++) {
+                            if (strcmp(typedef_table[ti].name, tag) == 0 && typedef_table[ti].member_count > 0) {
+                                struct_found = 1;
+                                int mi;
+                                for (mi = 0; mi < typedef_table[ti].member_count; mi++) {
+                                    if (strcmp(typedef_table[ti].members[mi].name, n->member_name) == 0) {
+                                        n->ival = typedef_table[ti].members[mi].offset;
+                                        n->type_size = typedef_table[ti].members[mi].size;
+                                        break;
+                                    }
+                                }
                                 break;
                             }
                         }
                     }
                 }
             }
-            /* 回退：遍历所有 struct tag（含匿名 struct）查找成员偏移 */
-            if (n->ival == 0) {
-                int ti, mi;
-                for (ti = 0; ti < tag_count && n->ival == 0; ti++) {
-                    for (mi = 0; mi < tag_table[ti].member_count; mi++) {
-                        if (strcmp(tag_table[ti].members[mi].name, n->member_name) == 0) {
-                            n->ival = tag_table[ti].members[mi].offset;
-                            n->type_size = tag_table[ti].members[mi].size;
-                            break;
+            /* 回退：仅当未确认 struct 类型时遍历所有 struct */
+            if (!struct_found) {
+                if (n->ival == 0) {
+                    int ti, mi;
+                    for (ti = 0; ti < typedef_count && n->ival == 0; ti++) {
+                        if (typedef_table[ti].member_count > 0) {
+                            for (mi = 0; mi < typedef_table[ti].member_count; mi++) {
+                                if (strcmp(typedef_table[ti].members[mi].name, n->member_name) == 0) {
+                                    n->ival = typedef_table[ti].members[mi].offset;
+                                    n->type_size = typedef_table[ti].members[mi].size;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (n->ival == 0) {
+                    int ti, mi;
+                    for (ti = 0; ti < tag_count && n->ival == 0; ti++) {
+                        for (mi = 0; mi < tag_table[ti].member_count; mi++) {
+                            if (strcmp(tag_table[ti].members[mi].name, n->member_name) == 0) {
+                                n->ival = tag_table[ti].members[mi].offset;
+                                n->type_size = tag_table[ti].members[mi].size;
+                                break;
+                            }
                         }
                     }
                 }
@@ -1492,6 +1549,18 @@ AstNode *parse_compound_statement(Parser *p) {
                         if (strcmp(typedef_table[pti].name, ptn) == 0 && typedef_table[pti].ptr_level > 0) {
                             ptr_typedef_pts = typedef_table[pti].points_to; break; } } }
             }
+            /* 检查类型是否为 struct typedef（提前到 parse_type_specifier 之前 peek） */
+            const char *decl_typedef_tag = NULL;
+            {
+                Token pt = peek(p);
+                if (pt.kind == TOK_IDENT) {
+                    char ptn[128];
+                    int pnl = pt.len < 127 ? pt.len : 127;
+                    int pci; for (pci = 0; pci < pnl; pci++) ptn[pci] = pt.start[pci]; ptn[pnl] = ' ';
+                    for (int pti = 0; pti < typedef_count; pti++) {
+                        if (strcmp(typedef_table[pti].name, ptn) == 0 && typedef_table[pti].member_count > 0) {
+                            decl_typedef_tag = typedef_table[pti].name; break; } } }
+            }
             int ts = parse_type_specifier(p);
             if (ts < 0 && nq > 0) {
                 /* 限定符后没有类型说明符 — 恢复，当作表达式处理 */
@@ -1515,7 +1584,9 @@ AstNode *parse_compound_statement(Parser *p) {
                 decl->is_float = (decl_is_double && dv_ptrs == 0);
                 decl->is_static = q_static;
                 if (decl->name && *decl->name) {
-                    if (last_struct_tag || last_struct_member_count > 0) {
+                    if (decl_typedef_tag) {
+                        pvar_add_ex(decl->name, decl_typedef_tag, decl->is_float, decl->ival);
+                    } else if (last_struct_tag || last_struct_member_count > 0) {
                         pvar_add_ex(decl->name, last_struct_tag ? last_struct_tag : "",
                                  decl->is_float, decl->ival);
                     } else {
@@ -1919,6 +1990,15 @@ AstNode *parse_program(Parser *p) {
                         int mi;
                         for (mi = 0; mi < last_struct_member_count && mi < MAX_MEMBERS; mi++)
                             te->members[mi] = last_struct_members[mi];
+                        /* 注册 typedef 名到 tag_table（匿名 struct 用 typedef 名做 tag） */
+                        if (tag_count < MAX_TAGS && !find_struct_tag(tname)) {
+                            StructType *st = &tag_table[tag_count++];
+                            st->tag = tname;
+                            st->total_size = tsz;
+                            st->member_count = last_struct_member_count;
+                            for (mi = 0; mi < last_struct_member_count && mi < MAX_MEMBERS; mi++)
+                                st->members[mi] = last_struct_members[mi];
+                        }
                     }
                     typedef_count++;
                 }
@@ -2011,6 +2091,18 @@ AstNode *parse_program(Parser *p) {
             }
         }
 
+        /* 检查类型是否为 struct typedef（用于全局变量 pvar 注册） */
+        const char *global_typedef_tag = NULL;
+        {
+            Token pt = peek(p);
+            if (pt.kind == TOK_IDENT) {
+                char ptn[128];
+                int pnl = pt.len < 127 ? pt.len : 127;
+                int pci; for (pci = 0; pci < pnl; pci++) ptn[pci] = pt.start[pci]; ptn[pnl] = '\0';
+                for (int pti = 0; pti < typedef_count; pti++) {
+                    if (strcmp(typedef_table[pti].name, ptn) == 0 && typedef_table[pti].member_count > 0) {
+                        global_typedef_tag = typedef_table[pti].name; break; } } }
+        }
         int typesize = parse_type_specifier(p);
         if (typesize < 0) {
             error_at(p, "expected type specifier");
@@ -2127,7 +2219,7 @@ AstNode *parse_program(Parser *p) {
                     /* 注册 struct 标签和大小（供 sizeof 查找） */
                     {
                         const char *gvn = arena_strdup(p->arena, gv_name.start, gv_name.len);
-                        pvar_add_ex(gvn, last_struct_tag ? last_struct_tag : "", 0, gv_total);
+                        pvar_add_ex(gvn, global_typedef_tag ? global_typedef_tag : (last_struct_tag ? last_struct_tag : ""), 0, gv_total);
                         if (pvar_count > 3800) {
                             int _na = 0; while (gvn[_na]) _na++;
                             __write(2, "PVAR_FULL:", 10);

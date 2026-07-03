@@ -58,8 +58,8 @@ int scope_depth;
 
 /* ─── 标签和回填 ─── */
 
-#define MAX_LABELS 256
-#define MAX_FIXUPS 512
+#define MAX_LABELS 1024
+#define MAX_FIXUPS 2048
 
 static int label_ids[MAX_LABELS];
 static int label_offsets[MAX_LABELS];
@@ -108,6 +108,10 @@ static int new_label(void) {
 }
 
 static void set_label(int id) {
+    if (label_count >= MAX_LABELS) {
+        __write(2, "tcc: label overflow\n", 20);
+        __exit(1);
+    }
     label_ids[label_count] = id;
     label_offsets[label_count] = code_size;
     label_count++;
@@ -137,6 +141,10 @@ static void emit_jmp(int label_id) {
         emit1(0xE9); emit4(disp);
     } else {
         /* 向前跳转：记录回填 */
+        if (fixup_count >= MAX_FIXUPS) {
+            __write(2, "tcc: fixup overflow\n", 20);
+            __exit(1);
+        }
         fixup_label[fixup_count] = label_id;
         fixup_offset[fixup_count] = code_size;
         fixup_count++;
@@ -151,6 +159,10 @@ static void emit_jcc(int cc, int label_id) {
         int disp = off - (code_size + 6);
         emit1(0x0F); emit1(cc); emit4(disp);
     } else {
+        if (fixup_count >= MAX_FIXUPS) {
+            __write(2, "tcc: fixup overflow\n", 20);
+            __exit(1);
+        }
         fixup_label[fixup_count] = label_id;
         fixup_offset[fixup_count] = code_size;
         fixup_count++;

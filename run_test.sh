@@ -14,6 +14,7 @@
 #   1: 001-020  基础    2: 021-040  指针/数组/函数
 #   3: 041-060  结构体   4: 061-080  预处理/复杂
 #   5: 081-093  tcc 自举模式
+#   lib: lib/ 目录（库编译模式自检）
 #
 # 每个 .c 测试文件通过退出码验证，预期值写在 .EXPECT: <N> 注释中。
 
@@ -36,7 +37,9 @@ select_tests() {
         --phase) local r; r=$(ls "$DIR"/$GLOB 2>/dev/null | sort)
             case "$2" in 1) echo "$r" | head -20 ;; 2) echo "$r" | sed -n '21,40p' ;;
             3) echo "$r" | sed -n '41,60p' ;; 4) echo "$r" | sed -n '61,80p' ;;
-            5) echo "$r" | sed -n '81,99p' ;; *) echo "${R}未知阶段 $2${N}"; exit 1 ;; esac ;;
+            5) echo "$r" | sed -n '81,99p' ;;
+            lib) ls "$DIR/lib"/[0-9]*_*.c 2>/dev/null | sort ;;
+            *) echo "${R}未知阶段 $2${N}"; exit 1 ;; esac ;;
         "") ls "$DIR"/$GLOB | sort ;;
         *) for n in "$@"; do ls "$DIR"/$GLOB 2>/dev/null | grep -E "/0*${n}_"; done ;;
     esac

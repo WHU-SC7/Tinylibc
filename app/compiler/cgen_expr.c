@@ -1399,7 +1399,7 @@ void cgen_expr(AstNode *node) {
             } else {
                 /* 弹出到 rax 再移动到目标寄存器，避免覆写 rcx */
                 pop_rax();
-                int use64 = (arg_sizes[ai] == 8);
+                int use64 = 1;  /* 总用 64 位传参，防 type_size 丢失导致指针截断 */
                 switch (ai) {
                 case 0:
                     if (use64) { e1(0x48); e1(0x89); e1(0xC7); }
@@ -1439,6 +1439,8 @@ void cgen_expr(AstNode *node) {
         /* 若调用返回 double，标记节点 */
         if (node->is_float)
             ;  /* 结果已在 xmm0 中 */
+        else
+            node->type_size = 8;  /* x86-64 ABI: rax 中总是 64 位 */
         break;
     }
 
@@ -1485,6 +1487,13 @@ void cgen_expr(AstNode *node) {
         /* 统一结果: 从栈弹出 */
         if (is_f) { pop_xmm0(); node->is_float = 1; }
         else pop_rax();
+        /* 从分支推断 type_size（三元表达式可能返回指针） */
+        { int _ts = 4;
+          if (node->then_stmt && node->then_stmt->type_size > _ts)
+              _ts = node->then_stmt->type_size;
+          if (node->else_stmt && node->else_stmt->type_size > _ts)
+              _ts = node->else_stmt->type_size;
+          node->type_size = _ts; }
         break;
     }
 

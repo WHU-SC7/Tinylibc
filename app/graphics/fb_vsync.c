@@ -33,11 +33,16 @@
 #define COL_WHITE   0xFFFFFF
 #define COL_RED     0x0000FF
 #define COL_BLACK   0x000000
-#define COL_CYAN    0xFFFF00
+#define COL_YELLOW  0xFFFF00
 
-/* 速度（像素/秒）—— 各帧率下视觉一致 */
-#define SPEED_X    120
-#define SPEED_Y     80
+/* 速度（像素/秒）—— 运行时可正可负实现反弹 */
+#define SPEED_BASE_X  300
+#define SPEED_BASE_Y  200
+
+/* KDSETMODE: 切换 TTY 文本/图形模式，防止控制台干扰显存 */
+#define KDSETMODE     0x4B3A
+#define KD_TEXT       0x00
+#define KD_GRAPHICS   0x01
 
 /* 安全超时（秒）：防止忘记退出时一直跑 */
 #define MAX_SEC    300
@@ -106,22 +111,28 @@ int main(int argc, char *argv[])
 
     void *saved = fb_save(fbp, screensize);
 
-    /* 设置终端 raw 模式：按键无需回车即可读取 */
-    tlibc_set_term_raw_and_noecho(0);
-
     int w = var.xres;
     int h = var.yres;
     int ll = fix.line_length;
 
     /* ── 球参数 ── */
-    int bx = w / 2, by = h / 2;          /* 当前圆心（整数像素） */
+    int bx = w / 2, by = h / 2;
     int r = 30;
+    int speed_x = SPEED_BASE_X;   /* 可正可负，反弹时取反 */
+    int speed_y = SPEED_BASE_Y;
 
     /* 固定点累加器：1 单位 = 1/1000000 像素 */
     long acc_x = 0, acc_y = 0;
 
+    /* ── 切换 TTY 到图形模式，阻止控制台文本干扰显存 ── */
+    tlibc_set_term_raw_and_noecho(0);
+    {
+        int kd_mode = KD_GRAPHICS;
+        __ioctl(0, KDSETMODE, &kd_mode);
+    }
+
     __printf("fb_vsync: %u×%u  %dfps  %dpx/s×%dpx/s  按 q 退出\n",
-             var.xres, var.yres, fps, SPEED_X, SPEED_Y);
+             var.xres, var.yres, fps, SPEED_BASE_X, SPEED_BASE_Y);
 
     /* ── 清屏 ── */
     fb_fill_rect(fbp, 0, 0, w, h, COL_BLACK, ll);
@@ -146,15 +157,15 @@ int main(int argc, char *argv[])
         __clock_gettime(CLOCK_MONOTONIC, &now);
         long dt_us = (now.tv_sec  - t_last.tv_sec) * 1000000
                    + (now.tv_nsec - t_last.tv_nsec) / 1000;
-        if (dt_us > 100000) dt_us = 100000;   /* 最大 100ms，防止卡顿时跳太远 */
+        if (dt_us > 100000) dt_us = 100000;
         t_last = now;
 
         /* 擦除旧球（半径+1 确保覆盖白色轮廓） */
         fb_fill_circle(fbp, bx, by, r + 1, COL_BLACK, ll);
 
-        /* ── 更新位置（基于时间，固定点累加） ── */
-        acc_x += SPEED_X * dt_us;
-        acc_y += SPEED_Y * dt_us;
+        /* ── 更新位置（基于时间，速度方向随反弹变化） ── */
+        acc_x += speed_x * dt_us;
+        acc_y += speed_y * dt_us;
 
         int dx = (int)(acc_x / 1000000);
         int dy = (int)(acc_y / 1000000);
@@ -164,14 +175,14 @@ int main(int argc, char *argv[])
         bx += dx;
         by += dy;
 
-        /* 边界反弹 */
-        if (bx - r < 0)     { bx = r;     acc_x = -acc_x; }
-        if (bx + r >= w)    { bx = w - r; acc_x = -acc_x; }
-        if (by - r < 0)     { by = r;     acc_y = -acc_y; }
-        if (by + r >= h)    { by = h - r; acc_y = -acc_y; }
+        /* 边界反弹：反转速度方向，累加器归零 */
+        if (bx - r < 0)     { bx = r;     speed_x = -speed_x; acc_x = 0; }
+        if (bx + r >= w)    { bx = w - r; speed_x = -speed_x; acc_x = 0; }
+        if (by - r < 0)     { by = r;     speed_y = -speed_y; acc_y = 0; }
+        if (by + r >= h)    { by = h - r; speed_y = -speed_y; acc_y = 0; }
 
         /* ── 绘制新球 ── */
-        fb_fill_circle(fbp, bx, by, r, COL_CYAN, ll);
+        fb_fill_circle(fbp, bx, by, r, COL_YELLOW, ll);
         fb_draw_circle(fbp, bx, by, r, COL_WHITE, ll);
 
         /* ── 键盘检测 ── */
@@ -186,10 +197,16 @@ int main(int argc, char *argv[])
         if (elapsed >= MAX_SEC) running = 0;
     }
 
-    /* 恢复终端设置 */
+    /* ── 切换回 TTY 文本模式（控制台重绘其文本缓冲区到显存） ── */
+    {
+        int kd_mode = KD_TEXT;
+        __ioctl(0, KDSETMODE, &kd_mode);
+    }
     tlibc_restore_term(0);
 
-    fb_restore(fbp, saved, screensize);
+    /* fb_restore 不再需要——KD_TEXT 已让控制台重绘了完整文本。
+     * 保留 saved 的 tlibc_free 由 fb_restore 内部处理。 */
+    if (saved) tlibc_free(saved);
     __munmap(fbp, screensize);
     __close(fd);
     return 0;

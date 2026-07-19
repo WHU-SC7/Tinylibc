@@ -142,13 +142,12 @@ void fb_fill_circle(unsigned char *fbp,
     }
 }
 
-/* ── 显存保存/恢复 ── */
+/* ── 显存保存/恢复（memcpy 已优化为 8 字节/次） ── */
 
 void *fb_save(unsigned char *fbp, size_t size)
 {
     void *buf = tlibc_malloc(size);
-    if (buf)
-        memcpy(buf, fbp, size);
+    if (buf) memcpy(buf, fbp, size);
     return buf;
 }
 

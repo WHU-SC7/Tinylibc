@@ -389,13 +389,18 @@ unsigned long tlibc_strtoul(char *str)
 
 void* memcpy(void* dest, const void* src, unsigned long n)
 {
-    char* d = (char*)dest;
-    const char* s = (const char*)src;
-    
-    for (unsigned long i = 0; i < n; i++) {
+    unsigned long *d = (unsigned long *)dest;
+    const unsigned long *s = (const unsigned long *)src;
+    unsigned long words = n / sizeof(unsigned long);
+
+    for (unsigned long i = 0; i < words; i++)
         d[i] = s[i];
-    }
-    
+
+    unsigned char *db = (unsigned char *)dest;
+    const unsigned char *sb = (const unsigned char *)src;
+    for (unsigned long i = words * sizeof(unsigned long); i < n; i++)
+        db[i] = sb[i];
+
     return dest;
 }
 
@@ -519,16 +524,30 @@ void *__memset(void *dst, int value, size_t n)
 
 void *__memmove(void *dest, const void *src, size_t n)
 {
-    char *cdest = (char *)dest;
-    char *csrc = (char *)src;
-    char buf[n];
-    for(size_t i = 0; i < n; i++)
-    {
-        buf[i] = csrc[i];
-    }
-    for(size_t i = 0; i < n; i++)
-    {
-        cdest[i] = buf[i];
+    unsigned char *d = (unsigned char *)dest;
+    const unsigned char *s = (const unsigned char *)src;
+
+    if (d <= s || d >= s + n) {
+        /* 不重叠或 dest 在前：正向拷贝（同 memcpy） */
+        unsigned long *dw = (unsigned long *)d;
+        const unsigned long *sw = (const unsigned long *)s;
+        size_t words = n / sizeof(unsigned long);
+        for (size_t i = 0; i < words; i++)
+            dw[i] = sw[i];
+        for (size_t i = words * sizeof(unsigned long); i < n; i++)
+            d[i] = s[i];
+    } else {
+        /* 重叠且 dest 在后：逆向拷贝 */
+        size_t words = n / sizeof(unsigned long);
+        size_t rem  = n % sizeof(unsigned long);
+        /* 尾部无关字节先拷 */
+        for (size_t i = n - rem; i < n; i++)
+            d[i] = s[i];
+        /* 8 字节从后往前 */
+        unsigned long *dw = (unsigned long *)d;
+        const unsigned long *sw = (const unsigned long *)s;
+        for (size_t i = words; i > 0; i--)
+            dw[i - 1] = sw[i - 1];
     }
     return dest;
 }

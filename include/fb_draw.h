@@ -49,4 +49,9 @@ void fb_fill_circle(unsigned char *fbp,
                     int cx, int cy, int r,
                     uint32_t color, int line_length);
 
+/* ── 显存保存/恢复（恢复原始 TTY 内容） ── */
+
+void *fb_save(unsigned char *fbp, size_t size);
+void  fb_restore(unsigned char *fbp, void *buf, size_t size);
+
 #endif /* FB_DRAW_H */

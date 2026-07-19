@@ -27,6 +27,7 @@
 #include "linux_fb.h"
 #include "fcntl.h"
 #include "mman.h"
+#include "fb_draw.h"
 
 /* 将 RRGGBB 十六进制字符串解析为 uint32_t 像素值
  * 像素格式：XRGB8888（B 位低 8 位，G 中间 8 位，R 高 8 位） */
@@ -110,6 +111,9 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    /* ── 保存原始 TTY 内容 ── */
+    void *saved = fb_save(fbp, screensize);
+
     /* ── 全屏填充 ── */
     /* 32bpp XRGB8888：每次写入 4 字节 */
     uint32_t *pixels = (uint32_t *)fbp;
@@ -121,6 +125,9 @@ int main(int argc, char *argv[])
 
     /* ── 保持显示 ── */
     tlibc_msleep(delay_sec * 1000);
+
+    /* ── 恢复 TTY 原始内容 ── */
+    fb_restore(fbp, saved, screensize);
 
     /* ── 清理 ── */
     __munmap(fbp, screensize);

@@ -17,6 +17,8 @@
  */
 
 #include "fb_draw.h"
+#include "core.h"
+#include "string.h"
 
 /* ── 像素操作 ── */
 
@@ -137,5 +139,23 @@ void fb_fill_circle(unsigned char *fbp,
             if (dx * dx + dy * dy <= r * r)
                 fb_put_pixel(fbp, col, row, color, line_length);
         }
+    }
+}
+
+/* ── 显存保存/恢复 ── */
+
+void *fb_save(unsigned char *fbp, size_t size)
+{
+    void *buf = tlibc_malloc(size);
+    if (buf)
+        memcpy(buf, fbp, size);
+    return buf;
+}
+
+void fb_restore(unsigned char *fbp, void *buf, size_t size)
+{
+    if (buf) {
+        memcpy(fbp, buf, size);
+        tlibc_free(buf);
     }
 }

@@ -84,6 +84,9 @@ int main(int argc, char *argv[])
     int h = var.yres;
     int ll = fix.line_length;
 
+    /* ── 保存原始 TTY 内容 ── */
+    void *saved = fb_save(fbp, screensize);
+
     /* ── 清屏为黑色 ── */
     fb_fill_rect(fbp, 0, 0, w, h, COL_BLACK, ll);
 
@@ -131,6 +134,9 @@ int main(int argc, char *argv[])
              var.xres, var.yres, var.bits_per_pixel, delay);
 
     tlibc_msleep(delay * 1000);
+
+    /* ── 恢复 TTY 原始内容 ── */
+    fb_restore(fbp, saved, screensize);
 
     __munmap(fbp, screensize);
     __close(fd);

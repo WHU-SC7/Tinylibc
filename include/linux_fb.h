@@ -22,7 +22,8 @@
 #define FBIOGET_FSCREENINFO    0x4602   /* 读 fb_fix_screeninfo */
 #define FBIOGETCMAP            0x4604   /* 读颜色表 */
 #define FBIOPUTCMAP            0x4605   /* 写颜色表 */
-#define FBIOSYNC               0x4606   /* 等待显存同步 */
+#define FBIOSYNC               0x4606   /* 等待显存同步（历史别名，见 FBIOPAN_DISPLAY） */
+#define FBIOPAN_DISPLAY         0x4606   /* 缓冲区切换（FBIOSYNC 同值）：设置 yoffset 翻转显示 */
 #define FBIO_WAITFORVSYNC      0x80044620  /* 等待垂直消隐 */
 
 /* ── fb_fix_screeninfo.type ── */

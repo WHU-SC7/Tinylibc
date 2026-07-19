@@ -24,6 +24,9 @@ struct timespec {
 #define CLOCK_REALTIME_ALARM            8
 #define CLOCK_BOOTTIME_ALARM            9
 
+/* clock_nanosleep 标志 */
+#define TIMER_ABSTIME   1
+
 /* ================================================================
  *  Layer 2 — POSIX：struct tm / timeval / 函数声明
  * ================================================================ */

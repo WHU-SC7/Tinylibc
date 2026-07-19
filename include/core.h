@@ -44,6 +44,8 @@ int tlibc_msleep(unsigned int msecond);
 int tlibc_usleep(unsigned int usecond);
 time_t __time(time_t *tloc);
 int __clock_gettime(clockid_t clockid, struct timespec *tp);
+int __clock_nanosleep(clockid_t clockid, int flags,
+                      const struct timespec *request, struct timespec *remain);
 int __sigaction(int signum, const struct sigaction *act, struct sigaction *oldact);
 int tlibc_sigaction(int signum, void (*handler)(int));
 int __pipe2(int pipefd[2], int flags);

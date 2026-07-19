@@ -26,6 +26,12 @@ int __clock_gettime(clockid_t clockid, struct timespec *tp)
     return syscall(SYS_clock_gettime, clockid, tp);
 }
 
+int __clock_nanosleep(clockid_t clockid, int flags,
+                      const struct timespec *request, struct timespec *remain)
+{
+    return syscall(SYS_clock_nanosleep, clockid, flags, request, remain);
+}
+
 /* ── 实用睡眠函数 ── */
 
 int tlibc_msleep(unsigned int msecond)

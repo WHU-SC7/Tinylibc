@@ -80,7 +80,7 @@ __x86_64: clean init_dir
 init_dir:
 	mkdir -p build
 	mkdir -p build/app build/lib build/output
-	mkdir -p build/lib/core build/lib/stdio build/lib/thread build/lib/net build/lib/math build/lib/misc build/lib/init
+	mkdir -p build/lib/core build/lib/stdio build/lib/thread build/lib/net build/lib/math build/lib/misc build/lib/init build/lib/graphics
 	mkdir -p tmp
 	@echo $(x64_c_srcs)
 	@echo $(x64_c_objs)

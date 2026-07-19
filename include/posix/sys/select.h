@@ -6,11 +6,8 @@
 /* suseconds_t — 微秒精度有符号整数 */
 typedef long suseconds_t;
 
-/* ── timeval ── */
-struct timeval {
-    time_t         tv_sec;      /* 秒 */
-    suseconds_t    tv_usec;     /* 微秒 */
-};
+/* timeval 由 time.h 提供（POSIX 要求 sys/select.h 使其可见） */
+#include "time.h"
 
 /* ── fd_set — 位图实现（FD_SETSIZE=1024） ── */
 #define FD_SETSIZE  1024

@@ -9,13 +9,13 @@
  * 机制：
  *   1. KD_GRAPHICS 模式下 stdin 不再可靠，程序通过 evdev_kbd 库
  *      直接从 /dev/input/event* 读取键盘事件
- *   2. 3× 放大 5×7 位图字体，清晰显示按下的键
+ *   2. 2× 放大 VGA 8×16 位图字体（fb_font 库），清晰显示按下的键
  *   3. 实时修饰键状态条（Shift/Ctrl/Alt/Caps）
  *
  * 系统调用：openat, ioctl(FBIOGET_VSCREENINFO/FSCREENINFO/KDSETMODE),
  *          mmap, munmap, close, poll, clock_gettime, clock_nanosleep
  *
- * 依赖：evdev_kbd (lib/evdev_kbd.c), fb_draw (lib/graphics/fb_draw.c)
+ * 依赖：evdev_kbd (lib/evdev_kbd.c), fb_font (lib/graphics/fb_font.c)
  *
  * 用法：
  *   fb_evdev_kbd
@@ -27,10 +27,7 @@
  * 索引：
  *   main             入口 → 打开 fb → mmap → KD_GRAPHICS →
  *                    打开 evdev 键盘 → poll 循环 → Esc 退出
- *     draw_char      缩放 5×7 位图字体绘制一个字符
- *     draw_text      绘制字符串
  *     key_name       键码（KEY_*）→ 可读名称（含按键符号）
- *     draw_info      绘制状态信息
  */
 
 #include "core.h"
@@ -41,6 +38,7 @@
 #include "linux_input.h"
 #include "linux_fb.h"
 #include "fb_draw.h"
+#include "fb_font.h"
 
 /* tty.h 定义旧版 KEY_UP/DOWN/LEFT/RIGHT（0x11-0x14）与 evdev 冲突，
  * 此处只前向声明需要的函数，不包含 tty.h。 */
@@ -75,119 +73,17 @@ int tlibc_restore_term(int fd);
  * 显示常量
  * ═══════════════════════════════════════════════════ */
 
-#define FONT_W    5
-#define FONT_H    7
-#define FONT_SCALE  3                             /* 3× 放大 */
-#define GLYPH_W   (FONT_W * FONT_SCALE)           /* 15 */
-#define GLYPH_H   (FONT_H * FONT_SCALE)           /* 21 */
-#define CHAR_W    (GLYPH_W + FONT_SCALE)           /* 15 + 3 = 18px 字间距 */
-#define LINE_H    (GLYPH_H + FONT_SCALE)           /* 21 + 3 = 24px 行间距 */
+/* 使用 fb_font VGA 8×16 字体，2× 放大
+ *   glyph 尺寸: 8×2=16px 宽, 16×2=32px 高
+ *   字符间距/行高: glyph + 2px 空白 */
+#define FONT_SCALE  2
+#define GLYPH_W     (FB_FONT_W * FONT_SCALE)    /* 16 */
+#define GLYPH_H     (FB_FONT_H * FONT_SCALE)    /* 32 */
+#define CHAR_W      (GLYPH_W + FONT_SCALE)       /* 16 + 2 = 18px */
+#define LINE_H      (GLYPH_H + FONT_SCALE)       /* 32 + 2 = 34px */
 
 #define MARGIN_X  16
 #define MARGIN_TOP 10
-
-/* ═══════════════════════════════════════════════════
- * 5×7 位图字体（ASCII 32-126）
- * 编码：bits 4-0 = 5 像素，bit 4 = 最左
- * ═══════════════════════════════════════════════════ */
-
-static const unsigned char font5x7[95][7] = {
-    { 0x00,0x00,0x00,0x00,0x00,0x00,0x00 }, /* 32 space  */
-    { 0x04,0x04,0x04,0x04,0x04,0x00,0x04 }, /* 33 !      */
-    { 0x0A,0x0A,0x0A,0x00,0x00,0x00,0x00 }, /* 34 "      */
-    { 0x0A,0x0A,0x1F,0x0A,0x1F,0x0A,0x0A }, /* 35 #      */
-    { 0x04,0x0F,0x14,0x0E,0x05,0x1E,0x04 }, /* 36 $      */
-    { 0x18,0x19,0x02,0x04,0x08,0x13,0x03 }, /* 37 %      */
-    { 0x0C,0x12,0x14,0x08,0x15,0x12,0x0D }, /* 38 &      */
-    { 0x04,0x04,0x04,0x00,0x00,0x00,0x00 }, /* 39 '      */
-    { 0x02,0x04,0x08,0x08,0x08,0x04,0x02 }, /* 40 (      */
-    { 0x08,0x04,0x02,0x02,0x02,0x04,0x08 }, /* 41 )      */
-    { 0x00,0x04,0x15,0x0E,0x15,0x04,0x00 }, /* 42 *      */
-    { 0x00,0x04,0x04,0x1F,0x04,0x04,0x00 }, /* 43 +      */
-    { 0x00,0x00,0x00,0x00,0x00,0x04,0x08 }, /* 44 ,      */
-    { 0x00,0x00,0x00,0x1F,0x00,0x00,0x00 }, /* 45 -      */
-    { 0x00,0x00,0x00,0x00,0x00,0x04,0x04 }, /* 46 .      */
-    { 0x01,0x01,0x02,0x04,0x08,0x10,0x10 }, /* 47 /      */
-    { 0x0E,0x11,0x13,0x15,0x19,0x11,0x0E }, /* 48 0      */
-    { 0x04,0x0C,0x04,0x04,0x04,0x04,0x0E }, /* 49 1      */
-    { 0x0E,0x11,0x01,0x02,0x04,0x08,0x1F }, /* 50 2      */
-    { 0x1F,0x02,0x04,0x02,0x01,0x11,0x0E }, /* 51 3      */
-    { 0x02,0x06,0x0A,0x12,0x1F,0x02,0x02 }, /* 52 4      */
-    { 0x1F,0x10,0x1E,0x01,0x01,0x11,0x0E }, /* 53 5      */
-    { 0x06,0x08,0x10,0x1E,0x11,0x11,0x0E }, /* 54 6      */
-    { 0x1F,0x01,0x02,0x04,0x08,0x08,0x08 }, /* 55 7      */
-    { 0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E }, /* 56 8      */
-    { 0x0E,0x11,0x11,0x0F,0x01,0x11,0x0E }, /* 57 9      */
-    { 0x00,0x04,0x04,0x00,0x04,0x04,0x00 }, /* 58 :      */
-    { 0x00,0x04,0x04,0x00,0x04,0x08,0x00 }, /* 59 ;      */
-    { 0x02,0x04,0x08,0x10,0x08,0x04,0x02 }, /* 60 <      */
-    { 0x00,0x00,0x1F,0x00,0x1F,0x00,0x00 }, /* 61 =      */
-    { 0x08,0x04,0x02,0x01,0x02,0x04,0x08 }, /* 62 >      */
-    { 0x0E,0x11,0x01,0x02,0x04,0x00,0x04 }, /* 63 ?      */
-    { 0x0E,0x11,0x01,0x0D,0x15,0x15,0x0E }, /* 64 @      */
-    { 0x04,0x0A,0x11,0x11,0x1F,0x11,0x11 }, /* 65 A      */
-    { 0x1E,0x11,0x11,0x1E,0x11,0x11,0x1E }, /* 66 B      */
-    { 0x0E,0x11,0x10,0x10,0x10,0x11,0x0E }, /* 67 C      */
-    { 0x1C,0x12,0x11,0x11,0x11,0x12,0x1C }, /* 68 D      */
-    { 0x1F,0x10,0x10,0x1E,0x10,0x10,0x1F }, /* 69 E      */
-    { 0x1F,0x10,0x10,0x1E,0x10,0x10,0x10 }, /* 70 F      */
-    { 0x0E,0x11,0x10,0x10,0x13,0x11,0x0F }, /* 71 G      */
-    { 0x11,0x11,0x11,0x1F,0x11,0x11,0x11 }, /* 72 H      */
-    { 0x0E,0x04,0x04,0x04,0x04,0x04,0x0E }, /* 73 I      */
-    { 0x01,0x01,0x01,0x01,0x01,0x11,0x0E }, /* 74 J      */
-    { 0x11,0x12,0x14,0x18,0x14,0x12,0x11 }, /* 75 K      */
-    { 0x10,0x10,0x10,0x10,0x10,0x10,0x1F }, /* 76 L      */
-    { 0x11,0x1B,0x15,0x15,0x11,0x11,0x11 }, /* 77 M      */
-    { 0x11,0x11,0x19,0x15,0x13,0x11,0x11 }, /* 78 N      */
-    { 0x0E,0x11,0x11,0x11,0x11,0x11,0x0E }, /* 79 O      */
-    { 0x1E,0x11,0x11,0x1E,0x10,0x10,0x10 }, /* 80 P      */
-    { 0x0E,0x11,0x11,0x11,0x15,0x12,0x0D }, /* 81 Q      */
-    { 0x1E,0x11,0x11,0x1E,0x14,0x12,0x11 }, /* 82 R      */
-    { 0x0F,0x10,0x10,0x0E,0x01,0x01,0x1E }, /* 83 S      */
-    { 0x1F,0x04,0x04,0x04,0x04,0x04,0x04 }, /* 84 T      */
-    { 0x11,0x11,0x11,0x11,0x11,0x11,0x0E }, /* 85 U      */
-    { 0x11,0x11,0x11,0x11,0x11,0x0A,0x04 }, /* 86 V      */
-    { 0x11,0x11,0x11,0x15,0x15,0x1B,0x11 }, /* 87 W      */
-    { 0x11,0x11,0x0A,0x04,0x0A,0x11,0x11 }, /* 88 X      */
-    { 0x11,0x11,0x11,0x0A,0x04,0x04,0x04 }, /* 89 Y      */
-    { 0x1F,0x01,0x02,0x04,0x08,0x10,0x1F }, /* 90 Z      */
-    { 0x0E,0x08,0x08,0x08,0x08,0x08,0x0E }, /* 91 [      */
-    { 0x10,0x10,0x08,0x04,0x02,0x01,0x01 }, /* 92 \      */
-    { 0x0E,0x02,0x02,0x02,0x02,0x02,0x0E }, /* 93 ]      */
-    { 0x04,0x0A,0x11,0x00,0x00,0x00,0x00 }, /* 94 ^      */
-    { 0x00,0x00,0x00,0x00,0x00,0x00,0x1F }, /* 95 _      */
-    { 0x08,0x04,0x02,0x00,0x00,0x00,0x00 }, /* 96 `      */
-    { 0x00,0x00,0x0E,0x01,0x0F,0x11,0x0F }, /* 97 a      */
-    { 0x10,0x10,0x16,0x19,0x11,0x11,0x1E }, /* 98 b      */
-    { 0x00,0x00,0x0E,0x10,0x10,0x11,0x0E }, /* 99 c      */
-    { 0x01,0x01,0x0D,0x13,0x11,0x11,0x0F }, /* 100 d     */
-    { 0x00,0x00,0x0E,0x11,0x1F,0x10,0x0E }, /* 101 e     */
-    { 0x02,0x05,0x04,0x0E,0x04,0x04,0x04 }, /* 102 f     */
-    { 0x00,0x00,0x0F,0x11,0x0F,0x01,0x0E }, /* 103 g     */
-    { 0x10,0x10,0x16,0x19,0x11,0x11,0x11 }, /* 104 h     */
-    { 0x04,0x00,0x0C,0x04,0x04,0x04,0x0E }, /* 105 i     */
-    { 0x02,0x00,0x06,0x02,0x02,0x12,0x0C }, /* 106 j     */
-    { 0x10,0x10,0x12,0x14,0x18,0x14,0x12 }, /* 107 k     */
-    { 0x0C,0x04,0x04,0x04,0x04,0x04,0x0E }, /* 108 l     */
-    { 0x00,0x00,0x1A,0x15,0x15,0x11,0x11 }, /* 109 m     */
-    { 0x00,0x00,0x16,0x19,0x11,0x11,0x11 }, /* 110 n     */
-    { 0x00,0x00,0x0E,0x11,0x11,0x11,0x0E }, /* 111 o     */
-    { 0x00,0x00,0x1E,0x11,0x1E,0x10,0x10 }, /* 112 p     */
-    { 0x00,0x00,0x0D,0x13,0x0F,0x01,0x01 }, /* 113 q     */
-    { 0x00,0x00,0x16,0x19,0x10,0x10,0x10 }, /* 114 r     */
-    { 0x00,0x00,0x0F,0x10,0x0E,0x01,0x1E }, /* 115 s     */
-    { 0x04,0x04,0x0E,0x04,0x04,0x05,0x02 }, /* 116 t     */
-    { 0x00,0x00,0x11,0x11,0x11,0x13,0x0D }, /* 117 u     */
-    { 0x00,0x00,0x11,0x11,0x11,0x0A,0x04 }, /* 118 v     */
-    { 0x00,0x00,0x11,0x11,0x15,0x15,0x0A }, /* 119 w     */
-    { 0x00,0x00,0x11,0x0A,0x04,0x0A,0x11 }, /* 120 x     */
-    { 0x00,0x00,0x11,0x11,0x0F,0x01,0x0E }, /* 121 y     */
-    { 0x00,0x00,0x1F,0x02,0x04,0x08,0x1F }, /* 122 z     */
-    { 0x02,0x04,0x04,0x08,0x04,0x04,0x02 }, /* 123 {     */
-    { 0x04,0x04,0x04,0x04,0x04,0x04,0x04 }, /* 124 |     */
-    { 0x08,0x04,0x04,0x02,0x04,0x04,0x08 }, /* 125 }     */
-    { 0x00,0x00,0x08,0x15,0x02,0x00,0x00 }, /* 126 ~     */
-};
 
 /* ═══════════════════════════════════════════════════
  * 键码（KEY_*）→ 可读名称
@@ -272,51 +168,13 @@ static const char *key_name(int code)
 }
 
 /* ═══════════════════════════════════════════════════
- * 绘图 — 缩放 5×7 位图字体
+ * 字体工具 — 委托给 fb_font 库
  * ═══════════════════════════════════════════════════ */
 
-/* 在 (x,y) 绘制一个字符，每个字体像素放大 FONT_SCALE 倍 */
-static void draw_char(unsigned char *fbp, int x, int y,
-                      char ch, uint32_t color, int ll)
-{
-    if (ch < 32 || ch > 126) return;
-    int idx = ch - 32;
-    for (int row = 0; row < FONT_H; row++) {
-        unsigned char bits = font5x7[idx][row];
-        if (bits == 0) continue;
-        for (int col = 0; col < FONT_W; col++) {
-            if (!(bits & (1 << (4 - col)))) continue;
-            /* 将 1 像素放大为 FONT_SCALE × FONT_SCALE 块 */
-            int px = x + col * FONT_SCALE;
-            int py = y + row * FONT_SCALE;
-            for (int dy = 0; dy < FONT_SCALE; dy++)
-                for (int dx = 0; dx < FONT_SCALE; dx++)
-                    fb_put_pixel(fbp, px + dx, py + dy, color, ll);
-        }
-    }
-}
-
-/* 绘制字符串（自动计算宽度和间距） */
-static void draw_text(unsigned char *fbp, int x, int y,
-                      const char *s, uint32_t color, int ll)
-{
-    while (*s) {
-        draw_char(fbp, x, y, *s, color, ll);
-        x += CHAR_W;
-        s++;
-    }
-}
-
-/* 计算字符串渲染宽度（像素） */
+/* 计算字符串渲染宽度（像素，含缩放） */
 static int text_width(const char *s)
 {
-    return strlen(s) * CHAR_W;
-}
-
-/* 填充黑色矩形（擦除用） */
-static void clear_rect(unsigned char *fbp, int x, int y, int w, int h, int ll)
-{
-    fb_fill_rect(fbp, x, y, w, h, COL_BLACK, ll);
+    return fb_string_width_scaled(s, FONT_SCALE);
 }
 
 /* ═══════════════════════════════════════════════════
@@ -500,7 +358,7 @@ int main(int argc, char *argv[])
     {
         const char *title = "fb_evdev_kbd — Keyboard Tester";
         int tx = cx - text_width(title) / 2;
-        draw_text(fbp, tx, y_title, title, COL_CYAN, ll);
+        fb_draw_string_scaled(fbp, tx, y_title, title, COL_CYAN, ll, FONT_SCALE);
     }
 
     /* 设备名 — 居中 */
@@ -509,14 +367,14 @@ int main(int argc, char *argv[])
         strcpy(devbuf, "Device: ");
         strcat(devbuf, dev_name);
         int tx = cx - text_width(devbuf) / 2;
-        draw_text(fbp, tx, y_devline, devbuf, COL_GRAY, ll);
+        fb_draw_string_scaled(fbp, tx, y_devline, devbuf, COL_GRAY, ll, FONT_SCALE);
     }
 
     /* 分隔线1 */
     fb_draw_line(fbp, MARGIN_X, y_sep1, w - MARGIN_X, y_sep1, COL_GRAY_DIM, ll);
 
     /* 历史记录标签（静态）— 内容在循环中更新 */
-    draw_text(fbp, MARGIN_X, y_history_label, "History:", COL_GRAY, ll);
+    fb_draw_string_scaled(fbp, MARGIN_X, y_history_label, "History:", COL_GRAY, ll, FONT_SCALE);
 
     /* 分隔线2（历史内容下方，循环中维护，此处先画一条） */
     fb_draw_line(fbp, MARGIN_X, y_sep2, w - MARGIN_X, y_sep2, COL_GRAY_DIM, ll);
@@ -525,7 +383,7 @@ int main(int argc, char *argv[])
     {
         const char *footer = "Press ESC to quit";
         int fx = cx - text_width(footer) / 2;
-        draw_text(fbp, fx, y_footer, footer, COL_GRAY, ll);
+        fb_draw_string_scaled(fbp, fx, y_footer, footer, COL_GRAY, ll, FONT_SCALE);
     }
 
     /* ── 主循环缓冲 ── */
@@ -624,16 +482,16 @@ int main(int argc, char *argv[])
                 strncpy(last_hist_str, hist_buf, sizeof(last_hist_str) - 1);
                 last_hist_len = (int)strlen(hist_buf);
 
-                clear_rect(fbp, MARGIN_X, y_history_text, w - MARGIN_X * 2, LINE_H, ll);
-                draw_text(fbp, MARGIN_X, y_history_text, hist_buf, COL_WHITE, ll);
+                fb_fill_rect(fbp, MARGIN_X, y_history_text, w - MARGIN_X * 2, LINE_H, COL_BLACK, ll);
+                fb_draw_string_scaled(fbp, MARGIN_X, y_history_text, hist_buf, COL_WHITE, ll, FONT_SCALE);
             }
         }
 
         /* ── 主键显示区（分两块：键名区 + 修饰键行，独立清除防重叠） ── */
 
         /* 键名/编码区（Key / Code）— 完全擦除后重绘 */
-        clear_rect(fbp, MARGIN_X, y_sep2 + 2, w - MARGIN_X * 2,
-                   y_mods - y_sep2 - 6, ll);
+        fb_fill_rect(fbp, MARGIN_X, y_sep2 + 2, w - MARGIN_X * 2,
+                     y_mods - y_sep2 - 6, COL_BLACK, ll);
 
         /* "Key:  <按键名>" */
         {
@@ -644,9 +502,9 @@ int main(int argc, char *argv[])
             strcat(keybuf, last_key_str);
 
             int tx = cx - text_width(keybuf) / 2;
-            draw_text(fbp, tx, y_key_lbl, label, COL_YELLOW, ll);
-            draw_text(fbp, tx + text_width(label) + 4, y_key_lbl,
-                      last_key_str, COL_WHITE, ll);
+            fb_draw_string_scaled(fbp, tx, y_key_lbl, label, COL_YELLOW, ll, FONT_SCALE);
+            fb_draw_string_scaled(fbp, tx + fb_string_width_scaled(label, FONT_SCALE) + 4,
+                                  y_key_lbl, last_key_str, COL_WHITE, ll, FONT_SCALE);
         }
 
         /* "Code:  0xNN  (NNN)" — 显示 hex + decimal */
@@ -669,12 +527,12 @@ int main(int argc, char *argv[])
             }
 
             int tx = cx - text_width(cbuf) / 2;
-            draw_text(fbp, tx, y_code, cbuf, COL_CYAN, ll);
+            fb_draw_string_scaled(fbp, tx, y_code, cbuf, COL_CYAN, ll, FONT_SCALE);
         }
 
         /* ── Modifiers — 独立清除防重叠 ── */
         {
-            clear_rect(fbp, MARGIN_X, y_mods - 2, w - MARGIN_X * 2, LINE_H + 4, ll);
+            fb_fill_rect(fbp, MARGIN_X, y_mods - 2, w - MARGIN_X * 2, LINE_H + 4, COL_BLACK, ll);
             char mbuf[96];
             strcpy(mbuf, "Modifiers:  ");
             strcat(mbuf, last_mod_str);
@@ -682,7 +540,7 @@ int main(int argc, char *argv[])
             int tx = cx - text_width(mbuf) / 2;
             uint32_t mcolor = (strcmp(last_mod_str, "(none)") != 0)
                               ? COL_GREEN : COL_GRAY;
-            draw_text(fbp, tx, y_mods, mbuf, mcolor, ll);
+            fb_draw_string_scaled(fbp, tx, y_mods, mbuf, mcolor, ll, FONT_SCALE);
         }
     }
 

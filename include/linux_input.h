@@ -185,6 +185,12 @@ struct input_event {
 #define KEY_INSERT      110
 #define KEY_DELETE      111
 
+/* ── 鼠标按键 (EV_KEY) 编码 (BTN_*) ── */
+
+#define BTN_LEFT        0x110   /* 左键 */
+#define BTN_RIGHT       0x111   /* 右键 */
+#define BTN_MIDDLE      0x112   /* 中键 */
+
 /* ── 鼠标相对轴 (EV_REL) code ── */
 
 #define REL_X           0

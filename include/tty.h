@@ -27,10 +27,10 @@ int tlibc_restore_term(int fd);
  * ║  新程序（fb_* 图形程序）应使用 evdev（linux_input.h）       ║
  * ╚══════════════════════════════════════════════════════════════╝
  */
-#define KEY_UP     0x11
-#define KEY_DOWN   0x12
-#define KEY_LEFT   0x13
-#define KEY_RIGHT  0x14
+#define KEY_UP     103
+#define KEY_DOWN   108
+#define KEY_LEFT   105
+#define KEY_RIGHT  106
 
 int tlibc_general_input_process(int pipe_write_fd);
 

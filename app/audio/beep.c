@@ -7,16 +7,20 @@
  * 机制：相位累加生成 1 秒 440Hz 正弦波 → 通过 ALSA 直接写入 /dev/snd/pcmC*D*p。
  * 不依赖文件系统（波形在内存中生成），用于验证 ALSA 直写链路打通。
  *
- * 系统调用：openat, ioctl, write, close
+ * 自引用 fallback：若 PulseAudio 占用 PCM 设备（-EBUSY），
+ * 则自动通过 execve 调用 pasuspender 挂起 PA 后重新执行自身。
+ * 通过 _BEEP_PASUSPENDER 环境变量防止递归循环。
+ *
+ * 系统调用：openat, ioctl, write, close, execve
  *
  * 用法：
  *   beep              # 播放 440Hz 蜂鸣（默认设备）
  *   beep /dev/snd/pcmC0D0p  # 指定设备节点
- *   pasuspender -- beep # 在 PulseAudio 环境下需先挂起 PA 再执行
  *
  * 索引：
  *   main             开设备 → 生成波形 → 配置 → 写入 → 关闭
  *     gen_sine        相位累加正弦波生成
+ *     try_pasuspender_fallback  EBUSY → execve pasuspender 重新执行
  */
 
 #include "tlibc_everything.h"
@@ -61,6 +65,101 @@ static void gen_sine(short *buf, double freq, unsigned int rate,
     }
 }
 
+/*
+ * is_pulseaudio_active — 检测 PulseAudio 是否在运行
+ *
+ * 检查 PulseAudio 的 Unix 域 socket 是否存在。
+ * PulseAudio 默认在 /run/user/<uid>/pulse/native 创建监听 socket。
+ */
+static int is_pulseaudio_active(void)
+{
+    char path[64];
+    int uid = (int)getuid();
+    int len = snprintf(path, sizeof(path),
+                        "/run/user/%d/pulse/native", uid);
+    if (len < 0 || (unsigned long)len >= sizeof(path))
+        return 0;
+
+    int fd = __openat(AT_FDCWD, path, O_RDONLY | O_CLOEXEC, 0);
+    if (fd < 0)
+        return 0;
+    __close(fd);
+    return 1;
+}
+
+/*
+ * try_pasuspender_fallback — 通过 pasuspender 重新执行自身
+ *
+ * 构造 argv 和 envp，通过 execve 调用 /usr/bin/pasuspender
+ * 挂起 PulseAudio 后重新执行自身。
+ *
+ * _BEEP_PASUSPENDER=1 环境变量作为递归防护标记：
+ * 若该变量已存在（已在 pasuspender 中），则不再递归调用。
+ *
+ * 此函数仅在 execve 失败时返回（pasuspender 未安装等），
+ * 成功时不返回（当前进程被完全替换）。
+ */
+static void try_pasuspender_fallback(int argc, char **argv)
+{
+    /* 递归防护：已在 pasuspender 下则不再重试 */
+    char *flag = get_env_var(global_envp, "_BEEP_PASUSPENDER");
+    if (flag && flag[0] == '1')
+        return;
+
+    /* 检查 /usr/bin/pasuspender 是否存在 */
+    int fd = __openat(AT_FDCWD, "/usr/bin/pasuspender",
+                      O_RDONLY | O_CLOEXEC, 0);
+    if (fd < 0)
+        return;
+    __close(fd);
+
+    PRINT_COLOR(YELLOW_COLOR_PRINT,
+                "beep: 设备被 PulseAudio 占用，通过 pasuspender 重试...\n");
+
+    /* ── 构建新 argv ── */
+    int new_argc = argc + 2;  /* + "pasuspender" + "--" */
+    char **new_argv = tlibc_malloc((unsigned long)(new_argc + 1)
+                                   * sizeof(char *));
+    if (!new_argv) return;
+
+    new_argv[0] = "/usr/bin/pasuspender";
+    new_argv[1] = "--";
+    new_argv[2] = argv[0];
+    for (int i = 1; i < argc; i++)
+        new_argv[i + 2] = argv[i];
+    new_argv[new_argc] = NULL;
+
+    /* ── 构建新 envp（追加 _BEEP_PASUSPENDER=1）── */
+    int env_count = tlibc_envp_count(global_envp);
+    char **new_envp = tlibc_malloc((unsigned long)(env_count + 2)
+                                   * sizeof(char *));
+    if (!new_envp) {
+        tlibc_free(new_argv);
+        return;
+    }
+
+    for (int i = 0; i < env_count; i++)
+        new_envp[i] = global_envp[i];
+
+    /* 递归防护标记 */
+    {
+        static char beep_flag[] = "_BEEP_PASUSPENDER=1";
+        new_envp[env_count] = beep_flag;
+    }
+    new_envp[env_count + 1] = NULL;
+
+    /* ── execve：成功则当前进程完全替换 ── */
+    {
+        int ret = execve("/usr/bin/pasuspender", new_argv, new_envp);
+
+        /* 执行到这里说明 execve 失败，清理后返回 */
+        PRINT_COLOR(RED_COLOR_PRINT,
+                    "beep: pasuspender 启动失败 (errno=%d)\n", -ret);
+    }
+    tlibc_free(new_argv);
+    tlibc_free(new_envp);
+}
+
 static void print_error(const char *msg, int err)
 {
     char buf[128];
@@ -82,8 +181,47 @@ int main(int argc, char **argv)
 
     PRINT_COLOR(GREEN_COLOR_PRINT, "beep: 正在打开 PCM 设备...\n");
 
-    ret = tlibc_pcm_open(&pcm, dev, CHANNELS, SAMPLE_RATE, BITS);
+    if (dev) {
+        /* 用户指定了设备 → 直接打开 */
+        ret = tlibc_pcm_open(&pcm, dev, CHANNELS, SAMPLE_RATE, BITS);
+        if (ret == -EBUSY)
+            try_pasuspender_fallback(argc, argv);
+    } else {
+        /* 先尝试主设备 /dev/snd/pcmC0D0p */
+        ret = tlibc_pcm_open(&pcm, "/dev/snd/pcmC0D0p",
+                             CHANNELS, SAMPLE_RATE, BITS);
+        if (ret == -EBUSY) {
+            /* 主设备被占用 → PulseAudio 可能导致 → pasuspender */
+            try_pasuspender_fallback(argc, argv);
+            /* pasuspender 失败 → 回退到扫描任何可用设备 */
+            ret = tlibc_pcm_open(&pcm, NULL,
+                                 CHANNELS, SAMPLE_RATE, BITS);
+        } else if (ret < 0) {
+            /* 主设备不存在或其他错误 → 直接扫描 */
+            ret = tlibc_pcm_open(&pcm, NULL,
+                                 CHANNELS, SAMPLE_RATE, BITS);
+        }
+        /* 若扫描成功但主设备被 PA 占用，仍尝试 pasuspender
+           以通过主设备播放（而非替代设备） */
+        if (ret == 0 && is_pulseaudio_active()) {
+            int pri_fd = __openat(AT_FDCWD, "/dev/snd/pcmC0D0p",
+                                  O_RDWR | O_NONBLOCK | O_CLOEXEC, 0);
+            if (pri_fd == -EBUSY) {
+                tlibc_pcm_close(&pcm);
+                try_pasuspender_fallback(argc, argv);
+                /* pasuspender 失败 → 重新扫描 */
+                ret = tlibc_pcm_open(&pcm, NULL,
+                                     CHANNELS, SAMPLE_RATE, BITS);
+            } else if (pri_fd >= 0) {
+                __close(pri_fd);
+            }
+        }
+    }
+
     if (ret < 0) {
+        /* 最终失败：EBUSY + PA 运行 → 再尝试一次 pasuspender */
+        if (ret == -EBUSY || is_pulseaudio_active())
+            try_pasuspender_fallback(argc, argv);
         print_error("无法打开 PCM 设备", ret);
         return 1;
     }
@@ -94,6 +232,9 @@ int main(int argc, char **argv)
 
     ret = tlibc_pcm_configure(&pcm);
     if (ret < 0) {
+        /* configure 阶段也可能返回 EBUSY（设备已被 PA 锁定参数） */
+        if (ret == -EBUSY || is_pulseaudio_active())
+            try_pasuspender_fallback(argc, argv);
         print_error("PCM 配置失败", ret);
         tlibc_pcm_close(&pcm);
         return 1;

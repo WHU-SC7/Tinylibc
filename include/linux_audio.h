@@ -202,11 +202,66 @@ struct snd_xferi {
 };
 
 /* ══════════════════════════════════════════════════════════════════════
+ *  流方向
+ * ══════════════════════════════════════════════════════════════════════ */
+
+#define SNDRV_PCM_STREAM_PLAYBACK   0
+#define SNDRV_PCM_STREAM_CAPTURE    1
+
+/* ══════════════════════════════════════════════════════════════════════
+ *  struct snd_pcm_info — PCM 设备信息（通过 SNDRV_PCM_IOCTL_INFO
+ *  或 SNDRV_CTL_IOCTL_PCM_INFO 查询）
+ *
+ *  大小 288 字节（x86_64），包含设备名称、ID、同步 ID、子设备计数等。
+ *  注意：无需打开 PCM 设备也可通过 controlC* 查询（不会因 EBUSY 受阻）
+ *
+ *   0    device           uint32_t
+ *   4    subdevice        uint32_t
+ *   8    stream           int32_t
+ *  12    card             int32_t
+ *  16    id[64]           unsigned char
+ *  80    name[80]         unsigned char
+ * 160    subname[32]      unsigned char
+ * 192    dev_class        int32_t
+ * 196    dev_subclass     int32_t
+ * 200    subdevices_count uint32_t
+ * 204    subdevices_avail uint32_t
+ * 208    sync             union snd_pcm_sync_id (16B)
+ * 224    reserved[64]     unsigned char
+ * 288    总大小
+ * ══════════════════════════════════════════════════════════════════════ */
+
+union snd_pcm_sync_id {
+    unsigned char  id[16];
+    unsigned short id16[8];
+    unsigned int   id32[4];
+};
+
+struct snd_pcm_info {
+    uint32_t       device;
+    uint32_t       subdevice;
+    int            stream;          /* SNDRV_PCM_STREAM_* */
+    int            card;
+    unsigned char  id[64];
+    unsigned char  name[80];
+    unsigned char  subname[32];
+    int            dev_class;
+    int            dev_subclass;
+    uint32_t       subdevices_count;
+    uint32_t       subdevices_avail;
+    union snd_pcm_sync_id sync;     /* 硬件同步 ID */
+    unsigned char  reserved[64];
+} __attribute__((aligned(4)));
+
+/* PCM 信息 flags（在 snd_pcm_hw_params.info 中出现，非 pcm_info 结构体） */
+#define SNDRV_PCM_INFO_MULTI           0x10000000  /* 支持多重打开 */
+
+/* ══════════════════════════════════════════════════════════════════════
  *  PCM IOCTL 命令
  *
  *  _IOC 编码：dir(2bit) | type(8bit) | nr(8bit) | size(14bit)
  *  dir:  0=_IO, 1=_IOW, 2=_IOR, 3=_IOWR
- *  type: 'A' = 0x41
+ *  type: 'A' = 0x41（PCM）、'U' = 0x55（Control）
  *  nr:   命令序号
  *  size: sizeof(struct)，编码在 ioctl 号中以兼容新旧版本
  * ══════════════════════════════════════════════════════════════════════ */
@@ -235,6 +290,11 @@ struct snd_xferi {
 #define SNDRV_PCM_IOCTL_DRAIN        __ALSA_IO('A', 0x44)
 
 /* 参数配置 */
+#define SNDRV_PCM_IOCTL_INFO      __ALSA_IOR('A', 0x01, \
+                                     sizeof(struct snd_pcm_info))
+/* 注意：SNDRV_PCM_IOCTL_INFO 需要传一个打开的 PCM fd，
+   对 EBUSY 设备无效。如需查询被占用的设备名称，
+   应通过 SNDRV_CTL_IOCTL_PCM_INFO（/dev/snd/controlC*）。 */
 #define SNDRV_PCM_IOCTL_HW_REFINE  __ALSA_IOWR('A', 0x10, \
                                      sizeof(struct snd_pcm_hw_params))
 #define SNDRV_PCM_IOCTL_HW_PARAMS  __ALSA_IOWR('A', 0x11, \
@@ -245,6 +305,22 @@ struct snd_xferi {
 /* 帧传输 */
 #define SNDRV_PCM_IOCTL_WRITEI_FRAMES  __ALSA_IOW('A', 0x50, \
                                          sizeof(struct snd_xferi))
+
+/* ══════════════════════════════════════════════════════════════════════
+ *  Control 设备 IOCTL — 用于查询 PCM 设备信息，无需打开 PCM 节点
+ *
+ *  type: 'U' = 0x55，/dev/snd/controlC* 永不 busy
+ *
+ *  可用性：这些 ioctl 在 6.8 内核中存在，但并非在所有内核版本
+ *  都可用。若返回 ENOTTY，需回退到 /proc/asound/ 读取设备名称。
+ * ══════════════════════════════════════════════════════════════════════ */
+
+/* 枚举下一个 PCM 设备号。传入 -1 获取第一个，返回下一个设备号 */
+#define SNDRV_CTL_IOCTL_PCM_NEXT_DEVICE  __ALSA_IOR('U', 0x30, \
+                                             sizeof(int))
+/* 获取指定 PCM 设备的详细信息（名称、流向、子设备数等） */
+#define SNDRV_CTL_IOCTL_PCM_INFO        __ALSA_IOWR('U', 0x31, \
+                                             sizeof(struct snd_pcm_info))
 
 /* ══════════════════════════════════════════════════════════════════════
  *  PCM 描述符（上层应用使用）

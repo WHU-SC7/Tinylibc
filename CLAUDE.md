@@ -71,6 +71,7 @@ tmake -j               # 自动检测 CPU 核数并行编译全部
 | `procfs.c` | `/proc` 解析公共库：`tlibc_list_pids`、`tlibc_read_proc_status`、`tlibc_read_proc_stat` |
 | `init/` | `init.c`（`tlibc_init`：预分配线程栈→初始化内存池→调`main`）、`start.S`（入口 `__tlibc_start`→`tlibc_init`→`main`） |
 | `math/` | `math.c`（sqrt/fabs/ceil/floor/round/trunc/fmod + sin/cos/tan/atan/atan2 + exp/log/log10/pow + isqrt，泰勒/牛顿 ~1e-10 精度） |
+| `graphics/` | `fb_draw.c`（帧缓冲 2D 图元库：Bresenham 直线、矩形、中点圆、显存保存/恢复） |
 
 ### 应用 `app/*.c`
 
@@ -82,6 +83,7 @@ tmake -j               # 自动检测 CPU 核数并行编译全部
 | `net/` | ndiscover（网络发现）, webserv（HTTP 服务器）, sniffer（抓包）, netprobe（延迟探测）, ping（ICMP 探测）, portscan（端口扫描）, http（HTTP 客户端）, dnsquery（DNS 查询） |
 | `net/old/` | 旧版：ssh, sshd, tclient, tserver, client, server（保留但不再编译） |
 | `term/` | vim, top, __game_pacman, template |
+| `graphics/` | fb_info（屏幕信息）, fb_fill（全屏填充）, fb_pixel（2D 图元演示）, fb_vsync（垂直同步+弹跳球）, fb_ball（流畅弹跳小球+脏矩形+FPS 显示） |
 | `compiler/` | **tcc**（自托管 C 编译器，9/9 自编译通过）：lex/parse/preproc/cgen/cgen_expr/cgen_asm/elf_write | tpp（独立预处理器） |（详见下方编译器章节） |
 | `elf/` | elf_reader（ELF 文件读取器）, elf_maker（ELF 生成器）, elfdump（ELF 反汇编工具） |
 | `test/` | test_string, test_smoke（冒烟测试）, test_iomux（poll/select/epoll 测试）, test_printf（格式化、精度测试）, test_filelist（文件列表测试）, thread（线程测试）, tlibc_free（释放测试）, passwd, quene, test_math（sqrt/sin/cos/exp/log/pow 等 23 个用例） |
@@ -128,6 +130,8 @@ tmake -j               # 自动检测 CPU 核数并行编译全部
 | `net.h` | socket / bind / listen / accept 等网络 API |
 | `terminal_esc.h` | ANSI/VT100 转义序列宏：CURSOR_HOME, CLEAR_SCREEN, ALT_SCREEN |
 | `tty.h` | winsize, TIOCGWINSZ, raw 模式 API, 自定义键值 (KEY_UP/DOWN/LEFT/RIGHT), 光标定位 |
+| `fb_draw.h` | 帧缓冲 2D 图元 API：`fb_put_pixel`, `fb_draw_line`, `fb_draw/fill_rect`, `fb_draw/fill_circle`, `fb_save/restore` |
+| `linux_fb.h` | Linux fbdev 结构体：`struct fb_var_screeninfo/fix_screeninfo`, `FBIOGET_VSCREENINFO`, `FBIO_WAITFORVSYNC`, `FBIO_FSCREENINFO` |
 
 **Layer 2 — POSIX 兼容层 `include/posix/`**（标准 POSIX 语义）
 

@@ -38,7 +38,6 @@
 #include "linux_fb.h"
 #include "fb_draw.h"
 #include "tty.h"
-#include "string.h"
 
 #define COL_WHITE   0xFFFFFF
 #define COL_BLACK   0x000000
@@ -106,20 +105,20 @@ int main(int argc, char *argv[])
     /* ── 打开设备 ── */
     int fd = __openat(AT_FDCWD, "/dev/fb0", O_RDWR, 0);
     if (fd < 0) {
-        __printf("fb_vsync: 无法打开 /dev/fb0（%d）\n", fd);
+        __printf("fb_vsync: cannot open /dev/fb0 (%d)\n", fd);
         return 1;
     }
 
     struct fb_var_screeninfo var;
     if (__ioctl(fd, FBIOGET_VSCREENINFO, &var) < 0) {
-        __printf("fb_vsync: FBIOGET_VSCREENINFO 失败\n");
+        __printf("fb_vsync: FBIOGET_VSCREENINFO failed\n");
         __close(fd);
         return 1;
     }
 
     struct fb_fix_screeninfo fix;
     if (__ioctl(fd, FBIOGET_FSCREENINFO, &fix) < 0) {
-        __printf("fb_vsync: FBIOGET_FSCREENINFO 失败\n");
+        __printf("fb_vsync: FBIOGET_FSCREENINFO failed\n");
         __close(fd);
         return 1;
     }
@@ -133,13 +132,10 @@ int main(int argc, char *argv[])
     unsigned char *fbp = __mmap(0, screensize, PROT_READ | PROT_WRITE,
                                 MAP_SHARED, fd, 0);
     if (fbp == MAP_FAILED) {
-        __printf("fb_vsync: mmap 失败\n");
+        __printf("fb_vsync: mmap failed\n");
         __close(fd);
         return 1;
     }
-
-    /* ── 保存原始显存内容 ── */
-    void *saved = fb_save(fbp, (size_t)h * ll);
 
     /* ── 球参数 ── */
     int bx = w / 2, by = h / 2;
@@ -148,13 +144,13 @@ int main(int argc, char *argv[])
     int speed_y = SPEED_BASE_Y;
     long acc_x = 0, acc_y = 0;
 
-    /* ── 切换 TTY 到图形模式 ── */
+    /* ── 切换到图形模式 ── */
     int graphics_mode = 0;
     tlibc_set_term_raw_and_noecho(0);
     graphics_mode = 1;
     { int km = KD_GRAPHICS; __ioctl(0, KDSETMODE, &km); }
 
-    __printf("fb_vsync: %u×%u  %dfps  脏矩形  %dpx/s×%dpx/s  按 q 退出\n",
+    __printf("fb_vsync: %u×%u  %dfps  dirty rect  %dpx/s×%dpx/s  press q to quit\n",
              w, h, fps, SPEED_BASE_X, SPEED_BASE_Y);
 
     /* ── 初始清屏（仅一次，后续脏矩形只擦旧球） ── */
@@ -233,9 +229,6 @@ int main(int argc, char *argv[])
     }
 
     /* ── 清理 ── */
-    if (saved)
-        fb_restore(fbp, saved, (size_t)h * ll);
-
     if (graphics_mode) {
         { int km = KD_TEXT; __ioctl(0, KDSETMODE, &km); }
         tlibc_restore_term(0);

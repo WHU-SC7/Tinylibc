@@ -26,6 +26,12 @@
 #include "mman.h"
 #include "linux_fb.h"
 #include "fb_draw.h"
+#include "tty.h"
+
+/* KDSETMODE：切换 TTY 文本/图形模式 */
+#define KDSETMODE     0x4B3A
+#define KD_TEXT       0x00
+#define KD_GRAPHICS   0x01
 
 /* ── 颜色常量（XRGB8888：B 在最低 8 位） ── */
 
@@ -52,20 +58,20 @@ int main(int argc, char *argv[])
     /* ── 打开设备 ── */
     int fd = __openat(AT_FDCWD, "/dev/fb0", O_RDWR, 0);
     if (fd < 0) {
-        __printf("fb_pixel: 无法打开 /dev/fb0（%d）\n", fd);
+        __printf("fb_pixel: cannot open /dev/fb0 (%d)\n", fd);
         return 1;
     }
 
     struct fb_var_screeninfo var;
     if (__ioctl(fd, FBIOGET_VSCREENINFO, &var) < 0) {
-        __printf("fb_pixel: FBIOGET_VSCREENINFO 失败\n");
+        __printf("fb_pixel: FBIOGET_VSCREENINFO failed\n");
         __close(fd);
         return 1;
     }
 
     struct fb_fix_screeninfo fix;
     if (__ioctl(fd, FBIOGET_FSCREENINFO, &fix) < 0) {
-        __printf("fb_pixel: FBIOGET_FSCREENINFO 失败\n");
+        __printf("fb_pixel: FBIOGET_FSCREENINFO failed\n");
         __close(fd);
         return 1;
     }
@@ -75,7 +81,7 @@ int main(int argc, char *argv[])
     unsigned char *fbp = __mmap(0, screensize, PROT_READ | PROT_WRITE,
                                 MAP_SHARED, fd, 0);
     if (fbp == MAP_FAILED) {
-        __printf("fb_pixel: mmap 失败\n");
+        __printf("fb_pixel: mmap failed\n");
         __close(fd);
         return 1;
     }
@@ -84,10 +90,16 @@ int main(int argc, char *argv[])
     int h = var.yres;
     int ll = fix.line_length;
 
-    /* ── 保存原始 TTY 内容 ── */
-    void *saved = fb_save(fbp, screensize);
+    /* ── 切换到图形模式 ── */
+    int graphics_mode = 0;
+    tlibc_set_term_raw_and_noecho(0);
+    graphics_mode = 1;
+    { int km = KD_GRAPHICS; __ioctl(0, KDSETMODE, &km); }
 
-    /* ── 清屏为黑色 ── */
+    __printf("fb_pixel: %u×%u  %ubpp  display %d s\n",
+             var.xres, var.yres, var.bits_per_pixel, delay);
+
+    /* ── 清屏为黑色（覆盖可能残留的 TTY 文本） ── */
     fb_fill_rect(fbp, 0, 0, w, h, COL_BLACK, ll);
 
     /* ── 1. 线条：十字 + 对角线 + 星形 ── */
@@ -130,13 +142,13 @@ int main(int argc, char *argv[])
         fb_draw_circle(fbp, cx, cy, r,
                        r % 60 == 0 ? COL_WHITE : colors[(r / 20) % 8], ll);
 
-    __printf("fb_pixel: %u×%u  %ubpp  显示 %d 秒\n",
-             var.xres, var.yres, var.bits_per_pixel, delay);
-
     tlibc_msleep(delay * 1000);
 
-    /* ── 恢复 TTY 原始内容 ── */
-    fb_restore(fbp, saved, screensize);
+    /* ── 恢复 TTY 文本模式 ── */
+    if (graphics_mode) {
+        { int km = KD_TEXT; __ioctl(0, KDSETMODE, &km); }
+        tlibc_restore_term(0);
+    }
 
     __munmap(fbp, screensize);
     __close(fd);

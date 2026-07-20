@@ -27,7 +27,12 @@
 #include "linux_fb.h"
 #include "fcntl.h"
 #include "mman.h"
-#include "fb_draw.h"
+#include "tty.h"
+
+/* KDSETMODE：切换 TTY 文本/图形模式 */
+#define KDSETMODE     0x4B3A
+#define KD_TEXT       0x00
+#define KD_GRAPHICS   0x01
 
 /* 将 RRGGBB 十六进制字符串解析为 uint32_t 像素值
  * 像素格式：XRGB8888（B 位低 8 位，G 中间 8 位，R 高 8 位） */
@@ -77,42 +82,45 @@ int main(int argc, char *argv[])
     /* ── 打开设备 ── */
     int fd = __openat(AT_FDCWD, "/dev/fb0", O_RDWR, 0);
     if (fd < 0) {
-        __printf("fb_fill: 无法打开 /dev/fb0（%d）\n", fd);
+        __printf("fb_fill: cannot open /dev/fb0 (%d)\n", fd);
         return 1;
     }
 
     /* ── 获取屏幕信息 ── */
     struct fb_var_screeninfo var;
     if (__ioctl(fd, FBIOGET_VSCREENINFO, &var) < 0) {
-        __printf("fb_fill: FBIOGET_VSCREENINFO 失败\n");
+        __printf("fb_fill: FBIOGET_VSCREENINFO failed\n");
         __close(fd);
         return 1;
     }
 
     struct fb_fix_screeninfo fix;
     if (__ioctl(fd, FBIOGET_FSCREENINFO, &fix) < 0) {
-        __printf("fb_fill: FBIOGET_FSCREENINFO 失败\n");
+        __printf("fb_fill: FBIOGET_FSCREENINFO failed\n");
         __close(fd);
         return 1;
     }
 
     size_t screensize = var.yres_virtual * fix.line_length;
 
-    __printf("fb_fill: %u×%u  %ubpp  %u bytes  颜色 0x%06X  延时 %ds\n",
-             var.xres, var.yres, var.bits_per_pixel,
-             (unsigned int)screensize, color, delay_sec);
-
     /* ── mmap 帧缓冲 ── */
     unsigned char *fbp = __mmap(0, screensize, PROT_READ | PROT_WRITE,
                                 MAP_SHARED, fd, 0);
     if (fbp == MAP_FAILED) {
-        __printf("fb_fill: mmap 失败\n");
+        __printf("fb_fill: mmap failed\n");
         __close(fd);
         return 1;
     }
 
-    /* ── 保存原始 TTY 内容 ── */
-    void *saved = fb_save(fbp, screensize);
+    /* ── 切换到图形模式 ── */
+    int graphics_mode = 0;
+    tlibc_set_term_raw_and_noecho(0);
+    graphics_mode = 1;
+    { int km = KD_GRAPHICS; __ioctl(0, KDSETMODE, &km); }
+
+    __printf("fb_fill: %u×%u  %ubpp  %u bytes  color 0x%06X  delay %ds\n",
+             var.xres, var.yres, var.bits_per_pixel,
+             (unsigned int)screensize, color, delay_sec);
 
     /* ── 全屏填充 ── */
     /* 32bpp XRGB8888：每次写入 4 字节 */
@@ -121,13 +129,14 @@ int main(int argc, char *argv[])
     for (unsigned int i = 0; i < total; i++)
         pixels[i] = color;
 
-    __printf("fb_fill: 已填充 %u 像素，等待 %d 秒...\n", total, delay_sec);
-
     /* ── 保持显示 ── */
     tlibc_msleep(delay_sec * 1000);
 
-    /* ── 恢复 TTY 原始内容 ── */
-    fb_restore(fbp, saved, screensize);
+    /* ── 恢复 TTY 文本模式 ── */
+    if (graphics_mode) {
+        { int km = KD_TEXT; __ioctl(0, KDSETMODE, &km); }
+        tlibc_restore_term(0);
+    }
 
     /* ── 清理 ── */
     __munmap(fbp, screensize);

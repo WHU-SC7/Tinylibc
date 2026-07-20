@@ -16,4 +16,11 @@
 
 #define AT_REMOVEDIR 0x200                /* unlinkat 删除目录 */
 
+/* fcntl 命令 */
+#define F_DUPFD      0                    /* 复制 fd */
+#define F_GETFD      1                    /* 读 fd 标志 */
+#define F_SETFD      2                    /* 写 fd 标志 */
+#define F_GETFL      3                    /* 读文件状态标志 */
+#define F_SETFL      4                    /* 写文件状态标志 */
+
 #endif /* __FCNTL_H */

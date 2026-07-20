@@ -19,6 +19,14 @@ int tlibc_set_term_config(int fd, struct termios *term);
 int tlibc_set_term_raw_and_noecho(int fd);
 int tlibc_restore_term(int fd);
 
+/*
+ * ╔══════════════════════════════════════════════════════════════╗
+ * ║  旧版 LEGACY — 终端转义序列 → 自定义键值                    ║
+ * ║  基于 stdin + termios raw mode，通过 pipe 传递 1 字节键值   ║
+ * ║  vim / top / pacman 等老旧程序仍在使用                     ║
+ * ║  新程序（fb_* 图形程序）应使用 evdev（linux_input.h）       ║
+ * ╚══════════════════════════════════════════════════════════════╝
+ */
 #define KEY_UP     0x11
 #define KEY_DOWN   0x12
 #define KEY_LEFT   0x13

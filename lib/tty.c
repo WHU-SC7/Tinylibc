@@ -127,12 +127,13 @@ void tlibc_cursor_goto_col(int col)
 }
 
 /**
- * @brief 让子进程执行这个函数，子进程一直从终端读取输入，
- *          每读取到一次就会写入给定的管道的写入端
- *          支持方向键的转义序列，会转换成KEY_UP等自定义键值
+ * @brief LEGACY — 旧版终端输入处理（基于 stdin + termios raw mode）
+ *
+ * 通过 pipe 将方向键等转义序列转换为 KEY_UP/DOWN/LEFT/RIGHT 单字节发送。
+ * vim / top / pacman 等老旧程序仍在使用。
+ *
+ * 新程序（fb_* 图形程序）应使用 evdev（/dev/input/event*，参见 linux_input.h）。
  */
-/* Reads terminal input in a loop and forwards arrow-key sequences to a pipe.
-   Intended to run in a child process for terminal-mode apps (vim, top, etc.) */
 int tlibc_general_input_process(int pipe_write_fd)
 {
     while(1)

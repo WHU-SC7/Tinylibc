@@ -87,6 +87,9 @@ int tlibc_timespec_get(struct timespec *ts, int base);
 #define fprintf(fd, fmt, ...) __fprintf(fd, fmt, ##__VA_ARGS__)
 #define fdprintf(fd, fmt, ...) __fprintf(fd, fmt, ##__VA_ARGS__)
 
+//scanf
+int scanf(const char *fmt, ...);
+
 /* main_tid — 主线程 pid（来自 init.h） */
 extern pid_t main_tid;
 

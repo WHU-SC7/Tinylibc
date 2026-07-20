@@ -52,6 +52,10 @@ int tlibc_copy_exe_file(char *src_path, char *dest_path);
 // snprintf
 int snprintf(char *str, size_t size, const char *format, ...);
 
+// scanf/sscanf
+int sscanf(const char *str, const char *fmt, ...);
+int vsscanf(const char *str, const char *fmt, __builtin_va_list args);
+
 //path.c
 void tlibc_cal_absolute_path(const char *path, const char *cwd, char *absolute_path, size_t max_len);
 

@@ -142,6 +142,63 @@ void fb_fill_circle(unsigned char *fbp,
     }
 }
 
+/* ── 三角形 ── */
+
+void fb_draw_triangle(unsigned char *fbp,
+                      int x0, int y0, int x1, int y1, int x2, int y2,
+                      uint32_t color, int line_length)
+{
+	fb_draw_line(fbp, x0, y0, x1, y1, color, line_length);
+	fb_draw_line(fbp, x1, y1, x2, y2, color, line_length);
+	fb_draw_line(fbp, x2, y2, x0, y0, color, line_length);
+}
+
+void fb_fill_triangle(unsigned char *fbp,
+                      int x0, int y0, int x1, int y1, int x2, int y2,
+                      uint32_t color, int line_length)
+{
+	int t;
+
+	/* 按 Y 递增排序三个顶点 */
+	if (y0 > y1) { t = y0; y0 = y1; y1 = t; t = x0; x0 = x1; x1 = t; }
+	if (y1 > y2) { t = y1; y1 = y2; y2 = t; t = x1; x1 = x2; x2 = t; }
+	if (y0 > y1) { t = y0; y0 = y1; y1 = t; t = x0; x0 = x1; x1 = t; }
+
+	if (y0 == y2) return;                       /* 零高度退化三角形 */
+
+	int dy_total = y2 - y0;
+	int dy_high  = y1 - y0;
+	int dy_low   = y2 - y1;
+
+	/* 叉积符号：中点 (x1,y1) 在长边 (x0,y0)-(x2,y2) 的哪一侧 */
+	int side = (x2 - x0) * (y1 - y0) - (x1 - x0) * (y2 - y0);
+
+	for (int y = y0; y <= y2; y++) {
+		int dist = y - y0;
+
+		/* 长边 x 插值 */
+		int x_long = x0 + (x2 - x0) * dist / dy_total;
+
+		/* 短边 x 插值（上半段 + 下半段） */
+		int x_other;
+		if (dy_high > 0 && y < y1)
+			x_other = x0 + (x1 - x0) * dist / dy_high;
+		else if (dy_low > 0)
+			x_other = x1 + (x2 - x1) * (y - y1) / dy_low;
+		else
+			x_other = x_long;
+
+		int x_left  = (side > 0) ? x_other : x_long;
+		int x_right = (side > 0) ? x_long : x_other;
+
+		if (x_left > x_right) { t = x_left; x_left = x_right; x_right = t; }
+
+		uint32_t *row = (uint32_t *)(fbp + y * line_length);
+		for (int x = x_left; x <= x_right; x++)
+			row[x] = color;
+	}
+}
+
 /* ── 显存保存/恢复（memcpy 已优化为 8 字节/次） ── */
 
 void *fb_save(unsigned char *fbp, size_t size)

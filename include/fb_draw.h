@@ -39,6 +39,16 @@ void fb_fill_rect(unsigned char *fbp,
                   int x, int y, int w, int h,
                   uint32_t color, int line_length);
 
+/* ── 三角形（Bresenham 边 + 扫描线填充） ── */
+
+void fb_draw_triangle(unsigned char *fbp,
+                      int x0, int y0, int x1, int y1, int x2, int y2,
+                      uint32_t color, int line_length);
+
+void fb_fill_triangle(unsigned char *fbp,
+                      int x0, int y0, int x1, int y1, int x2, int y2,
+                      uint32_t color, int line_length);
+
 /* ── 圆形（中点圆算法） ── */
 
 void fb_draw_circle(unsigned char *fbp,

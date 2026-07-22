@@ -200,6 +200,21 @@ int tlibc_pcm_configure(struct tlibc_pcm *pcm)
     if (ret < 0)
         return ret;
 
+    /* 适配采样率：若请求的 rate 不在硬件支持范围内，自动取最近值 */
+    if (pcm->rate < hw.intervals[rate_idx].min ||
+        pcm->rate > hw.intervals[rate_idx].max) {
+        unsigned int orig = pcm->rate;
+        if (hw.intervals[rate_idx].min == hw.intervals[rate_idx].max) {
+            pcm->rate = hw.intervals[rate_idx].min;
+        } else if (pcm->rate < hw.intervals[rate_idx].min) {
+            pcm->rate = hw.intervals[rate_idx].min;
+        } else {
+            pcm->rate = hw.intervals[rate_idx].max;
+        }
+        PRINT_COLOR(YELLOW_COLOR_PRINT,
+                    "alsa: 采样率 %uHz 不受支持，使用 %uHz\n", orig, pcm->rate);
+    }
+
     /* 清空 mask 并设置我们需要的 */
     snd_mask_reset(&hw.masks[access_idx]);
     snd_mask_set(&hw.masks[access_idx], SNDRV_PCM_ACCESS_RW_INTERLEAVED);

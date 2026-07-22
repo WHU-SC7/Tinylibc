@@ -228,7 +228,7 @@ int main(int argc, char **argv)
 
     PRINT_COLOR(GREEN_COLOR_PRINT,
                 "beep: 已打开设备，配置 %dHz/%dbit/%dch...\n",
-                SAMPLE_RATE, BITS, CHANNELS);
+                pcm.rate, BITS, CHANNELS);
 
     ret = tlibc_pcm_configure(&pcm);
     if (ret < 0) {
@@ -243,33 +243,37 @@ int main(int argc, char **argv)
     PRINT_COLOR(GREEN_COLOR_PRINT,
                 "beep: 已配置，缓冲区=%lu 帧\n", pcm.buffer_size);
 
-    /* ── 生成波形 ── */
-    buf = (short *)tlibc_malloc(TOTAL_FRAMES * pcm.frame_size);
-    if (!buf) {
-        print_error("内存分配失败", -ENOMEM);
-        tlibc_pcm_close(&pcm);
-        return 1;
-    }
+    /* ── 生成波形（使用实际协商的采样率）── */
+    {
+        unsigned long total_frames = pcm.rate * DURATION_SEC;
+        buf = (short *)tlibc_malloc(total_frames * pcm.frame_size);
+        if (!buf) {
+            print_error("内存分配失败", -ENOMEM);
+            tlibc_pcm_close(&pcm);
+            return 1;
+        }
 
-    PRINT_COLOR(GREEN_COLOR_PRINT,
-                "beep: 生成 %dHz 正弦波 %d 秒...\n", FREQ_HZ, DURATION_SEC);
-    gen_sine(buf, FREQ_HZ, SAMPLE_RATE, TOTAL_FRAMES);
+        PRINT_COLOR(GREEN_COLOR_PRINT,
+                    "beep: 生成 %dHz 正弦波 %lu 帧 (%uHz, %d 秒)...\n",
+                    FREQ_HZ, total_frames, pcm.rate, DURATION_SEC);
+        gen_sine(buf, FREQ_HZ, pcm.rate, total_frames);
 
-    /* ── 播放 ── */
-    PRINT_COLOR(GREEN_COLOR_PRINT, "beep: 播放中...\n");
+        /* ── 播放 ── */
+        PRINT_COLOR(GREEN_COLOR_PRINT, "beep: 播放中...\n");
 
-    ret = tlibc_pcm_write_all(&pcm, buf, TOTAL_FRAMES);
-    if (ret < 0) {
-        print_error("播放失败", ret);
+        ret = tlibc_pcm_write_all(&pcm, buf, total_frames);
+        if (ret < 0) {
+            print_error("播放失败", ret);
+            tlibc_free(buf);
+            tlibc_pcm_close(&pcm);
+            return 1;
+        }
+
+        PRINT_COLOR(GREEN_COLOR_PRINT, "beep: 播放完成 ✓\n");
+
+        /* ── 清理 ── */
         tlibc_free(buf);
-        tlibc_pcm_close(&pcm);
-        return 1;
     }
-
-    PRINT_COLOR(GREEN_COLOR_PRINT, "beep: 播放完成 ✓\n");
-
-    /* ── 清理 ── */
-    tlibc_free(buf);
     tlibc_pcm_close(&pcm);
     return 0;
 }

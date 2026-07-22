@@ -84,12 +84,15 @@ static const char *ev_type_name(uint16_t type)
     }
 }
 
-static const char *classify_device(const unsigned char *evbits, int nbytes)
+static const char *classify_device(const unsigned char *evbits, int nbytes,
+                                   int key_count)
 {
     int has_key = test_bit(EV_KEY, evbits, nbytes);
     int has_rel = test_bit(EV_REL, evbits, nbytes);
     int has_abs = test_bit(EV_ABS, evbits, nbytes);
 
+    /* 按键数超过 80 的设备一定是键盘，即使它有 REL/ABS（游戏键盘等） */
+    if (has_key && key_count >= 80) return "Keyboard";
     /* 鼠标 */
     if (has_key && has_rel && !has_abs) return "Mouse";
     /* 触摸板（同时有 REL + ABS + KEY） */
@@ -225,8 +228,20 @@ static int print_device_info(int num)
         }
         __printf("\n");
 
+        /* 统计按键数（用于辅助分类） */
+        int key_count = 0;
+        if (test_bit(EV_KEY, evbits, sizeof(evbits))) {
+            unsigned char keybits[128] = {0};
+            if (__ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybits)), keybits) >= 0) {
+                for (int i = 0; i < 128 * 8; i++) {
+                    if (test_bit(i, keybits, sizeof(keybits)))
+                        key_count++;
+                }
+            }
+        }
+
         /* 分类 */
-        __printf("  Class:  %s\n", classify_device(evbits, sizeof(evbits)));
+        __printf("  Class:  %s\n", classify_device(evbits, sizeof(evbits), key_count));
     }
 
     /* 如果是键盘/触摸板等有 EV_KEY 的设备，列出键位 */

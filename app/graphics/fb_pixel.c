@@ -26,6 +26,7 @@
 #include "mman.h"
 #include "linux_fb.h"
 #include "fb_draw.h"
+#include "fb_font.h"
 #include "tty.h"
 
 /* KDSETMODE：切换 TTY 文本/图形模式 */
@@ -142,7 +143,41 @@ int main(int argc, char *argv[])
         fb_draw_circle(fbp, cx, cy, r,
                        r % 60 == 0 ? COL_WHITE : colors[(r / 20) % 8], ll);
 
-    tlibc_msleep(delay * 1000);
+    /* ── 覆层提示：标题 + 退出方法 ── */
+    int bar_h = FB_FONT_H + 8;
+    fb_fill_rect(fbp, 0, 0, w, bar_h, 0x000000, ll);
+    fb_fill_rect(fbp, 0, h - 20, w, 20, 0x000000, ll);
+
+    fb_draw_string(fbp, (w - fb_string_width("2D Primitive Demo  (fb_pixel)")) / 2, 4,
+                   "2D Primitive Demo  (fb_pixel)", COL_WHITE, ll);
+
+    fb_draw_string(fbp, 8, h - 18,
+                   "Press Q to quit early  |  Auto-exit", 0x888888, ll);
+
+    /* ── 保持显示（可提前按 Q 退出）── */
+    {
+        int remaining = delay;
+        char countdown[8];
+        while (remaining > 0) {
+            snprintf(countdown, sizeof(countdown), "%ds", remaining);
+            fb_fill_rect(fbp, w - 80, h - 18, 80, FB_FONT_H, 0x000000, ll);
+            fb_draw_string(fbp, w - 80, h - 18, countdown, 0xCCCCCC, ll);
+
+            for (int q = 0; q < 4; q++) {
+                tlibc_msleep(250);
+                struct pollfd pfd;
+                pfd.fd = 0;
+                pfd.events = POLLIN;
+                if (__poll(&pfd, 1, 0) > 0) {
+                    char c;
+                    if (__read(0, &c, 1) == 1 && (c == 'q' || c == 'Q'))
+                        goto done;
+                }
+            }
+            remaining--;
+        }
+    }
+done:
 
     /* ── 恢复 TTY 文本模式 ── */
     if (graphics_mode) {

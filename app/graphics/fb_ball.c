@@ -46,6 +46,7 @@
 #include "mman.h"
 #include "linux_fb.h"
 #include "fb_draw.h"
+#include "fb_font.h"
 #include "tty.h"
 
 /* ── 颜色 ── */
@@ -227,6 +228,11 @@ int main(int argc, char *argv[])
 
     /* ── 初始清屏（全黑）── */
     fb_fill_rect(fbp, 0, 0, w, h, COL_BLACK, ll);
+
+    /* ── 底部提示 ── */
+    fb_draw_string(fbp, (w - fb_string_width("Bouncing Ball Demo  |  Press Q to quit")) / 2,
+                   h - FB_FONT_H - 8, "Bouncing Ball Demo  |  Press Q to quit",
+                   0x666666, ll);
 
     /* ── 帧计时初始化 ── */
     long interval_ns = 1000000000L / target_fps;

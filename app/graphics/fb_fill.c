@@ -27,6 +27,8 @@
 #include "linux_fb.h"
 #include "fcntl.h"
 #include "mman.h"
+#include "fb_draw.h"
+#include "fb_font.h"
 #include "tty.h"
 
 /* KDSETMODE：切换 TTY 文本/图形模式 */
@@ -129,8 +131,47 @@ int main(int argc, char *argv[])
     for (unsigned int i = 0; i < total; i++)
         pixels[i] = color;
 
-    /* ── 保持显示 ── */
-    tlibc_msleep(delay_sec * 1000);
+    /* ── 覆层提示：标题 + 颜色 + 退出方法 ── */
+    /* 用半透明感暗色条作为文字背景 */
+    int bar_h = FB_FONT_H + 8;
+    int ll = fix.line_length;
+    fb_fill_rect(fbp, 0, 0, var.xres, bar_h, 0x000000, ll);
+    fb_fill_rect(fbp, 0, var.yres - bar_h, var.xres, bar_h, 0x000000, ll);
+
+    char info_line[64];
+    snprintf(info_line, sizeof(info_line), "fb_fill  |  Color 0x%06X  |  %u x %u", color, var.xres, var.yres);
+    fb_draw_string(fbp, 8, 4, info_line, 0xAAAAAA, ll);
+
+    fb_draw_string(fbp, 8, var.yres - bar_h + 4,
+                   "Press Q to quit early  |  Auto-exit",
+                   0x888888, ll);
+
+    /* ── 保持显示（可提前按 Q 退出）── */
+    {
+        int remaining = delay_sec;
+        char countdown[8];
+        while (remaining > 0) {
+            /* 更新倒计时 */
+            snprintf(countdown, sizeof(countdown), "%ds", remaining);
+            fb_fill_rect(fbp, var.xres - 80, var.yres - bar_h + 4, 80, FB_FONT_H, 0x000000, ll);
+            fb_draw_string(fbp, var.xres - 80, var.yres - bar_h + 4, countdown, 0xCCCCCC, ll);
+
+            /* 每秒等 4 次 250ms，仍能快速响应 Q */
+            for (int q = 0; q < 4; q++) {
+                tlibc_msleep(250);
+                struct pollfd pfd;
+                pfd.fd = 0;
+                pfd.events = POLLIN;
+                if (__poll(&pfd, 1, 0) > 0) {
+                    char c;
+                    if (__read(0, &c, 1) == 1 && (c == 'q' || c == 'Q'))
+                        goto done;
+                }
+            }
+            remaining--;
+        }
+    }
+done:
 
     /* ── 恢复 TTY 文本模式 ── */
     if (graphics_mode) {

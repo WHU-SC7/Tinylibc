@@ -6,15 +6,16 @@
 /*
  * evdev_kbd — TTY 图形模式下的 evdev 键盘输入抽象
  *
- * 机制：扫描 /dev/input/event[0..31]，通过 ioctl 识别纯键盘设备，
+ * 机制：扫描 /dev/input/event[0..31]，通过 ioctl 给每个设备打分
+ *       （按键数 + 总线类型 + 名称），选评分最高的键盘。
  *       然后从该设备读取 struct input_event。
- * 系统调用：openat, ioctl(EVIOCGBIT/EVIOCGNAME), read, fcntl, close
+ * 系统调用：openat, ioctl(EVIOCGBIT/EVIOCGID/EVIOCGNAME), read, fcntl, close
  *
  * 本模块被编译到 tlibc.a 中，应用代码链接即可使用。
  *
  * 索引：
- *   evdev_kbd_open     扫描所有 evdev 设备 → 找到第一个键盘 → 打开
- *     is_keyboard       用 EVIOCGBIT 检查设备能力位图
+ *   evdev_kbd_open     扫描所有 evdev 设备 → 评分选最佳键盘 → 打开
+ *     keyboard_score    给 fd 打键盘分（按键数 + 总线 + 名称）
  *   evdev_kbd_fd       返回底层 fd，供 poll/select 使用
  *   evdev_kbd_read     从设备读取 struct input_event → 提取 KEY_* 编码
  *   evdev_kbd_close    关闭 fd 并释放内存
@@ -36,8 +37,20 @@ struct evdev_kbd {
     char name[128];
 };
 
-/* ── 判断 fd 是否为真正的键盘设备 ── */
-static int is_keyboard(int fd)
+/* ── 给 fd 的键盘度打分（0=不是键盘，分越高越像真键盘）──
+ *
+ * 评分规则：
+ *   必须项：EV_KEY + 按键数 ≥ 阈值（无 REL/ABS 时 20，有则 100）
+ *   基础分 = 按键数
+ *   总线加分：USB/Bluetooth +300（外接键盘，通常兼容最好）
+ *            I2C        +50（内置键盘，一般可用）
+ *            PS/2       -100（部分机器图形模式可能无 evdev 事件）
+ *            ACPI       -500（电源按钮/功能键，不是真键盘）
+ *   名称加分："Keyboard" 字样 +100
+ *   名称减分："extra"/"Radio" -300（功能键/无线控制，不是键盘）
+ *             "Mouse"       -200（游戏鼠标上的按键接口）
+ */
+static int keyboard_score(int fd, char *name_out, int name_sz)
 {
     unsigned char evbits[8] = {0};
 
@@ -49,34 +62,80 @@ static int is_keyboard(int fd)
     if (!test_bit(EV_KEY, evbits, sizeof(evbits)))
         return 0;
 
-    /* 有 REL → 鼠标，排除 */
-    if (test_bit(EV_REL, evbits, sizeof(evbits)))
-        return 0;
+    int has_rel = test_bit(EV_REL, evbits, sizeof(evbits));
+    int has_abs = test_bit(EV_ABS, evbits, sizeof(evbits));
+    int threshold = (has_rel || has_abs) ? 100 : 20;
 
-    /* 有 ABS → 触摸板/触摸屏，排除 */
-    if (test_bit(EV_ABS, evbits, sizeof(evbits)))
-        return 0;
+    /* 统计按键数 */
+    unsigned char keybits[128] = {0};
+    int count = 0;
+    if (__ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybits)), keybits) >= 0) {
+        for (int i = 0; i < 128 * 8; i++) {
+            if (test_bit(i, keybits, sizeof(keybits)))
+                count++;
+        }
+    }
+    if (count < threshold) return 0;
 
-    /*
-     * 检查按键数量：真正的键盘通常有 100+ 个按键，
-     * 而电源按钮/睡眠按钮等设备只有 1-2 个。
-     * 阈值设在 20 以排除这些非键盘设备。
-     */
+    /* ── 基础分 = 按键数 ── */
+    int score = count;
+
+    /* ── 总线类型 ── */
     {
-        unsigned char keybits[128] = {0};
-        int len = sizeof(keybits);
-        if (__ioctl(fd, EVIOCGBIT(EV_KEY, len), keybits) >= 0) {
-            int count = 0;
-            for (int i = 0; i < len * 8; i++) {
-                if (test_bit(i, keybits, len))
-                    count++;
+        struct input_id id;
+        if (__ioctl(fd, EVIOCGID, &id) >= 0) {
+            switch (id.bustype) {
+            case 0x03: score += 300; break;   /* USB — 外接键盘，优先 */
+            case 0x04: score += 300; break;   /* Bluetooth */
+            case 0x11: score += 50;  break;   /* I2C — 内置键盘 */
+            case 0x10: score -= 100; break;   /* i8042 PS/2 */
+            case 0x19: score -= 500; break;   /* ACPI — 按钮，非键盘 */
             }
-            if (count < 20)
-                return 0;
         }
     }
 
-    return 1;   /* 真正的键盘 */
+    /* ── 设备名 ── */
+    {
+        char name[128] = {0};
+        if (__ioctl(fd, EVIOCGNAME(sizeof(name)), name) >= 0) {
+            /* "Keyboard" → 加分 */
+            for (int i = 0; name[i]; i++) {
+                if ((name[i]|32)=='k' && (name[i+1]|32)=='e' &&
+                    (name[i+2]|32)=='y' && (name[i+3]|32)=='b' &&
+                    (name[i+4]|32)=='o' && (name[i+5]|32)=='a' &&
+                    (name[i+6]|32)=='r' && (name[i+7]|32)=='d') {
+                    score += 100;
+                    break;
+                }
+            }
+            /* "extra" → 不是真键盘 */
+            for (int i = 0; name[i]; i++) {
+                if ((name[i]|32)=='e' && (name[i+1]|32)=='x' &&
+                    (name[i+2]|32)=='t' && (name[i+3]|32)=='r' &&
+                    (name[i+4]|32)=='a') {
+                    score -= 300;
+                    break;
+                }
+            }
+            /* "Mouse" → 游戏鼠标上的键盘接口 */
+            for (int i = 0; name[i]; i++) {
+                if ((name[i]|32)=='m' && (name[i+1]|32)=='o' &&
+                    (name[i+2]|32)=='u' && (name[i+3]|32)=='s' &&
+                    (name[i+4]|32)=='e') {
+                    score -= 200;
+                    break;
+                }
+            }
+            /* 传出名称 */
+            if (name_out) {
+                int n = 0;
+                while (name[n] && n < name_sz - 1) { name_out[n] = name[n]; n++; }
+                name_out[n] = '\0';
+            }
+        }
+    }
+
+    return score;
 }
 
 /*
@@ -106,35 +165,59 @@ struct evdev_kbd *evdev_kbd_open(void)
     kbd->fd = -1;
     kbd->name[0] = '\0';
 
-    /* 扫描 /dev/input/event[0..MAX_EVENT_DEV) */
-    for (int i = 0; i < MAX_EVENT_DEV; i++) {
-        char path[32];
-        make_event_path(path, i);
+    /* 扫描 /dev/input/event[0..MAX_EVENT_DEV) 选评分最高的键盘 */
+    {
+        int best_fd = -1;
+        int best_score = 0;
+        char best_name[128];
+        best_name[0] = '\0';
 
-        int fd = __openat(AT_FDCWD, path, O_RDONLY, 0);
-        if (fd < 0)
-            continue;
+        for (int i = 0; i < MAX_EVENT_DEV; i++) {
+            char path[32];
+            make_event_path(path, i);
 
-        if (is_keyboard(fd)) {
-            kbd->fd = fd;
+            int fd = __openat(AT_FDCWD, path, O_RDONLY, 0);
+            if (fd < 0)
+                continue;
 
-            /* 读设备名字 */
-            if (__ioctl(fd, EVIOCGNAME(sizeof(kbd->name)), kbd->name) < 0)
-                kbd->name[0] = '\0';
-            kbd->name[sizeof(kbd->name) - 1] = '\0';
-
-            /* 设为非阻塞 */
-            __fcntl(fd, F_SETFL, O_NONBLOCK);
-
-            return kbd;
+            char tmp_name[128];
+            int score = keyboard_score(fd, tmp_name, sizeof(tmp_name));
+            if (score > best_score) {
+                best_score = score;
+                best_fd = fd;
+                /* 复制名称 */
+                int n = 0;
+                while (tmp_name[n] && n < (int)sizeof(best_name) - 1) {
+                    best_name[n] = tmp_name[n];
+                    n++;
+                }
+                best_name[n] = '\0';
+            } else {
+                __close(fd);
+            }
         }
 
-        __close(fd);
+        if (best_fd >= 0) {
+            kbd->fd = best_fd;
+            /* 复制名称到 kbd 结构 */
+            int n = 0;
+            while (best_name[n] && n < (int)sizeof(kbd->name) - 1) {
+                kbd->name[n] = best_name[n];
+                n++;
+            }
+            kbd->name[n] = '\0';
+
+            /* 设为非阻塞 */
+            __fcntl(best_fd, F_SETFL, O_NONBLOCK);
+        }
     }
 
-    /* 没找到键盘设备 */
-    tlibc_free(kbd);
-    return NULL;
+    if (kbd->fd < 0) {
+        tlibc_free(kbd);
+        return NULL;
+    }
+
+    return kbd;
 }
 
 int evdev_kbd_fd(struct evdev_kbd *kbd)

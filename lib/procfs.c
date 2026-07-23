@@ -98,8 +98,9 @@ int tlibc_list_pids(pid_t *pids, int max_pids)
     if (n < 0) return -1;
 
     int count = 0;
+    char *end = buf + n;
     struct linux_dirent64 *d = (struct linux_dirent64 *)buf;
-    while (d->d_off != 0 && count < max_pids) {
+    while ((char *)d < end && count < max_pids) {
         if (d->d_type == DT_DIR) {
             /* 检查是否为纯数字 */
             int is_num = 1;

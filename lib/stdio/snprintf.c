@@ -5,7 +5,7 @@
 
 typedef __builtin_va_list my_va_list;
 #define my_va_start(v, l)   __builtin_va_start(v, l)
-#define my_va_arg(v, t)     __builtin_va_arg(*(v), t)
+#define my_va_arg(v, t)     __builtin_va_arg(v, t)
 #define my_va_end(v)        __builtin_va_end(v)
 
 /* ================================================================== */
@@ -366,7 +366,7 @@ strbuf_write_hex_padded(strbuf_t *sb, unsigned long val, int prefix,
 }
 
 // 核心函数：格式化输出到字符串缓冲区
-static void vsnprintf_core(strbuf_t *sb, const char *fmt, my_va_list *args) {
+static void vsnprintf_core(strbuf_t *sb, const char *fmt, my_va_list args) {
     for (const char *p = fmt; *p; p++) {
         if (*p != '%') {
             const char *start = p;
@@ -503,7 +503,7 @@ int snprintf(char *str, size_t size, const char *format, ...) {
         strbuf_t sb = {NULL, 0, 0, 0};
         my_va_list args;
         my_va_start(args, format);
-        vsnprintf_core(&sb, format, &args);
+        vsnprintf_core(&sb, format, args);
         my_va_end(args);
         return (int)sb.pos;
     }
@@ -511,7 +511,7 @@ int snprintf(char *str, size_t size, const char *format, ...) {
     strbuf_t sb = {str, size, 0, 0};
     my_va_list args;
     my_va_start(args, format);
-    vsnprintf_core(&sb, format, &args);
+    vsnprintf_core(&sb, format, args);
     my_va_end(args);
 
     // 添加字符串结束符

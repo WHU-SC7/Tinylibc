@@ -5,7 +5,7 @@
 
 typedef __builtin_va_list my_va_list;
 #define my_va_start(v, l)   __builtin_va_start(v, l)
-#define my_va_arg(v, t)     __builtin_va_arg(*(v), t)
+#define my_va_arg(v, t)     __builtin_va_arg(v, t)
 #define my_va_end(v)        __builtin_va_end(v)
 
 /* ================================================================== */
@@ -345,7 +345,7 @@ fprint_hex_padded(int fd, unsigned long val, int prefix,
 /* ================================================================== */
 
 static void
-vfprintf_core(int fd, const char *fmt, my_va_list *args)
+vfprintf_core(int fd, const char *fmt, my_va_list args)
 {
     for (const char *p = fmt; *p; p++) {
         /* ---- 普通文本：一次写出一段 ---- */
@@ -479,13 +479,13 @@ vfprintf_core(int fd, const char *fmt, my_va_list *args)
 void __fprintf(int fd, const char *fmt, ...) {
     my_va_list args;
     my_va_start(args, fmt);
-    vfprintf_core(fd, fmt, &args);
+    vfprintf_core(fd, fmt, args);
     my_va_end(args);
 }
 
 void __printf(const char *fmt, ...) {
     my_va_list args;
     my_va_start(args, fmt);
-    vfprintf_core(STDOUT, fmt, &args);
+    vfprintf_core(STDOUT, fmt, args);
     my_va_end(args);
 }

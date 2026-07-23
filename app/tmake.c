@@ -330,8 +330,8 @@ int parallel_compile_task(char *path, int max_jobs){
         }
     }
 
-    munmap(file_name_list, files_count * sizeof(char *));
-    munmap(file_name_buf, files_count * 256);
+    tlibc_free(file_name_list);
+    tlibc_free(file_name_buf);
     return failed ? -1 : 0;
 }
 
@@ -359,8 +359,8 @@ int compile_task(char *path){
         printf("编译文件%d: %s\n", i, file_name_list[i]);
         compile_path_file(path, file_name_list[i], path);
     }
-    munmap(file_name_list, files_count * sizeof(char *));
-    munmap(file_name_buf, files_count * 256);
+    tlibc_free(file_name_list);
+    tlibc_free(file_name_buf);
     return 0;
 }
 
@@ -485,8 +485,8 @@ int link_task(char *all_app_path, char *output_path){
         printf("链接文件%d: %s\n", i, file_path);
         link_app(file_path, output_path);
     }
-    munmap(file_name_list, files_count * sizeof(char *));
-    munmap(file_name_buf, files_count * 256);
+    tlibc_free(file_name_list);
+    tlibc_free(file_name_buf);
     return 0;
 }
 
@@ -545,8 +545,8 @@ int parallel_link_task(char *all_app_path, char *output_path, int max_jobs){
         }
     }
 
-    munmap(file_name_list, files_count * sizeof(char *));
-    munmap(file_name_buf, files_count * 256);
+    tlibc_free(file_name_list);
+    tlibc_free(file_name_buf);
     return failed ? -1 : 0;
 }
 
@@ -578,8 +578,8 @@ int install(char *app_path){
         printf("安装文件%d: %s 到 %s\n", i, file_path, install_file_path);
         tlibc_copy_exe_file(file_path, install_file_path);
     }
-    munmap(file_name_list, files_count * sizeof(char *));
-    munmap(file_name_buf, files_count * 256);
+    tlibc_free(file_name_list);
+    tlibc_free(file_name_buf);
     return 0;
 }
 
@@ -1184,8 +1184,8 @@ static long sum_file_sizes(const char *path){
         int len = tlibc_get_file_len(full);
         if(len > 0) total += len;
     }
-    munmap(names, n * sizeof(char *));
-    munmap(buf, n * 256);
+    tlibc_free(names);
+    tlibc_free(buf);
     return total;
 }
 
@@ -1215,8 +1215,8 @@ collect_files_recursive(const char *path, const char *ext,
             if(dot && strcmp(dot, ext) == 0)
                 snprintf(files[total++], 512, "%s/%s", path, names[i]);
         }
-        munmap(names, n * sizeof(char *));
-        munmap(buf, n * 256);
+        tlibc_free(names);
+        tlibc_free(buf);
     }
 
     /* 递归子目录 */
@@ -1232,8 +1232,8 @@ collect_files_recursive(const char *path, const char *ext,
             snprintf(sub, 512, "%s/%s", path, dirs[i]);
             total += collect_files_recursive(sub, ext, files + total, max - total);
         }
-        munmap(dirs, dir_cnt * sizeof(char *));
-        munmap(dbuf, dir_cnt * 256);
+        tlibc_free(dirs);
+        tlibc_free(dbuf);
     }
 
     return total;
@@ -1264,14 +1264,14 @@ find_app_source_in_dir(const char *dir, const char *name,
                 *dot = '.';
                 if(match){
                     snprintf(rel_path, size, "%s/%s.c", dir, name);
-                    munmap(names, n * sizeof(char *));
-                    munmap(buf, n * 256);
+                    tlibc_free(names);
+                    tlibc_free(buf);
                     return 0;
                 }
             }
         }
-        munmap(names, n * sizeof(char *));
-        munmap(buf, n * 256);
+        tlibc_free(names);
+        tlibc_free(buf);
     }
 
     /* 递归子目录 */
@@ -1288,8 +1288,8 @@ find_app_source_in_dir(const char *dir, const char *name,
             snprintf(sub, 512, "%s/%s", dir, dirs[i]);
             found = find_app_source_in_dir(sub, name, rel_path, size);
         }
-        munmap(dirs, dir_cnt * sizeof(char *));
-        munmap(dbuf, dir_cnt * 256);
+        tlibc_free(dirs);
+        tlibc_free(dbuf);
         return found;
     }
 

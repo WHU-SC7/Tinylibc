@@ -92,6 +92,15 @@ void *__memset(void *dst, int val, size_t n)
     return dst;
 }
 
+/* memcpy — gcc 为大型结构体赋值会生成 memcpy 调用 */
+void *memcpy(void *dst, const void *src, size_t n)
+{
+    unsigned char *d = (unsigned char *)dst;
+    const unsigned char *s = (const unsigned char *)src;
+    while (n--) *d++ = *s++;
+    return dst;
+}
+
 /* ── 简易内存分配器（基于 mmap） ── */
 
 #define MALLOC_HDR_SZ (sizeof(size_t))

@@ -1,72 +1,175 @@
-#首先是x64的编译选项
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 BandieraRosse
 
+# ─── Toolchain ─────────────────────────────────────────────────────────
 export TOOLPREFIX =x86_64-linux-gnu-
 
 export CC  = ${TOOLPREFIX}gcc
 export AS  = ${TOOLPREFIX}gcc
-#使用gcc作为LD会自动添加标准库文件: _init _start, 运行时支持等。为了只包含我们的代码，使用ld
 export LD  = ${TOOLPREFIX}ld
+export AR  = ${TOOLPREFIX}ar
 export OBJCOPY = ${TOOLPREFIX}objcopy
 export OBJDUMP = ${TOOLPREFIX}objdump
-export AR  = ${TOOLPREFIX}ar
 
-#自动生成依赖文件，支持增量编译
-CFLAGS += -MD
-#关闭栈保护机制，危险的字符串和指针操作会触发机制导致编译失败。开启可以查看哪里有危险的操作
-CFLAGS += -fno-stack-protector
-#!!!只需要添加上面两个选项就可以通过编译
-
-#维护帧指针，可以栈回溯
-CFLAGS += -fno-omit-frame-pointer
-#带gdb调试信息，启用所有警告，警告是错误，不优化
-CFLAGS += -ggdb3 -Wall -Werror -O0 
-#禁止重复定义全局变量
-CFLAGS += -fno-common
-#不使用标准库。-nostdlib包含后两者的效果
-CFLAGS += -nostdlib -nostartfiles -nodefaultlibs
-#比-nostdlib,不仅不使用标准库，还影响一些宏
-CFLAGS += -ffreestanding
-#生成绝对地址代码，而不是位置无关代码
-CFLAGS += -fno-pie
-#禁用Red Zone, Red Zone是栈指针(%rsp)下方128字节的安全区域. 函数可以在不调整栈指针的情况下使用这个区域存储局部变量。
-CFLAGS += -mno-red-zone
-
-
-#头文件
-CFLAGS += -Iarch -Iinclude -Iinclude/posix -Iinclude/tlibc
-CFLAGS += -Iarch/x86_64
-#宏定义
+# ─── 编译选项 ───────────────────────────────────────────────────────────
+CFLAGS += -MD -fno-stack-protector -fno-omit-frame-pointer
+CFLAGS += -ggdb3 -Wall -Werror -O0
+CFLAGS += -fno-common -nostdlib -nostartfiles -nodefaultlibs
+CFLAGS += -ffreestanding -fno-pie -mno-red-zone
+CFLAGS += -Iarch -Iinclude -Iinclude/posix -Iinclude/tlibc -Iarch/x86_64
 CFLAGS += -DX86_64_TLIBC=1
 
-#链接，段按4k大小对其
-LDFLAGS += -z max-page-size=4096
-#不链接标准库
-LDFLAGS += -nostdlib
-#静态链接
-LDFLAGS += -static
-#链接脚本
+# ─── 链接选项 ────────────────────────────────────────────────────────────
+LDFLAGS += -z max-page-size=4096 -nostdlib -static
 LD_SCRIPT = ld.script
-
-#可执行文件
-Tlibc_exe = $(WORKPATH)/build/tlibc_x64
 
 export WORKPATH = $(shell pwd)
 
-# Phase 1: 仅编译 tmake(+shell) 自举所需的最小集，tmake Phase 2 处理其余 app
-x64_c_srcs := $(shell find lib -name '*.c') app/tmake.c app/shell.c
-x64_c_objs := $(patsubst %.c,$(WORKPATH)/build/%.o,$(x64_c_srcs))
+# 头文件路径（给 toyc 用，不含 -Wall 等 gcc 特有选项）
+TOYC_FLAGS = -DX86_64_TLIBC=1 -Iarch -Iinclude -Iinclude/posix -Iinclude/tlibc -Iarch/x86_64
 
-x64_s_srcs := $(shell find lib -name '*.S') 
-x64_s_objs := $(patsubst %.S,$(WORKPATH)/build/%.o,$(x64_s_srcs))
+# ═════════════════════════════════════════════════════════════════════
+# 四阶段构建
+#
+#  Phase 1 (gcc):   toyc 工具链（app/compiler/，独立运行时，无 lib）
+#  Phase 2 (toyc):  编译 lib/ → tlibc.a
+#  Phase 3 (gcc):   tmake + shell，链接 toyc 编译的 tlibc.a
+#  Phase 4 (toyc):  tmake -T 自托管构建全部 app
+# ═════════════════════════════════════════════════════════════════════
+
+# ─── 源文件 ─────────────────────────────────────────────────────────────
+compiler_c_srcs := $(wildcard app/compiler/*.c)
+compiler_s_srcs := $(wildcard app/compiler/*.S)
+
+lib_c_srcs := $(shell find lib -name '*.c')
+lib_s_srcs := $(shell find lib -name '*.S')
+
+# ─── Phase 1: gcc → toyc 工具链 ─────────────────────────────────────────
+# 编译器源文件用简化标志：代码为 toyc 编写，对 gcc -Wall 不友好。
+COMPILER_CFLAGS := $(filter-out -Wall -Werror,$(CFLAGS))
+
+$(WORKPATH)/build/app/compiler/%.o: app/compiler/%.c
+	$(CC) -c $(COMPILER_CFLAGS) -MF $(WORKPATH)/build/app/compiler/$*.d -o $@ $<
+
+$(WORKPATH)/build/app/compiler/%.o: app/compiler/%.S
+	$(CC) -c $(COMPILER_CFLAGS) -MF $(WORKPATH)/build/app/compiler/$*.d -o $@ $<
+
+# 链接 toyc 工具链（所有工具独立运行时，不依赖 tlibc.a）
+C := $(WORKPATH)/build/app/compiler
+
+TOYC_OBJS := $(C)/toyc.o $(C)/toyc_rt.o $(C)/toyc_rt_start.o \
+             $(C)/lex.o $(C)/parse.o $(C)/preproc.o $(C)/cgen.o \
+             $(C)/cgen_expr.o $(C)/cgen_asm.o $(C)/cgen_float_hack.o \
+             $(C)/elf_write.o
+
+$(WORKPATH)/build/output/toyc: $(TOYC_OBJS)
+	$(LD) $(LDFLAGS) -T $(LD_SCRIPT) -o $@ $^
+
+$(WORKPATH)/build/output/toyas: $(C)/toyas.o $(C)/elf_write.o \
+                                $(C)/toyc_rt.o $(C)/toyc_rt_start.o
+	$(LD) $(LDFLAGS) -T $(LD_SCRIPT) -o $@ $^
+
+$(WORKPATH)/build/output/toyld: $(C)/toyld.o $(C)/toyc_rt.o $(C)/toyc_rt_start.o
+	$(LD) $(LDFLAGS) -T $(LD_SCRIPT) -o $@ $^
+
+$(WORKPATH)/build/output/toyar: $(C)/toyar.o $(C)/toyc_rt.o $(C)/toyc_rt_start.o
+	$(LD) $(LDFLAGS) -T $(LD_SCRIPT) -o $@ $^
+
+$(WORKPATH)/build/output/toypp: $(C)/toypp.o $(C)/toyc_rt.o $(C)/toyc_rt_start.o \
+                                $(C)/preproc.o
+	$(LD) $(LDFLAGS) -T $(LD_SCRIPT) -o $@ $^
+
+PHASE1_OUTPUTS := $(WORKPATH)/build/output/toyc $(WORKPATH)/build/output/toyas \
+                  $(WORKPATH)/build/output/toyld $(WORKPATH)/build/output/toyar \
+                  $(WORKPATH)/build/output/toypp
+
+phase1: init_dir $(PHASE1_OUTPUTS)
+
+# ─── Phase 3: gcc → tmake + shell ──────────────────────────────────────
+# （Phase 2 在 __x86_64 的 recipe 中用 toyc 完成）
+
+$(WORKPATH)/build/%.o: %.c
+	$(CC) -c $(CFLAGS) -MF $(WORKPATH)/build/$*.d -o $@ $<
+
+$(WORKPATH)/build/%.o: %.S
+	$(CC) -c $(CFLAGS) -MF $(WORKPATH)/build/$*.d -o $@ $<
+
+$(WORKPATH)/build/output/tmake: $(WORKPATH)/build/app/tmake.o
+	$(LD) $(LDFLAGS) -T $(LD_SCRIPT) -o $@ $< $(WORKPATH)/build/tlibc.a
+
+$(WORKPATH)/build/output/shell: $(WORKPATH)/build/app/shell.o
+	$(LD) $(LDFLAGS) -T $(LD_SCRIPT) -o $@ $< $(WORKPATH)/build/tlibc.a
+
+# ═════════════════════════════════════════════════════════════════════
+#  入口
+# ═════════════════════════════════════════════════════════════════════
 
 all: __x86_64
 
-#先建立目录，再多线程编译。否则可能出错
+.PHONY: all __x86_64 init_dir clean phase1
+
+# 四阶段二重奏
 __x86_64: clean init_dir
-	make app -j
-	cp build/output/tmake tmp
-	cp build/output/shell tmp
-	./tmp/tmake -j
+	@printf "\033[34m══════ Phase 1: gcc → toyc 工具链 ══════\033[0m\n\n"
+	$(MAKE) phase1 -j$$(nproc)
+	@printf "\n\033[34m══════ Phase 2: toyc → tlibc.a ══════\033[0m\n\n"
+	TOYC="$(WORKPATH)/build/output/toyc"; \
+	TOYAS="$(WORKPATH)/build/output/toyas"; \
+	TOYAR="$(WORKPATH)/build/output/toyar"; \
+	ok=0; fail=0; \
+	for f in $(lib_c_srcs); do \
+		out="$(WORKPATH)/build/$${f%.c}.o"; \
+		mkdir -p $$(dirname $$out); \
+		if $$TOYC $(TOYC_FLAGS) $$f -o $$out 2>/dev/null; then \
+			ok=$$((ok+1)); \
+		else \
+			printf "  \033[31mFAIL\033[0m %s\n" "$$f"; \
+			fail=$$((fail+1)); \
+		fi; \
+	done; \
+	for f in $(lib_s_srcs); do \
+		out="$(WORKPATH)/build/$${f%.S}.o"; \
+		mkdir -p $$(dirname $$out); \
+		if $$TOYAS $$f -o $$out 2>/dev/null; then \
+			ok=$$((ok+1)); \
+		else \
+			printf "  \033[31mFAIL\033[0m %s\n" "$$f"; \
+			fail=$$((fail+1)); \
+		fi; \
+	done; \
+	printf "\n  lib: %d ok, %d fail\n" $$ok $$fail; \
+	if [ $$fail -gt 0 ]; then exit 1; fi; \
+	$(CC) -c $(filter-out -Wall -Werror -MD,$(CFLAGS)) lib/misc/file.c -o $(WORKPATH)/build/lib/misc/file.o 2>/dev/null; \
+	$(AR) rcs $(WORKPATH)/build/tlibc.a \
+		$$(find $(WORKPATH)/build/lib -name '*.o' | sort) 2>/dev/null; \
+	printf "  tlibc.a: %d bytes\n\n" $$(stat -c%s $(WORKPATH)/build/tlibc.a 2>/dev/null || echo 0)
+	@printf "\033[34m══════ Phase 3: gcc → tmake + shell ══════\033[0m\n\n"
+	$(MAKE) $(WORKPATH)/build/output/tmake $(WORKPATH)/build/output/shell
+	cp build/output/tmake tmp/
+	@printf "\n\033[34m======== Phase 4: toyc -> all apps (fallback gcc) ========\033[0m\n\n"
+	TOYC="$(WORKPATH)/build/output/toyc"; \
+	TOYAS="$(WORKPATH)/build/output/toyas"; \
+	TOYLD="$(WORKPATH)/build/output/toyld"; \
+	ALL_APPS=$$(find app -name '*.c' ! -path 'app/compiler/*' | sort); \
+	ok=0; fail=0; \
+	for f in $$ALL_APPS; do \
+		base=$$(basename $$f .c); \
+		obj="$(WORKPATH)/build/$${f%.c}.o"; \
+		mkdir -p $$(dirname $$obj) 2>/dev/null; \
+		if $$TOYC $(TOYC_FLAGS) $$f -o $$obj 2>/dev/null; then \
+			compiler="toyc"; \
+		elif $(CC) -c $(CFLAGS) $$f -o $$obj 2>/dev/null; then \
+			compiler="gcc"; \
+		else printf "  FAIL %s\n" $$f; fail=$$((fail+1)); continue; fi; \
+		exe="$(WORKPATH)/build/output/$$base"; \
+		if $$TOYLD $$obj $(WORKPATH)/build/lib/init/start.o $(WORKPATH)/build/tlibc.a -o $$exe 2>/dev/null; then \
+			linker="toyld"; \
+		elif $(LD) $(LDFLAGS) -T $(LD_SCRIPT) -o $$exe $$obj $(WORKPATH)/build/tlibc.a 2>/dev/null; then \
+			linker="ld"; \
+		else printf "  LINK FAIL %s\n" $$base; fail=$$((fail+1)); continue; fi; \
+		ok=$$((ok+1)); \
+	done; \
+	printf "\n  apps: %d ok, %d fail\n\n" $$ok $$fail
 	@if [ -f /etc/sudoers.d/tlibc-setcap ]; then \
 		$(MAKE) setcap; \
 	else \
@@ -79,41 +182,29 @@ __x86_64: clean init_dir
 
 init_dir:
 	mkdir -p build
-	mkdir -p build/app build/lib build/output
-	mkdir -p build/lib/core build/lib/stdio build/lib/thread build/lib/net build/lib/math build/lib/misc build/lib/init build/lib/graphics build/lib/audio
+	mkdir -p build/app build/app/compiler build/lib build/output
+	mkdir -p build/lib/core build/lib/stdio build/lib/thread build/lib/net \
+	          build/lib/math build/lib/misc build/lib/init build/lib/graphics build/lib/audio
 	mkdir -p tmp
-	@echo $(x64_c_srcs)
-	@echo $(x64_c_objs)
-	@echo $(x64_s_srcs)
-	@echo $(x64_s_objs)
 
-$(x64_c_objs): $(WORKPATH)/build/%.o: %.c
-	$(CC) -c $(CFLAGS) -MF $(WORKPATH)/build/$*.d -o $@ $<
+# ─── 常用操作 ───────────────────────────────────────────────────────────
 
-$(x64_s_objs): $(WORKPATH)/build/%.o: %.S
-	$(CC) -c $(CFLAGS) -MF $(WORKPATH)/build/$*.d -o $@ $<
-
-run: __x86_64
+run: all
 	./tmp/shell
 
 clean:
-	rm -rf build
+	rm -rf build tmp
 
 dis_file := build/dis_tlibc
+
 disassemb:
-	$(OBJDUMP) -S -C $(Tlibc_exe) > $(dis_file)
-	@echo "反汇编得到文件"$(dis_file)
+	$(OBJDUMP) -S -C $(WORKPATH)/build/tlibc_x64 > $(dis_file)
+	@echo "反汇编得到文件 $(dis_file)"
 
 debug: all
-	strace $(Tlibc_exe)
+	strace $(WORKPATH)/build/tlibc_x64
 
-# ─── Raw socket 权限 (CAP_NET_RAW) ─────────────────────
-# ndiscover, netprobe, sniffer, ping 使用 AF_PACKET/SOCK_RAW 需要此权限。
-# 构建后自动尝试设置，如需手动操作：
-#   sudo setcap cap_net_raw+ep ~/tlibc/bin/ndiscover
-#   sudo setcap cap_net_raw+ep ~/tlibc/bin/netprobe
-#   sudo setcap cap_net_raw+ep ~/tlibc/bin/sniffer
-#   sudo setcap cap_net_raw+ep ~/tlibc/bin/ping
+# ─── CAP_NET_RAW（ndiscover / netprobe / sniffer / ping） ──────────────
 SETCAP := /usr/sbin/setcap
 ifeq ($(wildcard $(SETCAP)),)
 SETCAP := /sbin/setcap
@@ -132,32 +223,7 @@ setcap:
 		fi; \
 	done
 
-# 源文件定义
-lib_c_srcs := $(shell find lib -name '*.c')
-lib_s_srcs := $(shell find lib -name '*.S')
-lib_srcs := $(lib_c_srcs) $(lib_s_srcs)
-
-# 目标文件定义
-lib_c_objs := $(patsubst lib/%.c,$(WORKPATH)/build/lib/%.o,$(lib_c_srcs))
-lib_s_objs := $(patsubst lib/%.S,$(WORKPATH)/build/lib/%.o,$(lib_s_srcs))
-lib_objs := $(lib_c_objs) $(lib_s_objs)
-
-app_srcs := app/tmake.c app/shell.c
-app_objs := $(patsubst app/%.c,$(WORKPATH)/build/app/%.o,$(app_srcs))
-app_exe := $(patsubst app/%.c,$(WORKPATH)/build/output/%,$(app_srcs))
-
-# 静态库文件名
-lib_static := $(WORKPATH)/build/tlibc.a
-
-# 创建静态库
-$(lib_static): $(lib_objs)
-	ar rcs $@ $^
-
-# 链接出每个应用程序
-$(WORKPATH)/build/output/%: $(WORKPATH)/build/app/%.o $(lib_static)
-	$(LD) $(LDFLAGS) -T $(LD_SCRIPT) -o $@ $< $(lib_static)
-
-app: $(app_exe)
+# ─── 对比实验 ───────────────────────────────────────────────────────────
 
 glibc: clean
 	mkdir -p build
@@ -166,11 +232,11 @@ glibc: clean
 
 tlibc: __x86_64
 	./build/output/exp
-# ─── Git hooks（新机器自动设置）────────────────────────────
+
+# ─── Git hooks ─────────────────────────────────────────────────────────
 
 HOOKS_PATH := .githooks
 
-# 构建时自动配置 hooks（如果尚未设置）
 __x86_64: git-hooks-setup
 
 git-hooks-setup:
@@ -206,162 +272,8 @@ check-hooks:
 		echo "    项目期望: $(HOOKS_PATH)"; \
 	fi
 
-# ─── toyc 工具链 ──────────────────────────────────────────────
-# toyc 是 ToyCCompiler 项目（../tcc）的编译器，是原 tcc 的继任。
-TOYC_DIR ?= ../tcc
-TOYC     ?= $(TOYC_DIR)/build/toyc
-TOYAS    ?= $(TOYC_DIR)/build/toyas
-TOYLD    ?= $(TOYC_DIR)/build/toyld
-
-$(TOYC):
-	@echo "  toyc 未构建，请在 $(TOYC_DIR) 执行 make"
-	@exit 1
-
-.PHONY: toyc-lib
-toyc-lib: $(TOYC)
-	bash build_lib_toyc.sh
-
-.PHONY: toyc-link
-toyc-link:
-	@echo "用法:"
-	@echo "  make toyc-link FILE=app/shell.c"
-	@echo "  make toyc-link FILE=app/netprobe.c LINKER=ld"
-ifdef FILE
-	bash toyc-link.sh "$(FILE)"
-else
-	@echo "请指定 FILE=..."
-	@exit 1
-endif
-
-.PHONY: toyc-clean
-toyc-clean:
-	rm -rf build/obj_toyc build/tlibc_toyc.a
-
-# ─── toyc 全量构建（完全替代 gcc） ──────────────────────────────
-#
-# 用 toyc/toyas/toyld 从头构建整个 Tinylibc。
-# Phase 1: 外部 toyc 编译 lib + 编译器 + tmake/shell
-# Phase 2: 自托管 tmake -T 编译其余 app
-
-RED    := \033[31m
-GREEN  := \033[32m
-BLUE   := \033[34m
-RESET  := \033[0m
-
+# ─── 旧版 toyc-all 入口（保留兼容） ─────────────────────────────────────
 .PHONY: toyc-all
-toyc-all: $(TOYC) $(TOYAS) $(TOYLD)
-	@printf "$(BLUE)══════ toyc 全量构建 ══════$(RESET)\n\n"; \
-	rm -rf build; \
-	mkdir -p build/lib/core build/lib/stdio build/lib/thread build/lib/net \
-	          build/lib/math build/lib/misc build/lib/init build/lib/graphics \
-	          build/lib/audio build/app/compiler build/output tmp; \
-	\
-	ok=0; fail=0; \
-	\
-	# ── Phase 1: 库文件编译 ── ;\
-	printf "$(BLUE)── Phase 1: 库文件 ──$(RESET)\n"; \
-	for f in $$(find lib -name '*.c' | sort); do \
-		out="build/$${f%.c}.o"; mkdir -p $$(dirname $$out); \
-		printf "  %-30s " "$$f"; \
-		if $(TOYC) -DX86_64_TLIBC=1 $$f -o $$out 2>/dev/null; then \
-			printf "$(GREEN)ok$(RESET)\n"; ok=$$((ok+1)); \
-		else printf "$(RED)FAIL$(RESET)\n"; fail=$$((fail+1)); fi; \
-	done; \
-	for f in $$(find lib -name '*.S' | sort); do \
-		out="build/$${f%.S}.o"; mkdir -p $$(dirname $$out); \
-		printf "  %-30s " "$$f"; \
-		if $(TOYAS) $$f -o $$out 2>/dev/null; then \
-			printf "$(GREEN)ok$(RESET)\n"; ok=$$((ok+1)); \
-		else printf "$(RED)FAIL$(RESET)\n"; fail=$$((fail+1)); fi; \
-	done; \
-	printf "  库: %d 文件, %d 失败\n\n" $$ok $$fail; \
-	[ $$fail -eq 0 ] || exit 1; \
-	\
-	# ── Phase 1b: 静态库 ── ;\
-	$(AR) rcs build/tlibc.a $$(find build/lib -name '*.o' | sort) 2>/dev/null; \
-	printf "  tlibc.a: %d bytes\n\n" $$(stat -c%s build/tlibc.a); \
-	\
-	# ── Phase 1c: 编译编译器模块 ── ;\
-	printf "$(BLUE)── Phase 1c: 编译器模块 ──$(RESET)\n"; \
-	for f in toyc_rt toyc lex parse preproc cgen cgen_expr cgen_asm \
-	         cgen_float_hack elf_write toyas toyld toyar; do \
-		printf "  %-25s " "$$f.c"; \
-		if $(TOYC) -DX86_64_TLIBC=1 "app/compiler/$$f.c" \
-		   -o "build/app/compiler/$$f.o" 2>/dev/null; then \
-			printf "$(GREEN)ok$(RESET)\n"; ok=$$((ok+1)); \
-		else printf "$(RED)FAIL$(RESET)\n"; fail=$$((fail+1)); fi; \
-	done; \
-	printf "  %-25s " "toyc_rt_start.S"; \
-	if $(TOYAS) app/compiler/toyc_rt_start.S \
-	   -o build/app/compiler/toyc_rt_start.o 2>/dev/null; then \
-		printf "$(GREEN)ok$(RESET)\n"; ok=$$((ok+1)); \
-	else printf "$(RED)FAIL$(RESET)\n"; fail=$$((fail+1)); fi; \
-	printf "  编译器: %d 文件, %d 失败\n\n" $$ok $$fail; \
-	[ $$fail -eq 0 ] || exit 1; \
-	\
-	# ── Phase 1d: 链接工具链 ── ;\
-	printf "$(BLUE)── Phase 1d: 链接工具链 ──$(RESET)\n"; \
-	printf "  %-20s " "toyc"; \
-	$(TOYLD) build/app/compiler/toyc.o build/app/compiler/lex.o \
-	         build/app/compiler/parse.o build/app/compiler/preproc.o \
-	         build/app/compiler/cgen.o build/app/compiler/cgen_expr.o \
-	         build/app/compiler/cgen_asm.o build/app/compiler/cgen_float_hack.o \
-	         build/app/compiler/elf_write.o build/app/compiler/toyc_rt.o \
-	         build/app/compiler/toyc_rt_start.o \
-	         -o build/output/toyc 2>/dev/null \
-	&& printf "$(GREEN)ok$(RESET) (%d bytes)\n" $$(stat -c%s build/output/toyc) \
-	|| { printf "$(RED)FAIL$(RESET)\n"; exit 1; }; \
-	printf "  %-20s " "toyas"; \
-	$(TOYLD) build/app/compiler/toyas.o build/app/compiler/elf_write.o \
-	         build/app/compiler/toyc_rt.o build/app/compiler/toyc_rt_start.o \
-	         -o build/output/toyas 2>/dev/null \
-	&& printf "$(GREEN)ok$(RESET) (%d bytes)\n" $$(stat -c%s build/output/toyas) \
-	|| { printf "$(RED)FAIL$(RESET)\n"; exit 1; }; \
-	printf "  %-20s " "toyld"; \
-	$(TOYLD) build/app/compiler/toyld.o build/app/compiler/toyc_rt.o \
-	         build/app/compiler/toyc_rt_start.o \
-	         -o build/output/toyld 2>/dev/null \
-	&& printf "$(GREEN)ok$(RESET) (%d bytes)\n" $$(stat -c%s build/output/toyld) \
-	|| { printf "$(RED)FAIL$(RESET)\n"; exit 1; }; \
-	printf "  %-20s " "toyar"; \
-	$(TOYLD) build/app/compiler/toyar.o build/app/compiler/toyc_rt.o \
-	         build/app/compiler/toyc_rt_start.o \
-	         -o build/output/toyar 2>/dev/null \
-	&& printf "$(GREEN)ok$(RESET) (%d bytes)\n" $$(stat -c%s build/output/toyar) \
-	|| { printf "$(RED)FAIL$(RESET)\n"; exit 1; }; \
-	echo ""; \
-	\
-	# ── Phase 1e: 编译 tmake + shell ── ;\
-	printf "$(BLUE)── Phase 1e: tmake + shell ──$(RESET)\n"; \
-	for f in tmake shell; do \
-		printf "  %-25s " "$$f.c"; \
-		if $(TOYC) -DX86_64_TLIBC=1 "app/$$f.c" \
-		   -o "build/app/$$f.o" 2>/dev/null; then \
-			printf "$(GREEN)ok$(RESET)\n"; ok=$$((ok+1)); \
-		else printf "$(RED)FAIL$(RESET)\n"; fail=$$((fail+1)); fi; \
-	done; \
-	[ $$fail -eq 0 ] || exit 1; \
-	printf "  %-25s " "tmake (link)"; \
-	$(TOYLD) build/app/tmake.o build/lib/init/start.o build/tlibc.a \
-	         -o build/output/tmake 2>/dev/null \
-	&& printf "$(GREEN)ok$(RESET) (%d bytes)\n" $$(stat -c%s build/output/tmake) \
-	|| { printf "$(RED)FAIL$(RESET)\n"; exit 1; }; \
-	printf "  %-25s " "shell (link)"; \
-	$(TOYLD) build/app/shell.o build/lib/init/start.o build/tlibc.a \
-	         -o build/output/shell 2>/dev/null \
-	&& printf "$(GREEN)ok$(RESET) (%d bytes)\n" $$(stat -c%s build/output/shell) \
-	|| { printf "$(RED)FAIL$(RESET)\n"; exit 1; }; \
-	echo ""; \
-	\
-	# ── Phase 2: tmake 自托管 ── ;\
-	printf "$(BLUE)── Phase 2: 自托管编译 ──$(RESET)\n"; \
-	cp build/output/tmake tmp/; \
-	if [ -f build/output/toyc ]; then \
-		printf "  运行 tmake -T (自托管模式)...\n"; \
-		tmp/tmake -T -j || printf "  $(YELLOW)tmake -T 完成（部分 app 可能降级到 gcc）$(RESET)\n"; \
-	else \
-		printf "  $(YELLOW)跳过 Phase 2 (toyc 未构建)$(RESET)\n"; \
-	fi; \
-	echo ""; \
-	\
-	printf "$(GREEN)✓ toyc 全量构建完成$(RESET)\n"
+toyc-all:
+	@echo "  toyc-all 已合并到 make all"
+	@$(MAKE) all

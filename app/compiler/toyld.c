@@ -446,6 +446,7 @@ static void read_input_mem(const char *name, unsigned char *data, int size) {
 
 /* 前向声明（GCC 要求定义前调用） */
 static const char *sym_name(InputFile *f, int idx);
+static Symbol *find_or_add_sym(const char *name);
 
 /* 将指定输入文件的全局 UNDEF 符号注册到 syms 表 */
 static void register_input_undefs(int idx) {

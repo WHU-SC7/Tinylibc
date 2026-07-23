@@ -205,3 +205,34 @@ check-hooks:
 		echo "  ! Git hooksPath = $$CURRENT (非项目默认)"; \
 		echo "    项目期望: $(HOOKS_PATH)"; \
 	fi
+
+# ─── toyc 工具链 ──────────────────────────────────────────────
+# toyc 是 ToyCCompiler 项目（../tcc）的编译器，是原 tcc 的继任。
+TOYC_DIR ?= ../tcc
+TOYC     ?= $(TOYC_DIR)/build/toyc
+TOYAS    ?= $(TOYC_DIR)/build/toyas
+TOYLD    ?= $(TOYC_DIR)/build/toyld
+
+$(TOYC):
+	@echo "  toyc 未构建，请在 $(TOYC_DIR) 执行 make"
+	@exit 1
+
+.PHONY: toyc-lib
+toyc-lib: $(TOYC)
+	bash build_lib_toyc.sh
+
+.PHONY: toyc-link
+toyc-link:
+	@echo "用法:"
+	@echo "  make toyc-link FILE=app/shell.c"
+	@echo "  make toyc-link FILE=app/netprobe.c LINKER=ld"
+ifdef FILE
+	bash toyc-link.sh "$(FILE)"
+else
+	@echo "请指定 FILE=..."
+	@exit 1
+endif
+
+.PHONY: toyc-clean
+toyc-clean:
+	rm -rf build/obj_toyc build/tlibc_toyc.a

@@ -19,7 +19,7 @@
 #ifndef ELF_H
 #define ELF_H
 
-#include "tlibc_types.h"
+#include "toyc_need.h"
 
 /* ─── ELF 标识 ─── */
 

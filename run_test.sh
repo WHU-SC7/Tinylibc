@@ -13,15 +13,15 @@
 # 阶段:
 #   1: 001-020  基础    2: 021-040  指针/数组/函数
 #   3: 041-060  结构体   4: 061-080  预处理/复杂
-#   5: 081-093  tcc 自举模式
+#   5: 081-093  自举模式
 #   lib: lib/ 目录（库编译模式自检）
 #
 # 每个 .c 测试文件通过退出码验证，预期值写在 .EXPECT: <N> 注释中。
 
 DIR="$(dirname "$0")/compiler-tests"
-TCC="${CC:-./build/output/tcc}"
-RT="${RT:-build/app/compiler/tcc_rt.o}"
-START="${START:-build/app/compiler/tcc_rt_start.o}"
+TCC="${CC:-./build/output/toyc}"
+RT="${RT:-build/app/compiler/toyc_rt.o}"
+START="${START:-build/app/compiler/toyc_rt_start.o}"
 LD="${LD:-x86_64-linux-gnu-ld}"
 LDFLAGS="-nostdlib -static -T ld.script"
 

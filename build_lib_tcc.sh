@@ -1,90 +1,114 @@
 #!/bin/bash
 #
-# build_lib_tcc.sh — 用 tcc/tas 编译 lib/ 下所有源文件
+# build_lib_tcc.sh — 用 toyc/toyas 编译 lib/ 下所有源文件
 #
-# 硬编码路径，从项目根目录执行。
+# 原 tcc 已被 toyc 取代（ToyCCompiler），此脚本现在是 build_lib_toyc.sh 的别名。
 # 用法：
 #   cd /mnt/c/Users/15259/Desktop/Tinylibc
 #   bash build_lib_tcc.sh
 #
-# 输出到 build/obj/lib/ 下，保持 lib/ 目录结构。
-# 最后一步打成静态库 build/lib/tlibc.a。
+# 环境变量：
+#   TOYC_DIR   toyc 项目目录，默认 ../tcc
 
 set -e
 
-TCC="$HOME/tlibc/bin/tcc"
-TAS="$HOME/tlibc/bin/tas"
-GCC="/usr/bin/x86_64-linux-gnu-gcc"
-AR="/usr/bin/x86_64-linux-gnu-ar"
-PROJECT="/mnt/c/Users/15259/Desktop/Tinylibc"
+PROJECT="$(cd "$(dirname "$0")" && pwd)"
+TOYC_DIR="${TOYC_DIR:-$(cd "$PROJECT/../tcc" && pwd)}"
+TOYC="${TOYC:-$TOYC_DIR/build/toyc}"
+TOYAS="${TOYAS:-$TOYC_DIR/build/toyas}"
+AR="${AR:-x86_64-linux-gnu-ar}"
 
-# ─── 创建输出目录 ──────────────────────────────────────────────
+# 检查 toyc 是否存在
+if [ ! -x "$TOYC" ]; then
+    echo "错误: toyc 未找到 ($TOYC)"
+    echo "请在 $TOYC_DIR 执行 make 编译"
+    exit 1
+fi
 
-mkdir -p "$PROJECT/build/obj/lib/core"
-mkdir -p "$PROJECT/build/obj/lib/init"
-mkdir -p "$PROJECT/build/obj/lib/math"
-mkdir -p "$PROJECT/build/obj/lib/misc"
-mkdir -p "$PROJECT/build/obj/lib/net"
-mkdir -p "$PROJECT/build/obj/lib/stdio"
-mkdir -p "$PROJECT/build/obj/lib/thread"
+echo "=============================================="
+echo "  toyc (原 tcc): Tinylibc 库编译"
+echo "  TOYC  = $TOYC"
+echo "  TOYAS = $TOYAS"
+echo "=============================================="
+echo ""
 
-# ─── 编译所有 .c 文件（用 tcc） ───────────────────────────────
+OUTDIR="$PROJECT/build/obj_toyc"
+TLIBC_A="$PROJECT/build/tlibc_toyc.a"
+
+# 编译所有 .c 文件
+compile_dir() {
+    local src_dir="$1" out_prefix="$2"
+    for src in "$PROJECT/lib/$src_dir"*.c; do
+        [ -f "$src" ] || continue
+        local name="$out_prefix$(basename "$src" .c)"
+        printf "  %-30s " "$name"
+        "$TOYC" -DX86_64_TLIBC=1 "$src" -o "$OUTDIR/lib/${name}.o" 2>&1 && echo "ok" || {
+            rc=$?; echo "FAIL (rc=$rc)"; exit $rc
+        }
+    done
+}
+
+mkdir -p "$OUTDIR/lib"
 
 echo "=== lib/core/*.c ==="
-"$TCC" "$PROJECT/lib/core/io.c"     -o "$PROJECT/build/obj/lib/core/io.o"
-"$TCC" "$PROJECT/lib/core/mem.c"    -o "$PROJECT/build/obj/lib/core/mem.o"
-"$TCC" "$PROJECT/lib/core/proc.c"   -o "$PROJECT/build/obj/lib/core/proc.o"
-"$TCC" "$PROJECT/lib/core/signal.c" -o "$PROJECT/build/obj/lib/core/signal.o"
-"$TCC" "$PROJECT/lib/core/sync.c"   -o "$PROJECT/build/obj/lib/core/sync.o"
-"$TCC" "$PROJECT/lib/core/time.c"   -o "$PROJECT/build/obj/lib/core/time.o"
+compile_dir "core/" "core_"
 
 echo "=== lib/init/ ==="
-"$TCC" "$PROJECT/lib/init/init.c"   -o "$PROJECT/build/obj/lib/init/init.o"
+compile_dir "init/" "init_"
 
 echo "=== lib/stdio/ ==="
-"$TCC" "$PROJECT/lib/stdio/printf.c"   -o "$PROJECT/build/obj/lib/stdio/printf.o"
-"$TCC" "$PROJECT/lib/stdio/snprintf.c" -o "$PROJECT/build/obj/lib/stdio/snprintf.o"
+compile_dir "stdio/" "stdio_"
 
-echo "=== lib/thread/ （用 gcc，tcc 不支持 TLS） ==="
-"$GCC" -I./include -I./include/posix -I./include/tlibc -I./arch -I./arch/x86_64 -DX86_64_TLIBC=1 -nostdlib -ffreestanding -fno-stack-protector -fno-pie -mno-red-zone -static -fno-common -c "$PROJECT/lib/thread/mempool.c" -o "$PROJECT/build/obj/lib/thread/mempool.o"
-"$GCC" -I./include -I./include/posix -I./include/tlibc -I./arch -I./arch/x86_64 -DX86_64_TLIBC=1 -nostdlib -ffreestanding -fno-stack-protector -fno-pie -mno-red-zone -static -fno-common -c "$PROJECT/lib/thread/pthread.c" -o "$PROJECT/build/obj/lib/thread/pthread.o"
+echo "=== lib/thread/ ==="
+compile_dir "thread/" "thread_"
 
 echo "=== lib/net/ ==="
-"$TCC" "$PROJECT/lib/net/dns.c"    -o "$PROJECT/build/obj/lib/net/dns.o"
-"$TCC" "$PROJECT/lib/net/socket.c" -o "$PROJECT/build/obj/lib/net/socket.o"
+compile_dir "net/" "net_"
 
 echo "=== lib/misc/ ==="
-"$TCC" "$PROJECT/lib/misc/assert.c" -o "$PROJECT/build/obj/lib/misc/assert.o"
-"$TCC" "$PROJECT/lib/misc/envp.c"   -o "$PROJECT/build/obj/lib/misc/envp.o"
-"$TCC" "$PROJECT/lib/misc/file.c"   -o "$PROJECT/build/obj/lib/misc/file.o"
-"$TCC" "$PROJECT/lib/misc/path.c"   -o "$PROJECT/build/obj/lib/misc/path.o"
-"$TCC" "$PROJECT/lib/misc/system.c" -o "$PROJECT/build/obj/lib/misc/system.o"
+compile_dir "misc/" "misc_"
 
 echo "=== lib/math/ ==="
-"$TCC" "$PROJECT/lib/math/math.c"   -o "$PROJECT/build/obj/lib/math/math.o"
+compile_dir "math/" "math_"
 
 echo "=== lib/ 根目录 ==="
-"$TCC" "$PROJECT/lib/ctype.c"  -o "$PROJECT/build/obj/lib/ctype.o"
-"$TCC" "$PROJECT/lib/poll.c"   -o "$PROJECT/build/obj/lib/poll.o"
-"$TCC" "$PROJECT/lib/procfs.c" -o "$PROJECT/build/obj/lib/procfs.o"
-"$TCC" "$PROJECT/lib/string.c" -o "$PROJECT/build/obj/lib/string.o"
-"$TCC" "$PROJECT/lib/time.c"   -o "$PROJECT/build/obj/lib/time.o"
-"$TCC" "$PROJECT/lib/tty.c"    -o "$PROJECT/build/obj/lib/tty.o"
+for src in "$PROJECT/lib/"*.c; do
+    [ -f "$src" ] || continue
+    local name="$(basename "$src" .c)"
+    printf "  %-30s " "$name"
+    "$TOYC" -DX86_64_TLIBC=1 "$src" -o "$OUTDIR/lib/${name}.o" 2>&1 && echo "ok" || {
+        rc=$?; echo "FAIL (rc=$rc)"; exit $rc
+    }
+done
 
-# ─── 编译所有 .S 文件（用 tas） ───────────────────────────────
+# 汇编文件
+echo ""
+echo "=== 汇编文件 (toyas) ==="
+for src in "$PROJECT/lib/init/"*.S "$PROJECT/lib/thread/"*.S; do
+    [ -f "$src" ] || continue
+    local base="$(basename "$src" .S)"
+    local dir_part="$(basename "$(dirname "$src")")"
+    printf "  %-30s " "$dir_part/$base"
+    "$TOYAS" "$src" -o "$OUTDIR/lib/${dir_part}_${base}.o" 2>&1 && echo "ok" || {
+        rc=$?; echo "FAIL (rc=$rc) — 用 gcc 回退"
+        x86_64-linux-gnu-gcc -c \
+            -I./include -I./include/posix -I./include/tlibc -I./arch -I./arch/x86_64 \
+            -DX86_64_TLIBC=1 -nostdlib -ffreestanding -fno-stack-protector -fno-pie -mno-red-zone -static -fno-common \
+            "$src" -o "$OUTDIR/lib/${dir_part}_${base}.o"
+    }
+done
 
-echo "=== lib/init/ (assembly，用 gcc) ==="
-"$GCC" -I./include -I./include/posix -I./include/tlibc -I./arch -I./arch/x86_64 -DX86_64_TLIBC=1 -nostdlib -ffreestanding -fno-stack-protector -fno-pie -mno-red-zone -static -fno-common -c "$PROJECT/lib/init/start.S" -o "$PROJECT/build/obj/lib/init/start.o"
-
-echo "=== lib/thread/ (assembly，用 gcc) ==="
-"$GCC" -I./include -I./include/posix -I./include/tlibc -I./arch -I./arch/x86_64 -DX86_64_TLIBC=1 -nostdlib -ffreestanding -fno-stack-protector -fno-pie -mno-red-zone -static -fno-common -c "$PROJECT/lib/thread/clone.S" -o "$PROJECT/build/obj/lib/thread/clone.o"
-
-# ─── 打包静态库 ────────────────────────────────────────────────
-
-echo "=== ar: tlibc.a ==="
-find "$PROJECT/build/obj/lib" -name '*.o' | sort |
-  xargs "$AR" rcs "$PROJECT/build/tlibc.a"
+# 打包静态库
+echo ""
+echo "=== ar: tlibc_toyc.a ==="
+OBJ_LIST=$(find "$OUTDIR/lib" -name '*.o' | sort | tr '\n' ' ')
+OBJ_COUNT=$(find "$OUTDIR/lib" -name '*.o' | wc -l)
+"$AR" rcs "$TLIBC_A" $OBJ_LIST
 
 echo ""
-echo "完成。共 $(find "$PROJECT/build/obj/lib" -name '*.o' | wc -l) 个目标文件"
-ls -lh "$PROJECT/build/tlibc.a"
+echo "=============================================="
+echo "  完成"
+echo "  目标文件: $OBJ_COUNT"
+echo "  静态库:   $TLIBC_A"
+ls -lh "$TLIBC_A"
+echo "=============================================="

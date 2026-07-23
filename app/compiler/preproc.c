@@ -19,11 +19,16 @@
  *   add_include_path    注册 include 搜索路径
  */
 
-#include "tcc.h"
+#include "toyc.h"
 
-#define MAX_MACROS 4096
-#define MAX_FUNC_MACROS 1024
-#define MAX_MACRO_PARAMS 64
+#define MAX_MACROS 8192
+#define MAX_FUNC_MACROS 4096
+#define MAX_MACRO_PARAMS 128
+
+static int pp_had_error;  /* #error 指令触发后标记，preprocess() 据此返回 NULL */
+
+/* 前向声明（GCC 要求定义前调用） */
+static int if_eval(const char *s, int len);
 
 typedef struct { const char *name; const char *value; int value_len; } Macro;
 static Macro macros[MAX_MACROS];
@@ -41,9 +46,14 @@ static FuncMacro func_macros[MAX_FUNC_MACROS];
 static int func_macro_count;
 
 /* 宏展开栈：防止无限递归 */
-#define MAX_EXPAND_STACK 64
+#define MAX_EXPAND_STACK 256
 static const char *expand_stack[MAX_EXPAND_STACK];
 static int expand_stack_depth;
+
+/* 条件编译状态（需为文件作用域，toyc 不支持递归函数内的 static 局部变量） */
+static int pp_cond_skip = 0;
+static int pp_cond_depth = 0;
+static int pp_cond_emit[32];
 
 static int is_expanding(const char *name) {
     int i;
@@ -56,12 +66,14 @@ static const char *inc_paths[MAX_INCLUDE_PATHS];
 static int inc_path_count;
 
 void add_include_path(const char *path) {
-    if (inc_path_count < MAX_INCLUDE_PATHS) inc_paths[inc_path_count++] = path; }
+    if (inc_path_count < MAX_INCLUDE_PATHS) inc_paths[inc_path_count++] = path;
+    else { __write(2, "toyc: too many include paths\n", 28); __exit(1); } }
 
 static void add_macro(const char *name, const char *val, int vlen) {
     if (macro_count < MAX_MACROS) {
         macros[macro_count].name = name; macros[macro_count].value = val;
-        macros[macro_count].value_len = vlen; macro_count++; } }
+        macros[macro_count].value_len = vlen; macro_count++; }
+    else { __write(2, "toyc: too many macros\n", 21); __exit(1); } }
 
 static void undef_macro(const char *name) {
     int i; for (i = 0; i < macro_count; i++) {
@@ -143,11 +155,18 @@ static void do_include(const char *s, int *pos, int len, OutBuf *out, int depth)
     while (*pos < len && s[*pos] != '"' && s[*pos] != '<') (*pos)++;
     if (*pos >= len) return;
     int delim = s[*pos]; (*pos)++;
-    int fs = *pos; while (*pos < len && s[*pos] != delim) (*pos)++;
+    int close_delim = (delim == '<') ? '>' : delim;
+    int fs = *pos; while (*pos < len && s[*pos] != close_delim) (*pos)++;
     int flen = *pos - fs; if (*pos < len) (*pos)++;
     if (flen <= 0) return;
     char fn[512]; int fi;
     for (fi = 0; fi < flen && fi < 500; fi++) { fn[fi] = s[fs + fi]; } fn[fi] = '\0';
+
+    /* #include <...>：标准库头文件，toyc 不支持 */
+    if (delim == '<') {
+        __eprintf("toyc: standard library header '<%s>' not supported (toyc is freestanding, no libc headers)\n", fn);
+        return;
+    }
 
     /* 对 #include "..."，先搜索源文件所在目录 */
     if (delim == '"' && current_source_dir[0] && !inc_path_added_source_dir) {
@@ -172,7 +191,7 @@ static void do_include(const char *s, int *pos, int len, OutBuf *out, int depth)
         int l2; char *fc = pp_read(pth, &l2);
         if (fc) { pp_buf(fc, l2, out, depth + 1); tlibc_free(fc); fnd = 1; break; }
     }
-    if (!fnd) { __printf("tcc: cannot find '%s'\n", fn); }
+    if (!fnd) { __eprintf("toyc: cannot find '%s'\n", fn); }
 }
 
 static void get_name(const char *s, int start, int end, char *buf, int bufsz) {
@@ -223,7 +242,9 @@ static void do_directive(const char *s, int ls, int le, OutBuf *out, int depth) 
         int cp = p; while (cp < le && pp_ws(s[cp])) cp++;
         if (cp == p && cp < le && s[cp] == '(') {
             /* 函数式宏（必须 ( 紧跟宏名，无空白）— 存储定义 */
-            if (func_macro_count >= MAX_FUNC_MACROS) return;
+            if (func_macro_count >= MAX_FUNC_MACROS) {
+                __write(2, "toyc: too many function-like macros\n", 35);
+                __exit(1); }
             FuncMacro *fm = &func_macros[func_macro_count];
             char *mn2 = (char *)tlibc_malloc(mnl + 1);
             { int ci; for (ci = 0; ci < mnl; ci++) mn2[ci] = s[ms + ci]; mn2[mnl] = '\0'; }
@@ -242,7 +263,9 @@ static void do_directive(const char *s, int ls, int le, OutBuf *out, int depth) 
                     char *pn = (char *)tlibc_malloc(cp - ps + 1);
                     { int ci; for (ci = 0; ci < cp - ps; ci++) pn[ci] = s[ps + ci]; pn[cp - ps] = '\0'; }
                     fm->params[fm->param_count++] = pn;
-                }
+                } else if (cp > ps) {
+                    __write(2, "toyc: too many macro parameters\n", 31);
+                    __exit(1); }
                 while (cp < le && pp_ws(s[cp])) cp++;
                 if (cp < le && s[cp] == ',') { cp++; continue; }
             }
@@ -291,7 +314,7 @@ static void do_directive(const char *s, int ls, int le, OutBuf *out, int depth) 
     if ((dl == 4 && s[dw]=='e'&&s[dw+1]=='l'&&s[dw+2]=='s'&&s[dw+3]=='e') ||
         (dl == 5 && s[dw]=='e'&&s[dw+1]=='n'&&s[dw+2]=='d')) return;
 
-    if (dl == 6 && s[dw]=='u'&&s[dw+1]=='n') {
+    if (dl == 5 && s[dw]=='u'&&s[dw+1]=='n') {
         while (p < le && pp_ws(s[p])) p++;
         int ms = p; while (p < le && pp_id(s[p])) p++;
         if (p > ms) { char mn[256]; get_name(s, ms, p, mn, 256); undef_macro(mn); }
@@ -299,8 +322,9 @@ static void do_directive(const char *s, int ls, int le, OutBuf *out, int depth) 
     }
 
     if (dl == 5 && s[dw]=='e'&&s[dw+1]=='r'&&s[dw+2]=='r') {
-        while (p < le && pp_ws(s[p])) { p++; } __printf("tcc: #error ");
-        while (p < le) { __printf("%c", s[p++]); } __printf("\n"); return;
+        while (p < le && pp_ws(s[p])) { p++; } __eprintf("toyc: #error: ");
+        { int ei; for (ei = p; ei < le; ei++) { char ec = s[ei]; __write(2, &ec, 1); } }
+        __write(2, "\n", 1); pp_had_error = 1; return;
     }
 }
 
@@ -321,16 +345,14 @@ static void pp_buf(const char *s, int len, OutBuf *out, int depth) {
 static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had_nl) {
     (void)had_nl;
     int i = 0;
+    int pp_line = 1;
     while (i < len) {
-        /* conditional compilation state */
-        static int cond_skip = 0;
-        static int cond_depth = 0;
-        static int cond_emit[32];
+        /* conditional compilation state — uses file-scope pp_cond_* */
 
         /* skip mode: if inside a #ifdef block that should be skipped, consume line */
-        if (cond_skip > 0 && s[i] != '#') {
+        if (pp_cond_skip > 0 && s[i] != '#') {
             while (i < len && s[i] != '\n') i++;
-            if (i < len && s[i] == '\n') i++;
+            if (i < len && s[i] == '\n') { i++; pp_line++; }
             continue;
         }
         if (s[i] == '#') {
@@ -356,28 +378,32 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                     int cw = cpos + 1; while (cw < le && (s[cw] == ' ' || s[cw] == '\t')) cw++;
                     int wlen = le - cw;
                     if (wlen >= 4 && s[cw]=='e'&&s[cw+1]=='l'&&s[cw+2]=='s'&&s[cw+3]=='e') {
-                        if (cond_depth > 0) {
-                            if (cond_emit[cond_depth-1]) {
-                                cond_skip++;
+                        if (pp_cond_depth > 0) {
+                            if (pp_cond_emit[pp_cond_depth-1]) {
+                                pp_cond_skip++;
                             } else {
-                                if (cond_skip > 0) cond_skip--;
+                                if (pp_cond_skip > 0) pp_cond_skip--;
                             }
-                            cond_emit[cond_depth-1] = !cond_emit[cond_depth-1];
+                            pp_cond_emit[pp_cond_depth-1] = !pp_cond_emit[pp_cond_depth-1];
                         }
-                        i = le; if (i < len && s[i] == '\n') i++;
+                        i = le; if (i < len && s[i] == '\n') { i++; pp_line++; }
                         continue;
                     }
                     if (wlen >= 5 && s[cw]=='e'&&s[cw+1]=='n'&&s[cw+2]=='d'&&s[cw+3]=='i'&&s[cw+4]=='f') {
-                        if (cond_depth > 0) {
-                            if (!cond_emit[cond_depth-1] && cond_skip > 0) cond_skip--;
-                            cond_depth--;
+                        if (pp_cond_depth > 0) {
+                            if (!pp_cond_emit[pp_cond_depth-1] && pp_cond_skip > 0) pp_cond_skip--;
+                            pp_cond_depth--;
                         }
-                        i = le; if (i < len && s[i] == '\n') i++;
+                        i = le; if (i < len && s[i] == '\n') { i++; pp_line++; }
                         continue;
                     }
-                    if (wlen >= 5 && s[cw]=='i'&&s[cw+1]=='f') {
-                        int is_ifndef = (wlen >= 6 && s[cw+2]=='n');
-                        int is_ifdef = !is_ifndef && (wlen < 6 || s[cw+2]!='n');
+                    if (wlen >= 3 && s[cw]=='i' && s[cw+1]=='f') {
+                        int is_ifdef = 0, is_ifndef = 0;
+                        if (wlen >= 6 && s[cw+2]=='d' && s[cw+3]=='e' && s[cw+4]=='f')
+                            is_ifdef = 1;
+                        else if (wlen >= 7 && s[cw+2]=='n' && s[cw+3]=='d' && s[cw+4]=='e' && s[cw+5]=='f')
+                            is_ifndef = 1;
+
                         if (is_ifdef || is_ifndef) {
                             int mp = cw + (is_ifndef ? 6 : 5);
                             while (mp < le && (s[mp] == ' ' || s[mp] == '\t')) mp++;
@@ -394,29 +420,46 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                             int emit_block;
                             if (is_ifdef) emit_block = is_def;
                             else emit_block = !is_def;
-                            if (cond_depth < 32) {
-                                if (emit_block) {
-                                    cond_emit[cond_depth] = 1;
-                                } else {
-                                    cond_emit[cond_depth] = 0;
-                                    cond_skip++;
-                                }
-                                cond_depth++;
+                            if (pp_cond_depth >= 32) { __write(2, "toyc: #if nesting too deep\n", 26); __exit(1); }
+                            if (emit_block) {
+                                pp_cond_emit[pp_cond_depth] = 1;
+                            } else {
+                                pp_cond_emit[pp_cond_depth] = 0;
+                                pp_cond_skip++;
                             }
-                            i = le; if (i < len && s[i] == '\n') i++;
+                            pp_cond_depth++;
+                            i = le; if (i < len && s[i] == '\n') { i++; pp_line++; }
+                            continue;
+                        } else {
+                            /* #if 常量表达式 */
+                            int emit_block = 0;
+                            if (pp_cond_skip == 0) {
+                                int mp = cw + 2;
+                                while (mp < le && pp_ws(s[mp])) mp++;
+                                emit_block = if_eval(s + mp, le - mp);
+                            }
+                            if (pp_cond_depth >= 32) { __write(2, "toyc: #if nesting too deep\n", 26); __exit(1); }
+                            if (emit_block) {
+                                pp_cond_emit[pp_cond_depth] = 1;
+                            } else {
+                                pp_cond_emit[pp_cond_depth] = 0;
+                                pp_cond_skip++;
+                            }
+                            pp_cond_depth++;
+                            i = le; if (i < len && s[i] == '\n') { i++; pp_line++; }
                             continue;
                         }
                     }
                 }
 
                 /* if in skip mode, directives that we handle (#ifdef etc) are already consumed above */
-                if (cond_skip > 0) {
-                    i = le; if (i < len && s[i] == '\n') i++;
+                if (pp_cond_skip > 0) {
+                    i = le; if (i < len && s[i] == '\n') { i++; pp_line++; }
                     continue;
                 }
 
                 do_directive(s, ls, le, out, depth);
-                i = le; if (i < len && s[i] == '\n') i++;
+                i = le; if (i < len && s[i] == '\n') { i++; pp_line++; }
                 continue;
             }
         }
@@ -440,6 +483,24 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
             while (i < len && ((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z') ||
                    s[i] == '_' || (s[i] >= '0' && s[i] <= '9'))) i++;
             int id_len = i - start;
+            /* __LINE__：输出当前行号（行号从 1 开始） */
+            if (id_len == 8 &&
+                s[start] == '_' && s[start+1] == '_' &&
+                s[start+2] == 'L' && s[start+3] == 'I' &&
+                s[start+4] == 'N' && s[start+5] == 'E' &&
+                s[start+6] == '_' && s[start+7] == '_') {
+                char lbuf[16];
+                int llen = 0;
+                long lv = pp_line;
+                if (lv == 0) { lbuf[llen++] = '0'; }
+                else {
+                    char tmp[16]; int ti = 0;
+                    while (lv > 0) { tmp[ti++] = '0' + (char)(lv % 10); lv /= 10; }
+                    while (ti > 0) lbuf[llen++] = tmp[--ti];
+                }
+                { int vi; for (vi = 0; vi < llen; vi++) out_putc(out, lbuf[vi]); }
+                continue;
+            }
             int mi;
             int expanded = 0;
             for (mi = 0; mi < macro_count; mi++) {
@@ -504,7 +565,10 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                         }
                         if (s[ap] == '(') adepth++;
                         if (s[ap] == ')') { adepth--; if (adepth == 0) break; }
-                        if (adepth == 1 && s[ap] == ',' && arg_count < MAX_MACRO_PARAMS-1) {
+                        if (adepth == 1 && s[ap] == ',') {
+                            if (arg_count >= MAX_MACRO_PARAMS - 1) {
+                                __write(2, "toyc: too many macro arguments\n", 30);
+                                __exit(1); }
                             arg_lens[arg_count] = (s + ap) - arg_starts[arg_count];
                             arg_count++;
                             arg_starts[arg_count] = s + ap + 1;
@@ -519,10 +583,12 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                         {
                             int ai;
                             for (ai = 0; ai < arg_count; ai++) {
-                                while (arg_lens[ai] > 0 && pp_ws(arg_starts[ai][0]))
-                                    { arg_starts[ai]++; arg_lens[ai]--; }
-                                while (arg_lens[ai] > 0 && pp_ws(arg_starts[ai][arg_lens[ai]-1]))
+                                const char *ap = arg_starts[ai];
+                                while (arg_lens[ai] > 0 && pp_ws(ap[0]))
+                                    { ap++; arg_lens[ai]--; }
+                                while (arg_lens[ai] > 0 && pp_ws(ap[arg_lens[ai]-1]))
                                     arg_lens[ai]--;
+                                arg_starts[ai] = ap;
                             }
                         }
                         /* 预展开所有参数（标准 C 语义：参数先展开再替换） */
@@ -533,6 +599,9 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                             for (ai = 0; ai < arg_count; ai++) {
                                 OutBuf ab = { 0, 0, 0 };
                                 /* 递归展开参数中的宏（depth+1，且当前宏已入栈保护） */
+                                if (expand_stack_depth >= MAX_EXPAND_STACK) {
+                                    __write(2, "toyc: macro expand stack overflow\n", 34);
+                                    __exit(1); }
                                 expand_stack[expand_stack_depth++] = fn;
                                 pp_buf_impl(arg_starts[ai], arg_lens[ai], &ab, depth + 1, NULL);
                                 expand_stack_depth--;
@@ -593,11 +662,15 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                                 for (vi = func_macros[fmi].param_count; vi < arg_count; vi++) {
                                                     if (vi > func_macros[fmi].param_count) out_putc(&temp, ',');
                                                     if (expanded_args[vi]) {
-                                                        int vj; for (vj = 0; vj < expanded_lens[vi]; vj++)
-                                                            out_putc(&temp, expanded_args[vi][vj]);
+                                                        char *ea = expanded_args[vi];
+                                                        int el = expanded_lens[vi];
+                                                        int vj; for (vj = 0; vj < el; vj++)
+                                                            out_putc(&temp, ea[vj]);
                                                     } else {
-                                                        int vj; for (vj = 0; vj < arg_lens[vi]; vj++)
-                                                            out_putc(&temp, (arg_starts[vi])[vj]);
+                                                        const char *as = arg_starts[vi];
+                                                        int al = arg_lens[vi];
+                                                        int vj; for (vj = 0; vj < al; vj++)
+                                                            out_putc(&temp, as[vj]);
                                                     }
                                                 }
                                                 ri = nri + 11; continue;
@@ -617,19 +690,64 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                     for (vi = func_macros[fmi].param_count; vi < arg_count; vi++) {
                                         if (vi > func_macros[fmi].param_count) out_putc(&temp, ',');
                                         if (expanded_args[vi]) {
-                                            int vj; for (vj = 0; vj < expanded_lens[vi]; vj++)
-                                                out_putc(&temp, expanded_args[vi][vj]);
+                                            char *ea = expanded_args[vi];
+                                            int el = expanded_lens[vi];
+                                            int vj; for (vj = 0; vj < el; vj++)
+                                                out_putc(&temp, ea[vj]);
                                         } else {
-                                            int vj; for (vj = 0; vj < arg_lens[vi]; vj++)
-                                                out_putc(&temp, (arg_starts[vi])[vj]);
+                                            const char *as = arg_starts[vi];
+                                            int al = arg_lens[vi];
+                                            int vj; for (vj = 0; vj < al; vj++)
+                                                out_putc(&temp, as[vj]);
                                         }
                                     }
                                     continue;
                                 }
-                                /* 跳过 #（stringify 运算符—TODO：支持真正字符串化） */
-                                if (rp[ri]=='#' && ri+1 < rl && rp[ri+1] != '#') { ri++; continue; }
-                                /* ## 通用粘贴（非 ,## 的情况）：跳过 ## */
-                                if (ri+1 < rl && rp[ri]=='#' && rp[ri+1]=='#') { ri += 2; continue; }
+                                /* # 字符串化：将参数原始文本转换为 "..." 字面量 */
+                                if (rp[ri]=='#' && ri+1 < rl && rp[ri+1] != '#') {
+                                    ri++;
+                                    while (ri < rl && (rp[ri] == ' ' || rp[ri] == '\t')) ri++;
+                                    if (ri < rl && pp_id(rp[ri])) {
+                                        int rs = ri;
+                                        while (ri < rl && pp_id(rp[ri])) ri++;
+                                        int pi;
+                                        for (pi = 0; pi < func_macros[fmi].param_count; pi++) {
+                                            const char *pn = func_macros[fmi].params[pi];
+                                            int jj;
+                                            for (jj = 0; jj < ri - rs; jj++) if (pn[jj] != rp[rs+jj]) goto str_skip;
+                                            if (pn[jj] != '\0') goto str_skip;
+                                            /* 字符串化：取原始参数文本（未预展开），修整收尾空白 */
+                                            {
+                                                const char *raw = arg_starts[pi];
+                                                int raw_len = arg_lens[pi];
+                                                while (raw_len > 0 && pp_ws(raw[0])) { raw++; raw_len--; }
+                                                while (raw_len > 0 && pp_ws(raw[raw_len-1])) raw_len--;
+                                                out_putc(&temp, '"');
+                                                int vi;
+                                                for (vi = 0; vi < raw_len; vi++) {
+                                                    if (raw[vi] == '\\') { out_putc(&temp, '\\'); out_putc(&temp, '\\'); }
+                                                    else if (raw[vi] == '"') { out_putc(&temp, '\\'); out_putc(&temp, '"'); }
+                                                    else out_putc(&temp, raw[vi]);
+                                                }
+                                                out_putc(&temp, '"');
+                                            }
+                                            break;
+                                            str_skip:;
+                                        }
+                                    }
+                                    continue;
+                                }
+                                /* ## 通用粘贴：移除两侧空白，连接 token */
+                                if (ri+1 < rl && rp[ri]=='#' && rp[ri+1]=='#') {
+                                    ri += 2;  /* 跳过 ## */
+                                    /* 跳过 ## 后的空白 */
+                                    while (ri < rl && (rp[ri] == ' ' || rp[ri] == '\t')) ri++;
+                                    /* 去掉 ## 前已写入 temp 的尾部空白 */
+                                    while (temp.len > 0 &&
+                                           (temp.data[temp.len-1] == ' ' || temp.data[temp.len-1] == '\t'))
+                                        temp.len--;
+                                    continue;
+                                }
                                 /* 检查参数名 */
                                 if (pp_id(rp[ri])) {
                                     int rs = ri;
@@ -642,11 +760,15 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                         for (jj = 0; jj < ri - rs; jj++) if (pn[jj] != rp[rs+jj]) goto pnm;
                                         if (pn[jj] != '\0') goto pnm;
                                         if (expanded_args[pi]) {
-                                            int vj; for (vj = 0; vj < expanded_lens[pi]; vj++)
-                                                out_putc(&temp, expanded_args[pi][vj]);
+                                            char *ea = expanded_args[pi];
+                                            int el = expanded_lens[pi];
+                                            int vj; for (vj = 0; vj < el; vj++)
+                                                out_putc(&temp, ea[vj]);
                                         } else {
-                                            int vj; for (vj = 0; vj < arg_lens[pi]; vj++)
-                                                out_putc(&temp, (arg_starts[pi])[vj]);
+                                            const char *as = arg_starts[pi];
+                                            int al = arg_lens[pi];
+                                            int vj; for (vj = 0; vj < al; vj++)
+                                                out_putc(&temp, as[vj]);
                                         }
                                         matched = 1;
                                         break;
@@ -661,11 +783,84 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                             }
                         }
                         /* 递归展开临时缓冲区中的宏 */
+                        int used_follow_on = 0;
                         if (temp.data && temp.len > 0) {
-                            /* 注意：temp 是替换后的结果，此时不需要再标记宏为展开中
-                             * （标记已在参数展开阶段完成）。直接递归展开 */
                             if (depth < 64) {
-                                pp_buf_impl(temp.data, temp.len, out, depth + 1, NULL);
+                                /* Bug 1 修复：把宏名压入 expand_stack，防止自引用宏反复展开。
+                                 * 参数展开阶段已入栈/出栈过，但替换文本重扫时宏名已不在栈上。 */
+                                OutBuf pp_result = { 0, 0, 0 };
+                                if (expand_stack_depth >= MAX_EXPAND_STACK) {
+                                    __write(2, "toyc: macro expand stack overflow\n", 34);
+                                    __exit(1); }
+                                expand_stack[expand_stack_depth++] = fn;
+                                pp_buf_impl(temp.data, temp.len, &pp_result, depth + 1, NULL);
+                                expand_stack_depth--;
+                                /* Bug 2 修复：## 粘贴产生宏名后，检查外层是否有 (args) 需合并展开。
+                                 * C 标准要求 paste 结果（例如 __syscall1）与后续的 (args) 一起重扫，
+                                 * 以允许函数宏二次展开。 */
+                                {
+                                    int ri = 0;
+                                    while (ri < pp_result.len && pp_ws(pp_result.data[ri])) ri++;
+                                    if (ri < pp_result.len && pp_id(pp_result.data[ri])) {
+                                        int rs = ri;
+                                        while (ri < pp_result.len && pp_id(pp_result.data[ri])) ri++;
+                                        int fmi2;
+                                        for (fmi2 = 0; fmi2 < func_macro_count; fmi2++) {
+                                            const char *fn2 = func_macros[fmi2].name;
+                                            int jn;
+                                            for (jn = 0; jn < ri - rs; jn++)
+                                                if (fn2[jn] != pp_result.data[rs + jn]) goto fnm2;
+                                            if (fn2[jn] != '\0') goto fnm2;
+                                            /* 匹配函数宏！检查外层紧跟 (args) */
+                                            if (ap + 1 < len && s[ap + 1] == '(' && !is_expanding(fn2)) {
+                                                int paren_start = ap + 1;
+                                                int paren_depth = 1;
+                                                int scan_pos = paren_start + 1;
+                                                while (paren_depth > 0 && scan_pos < len) {
+                                                    if (s[scan_pos] == '"') {
+                                                        scan_pos++;
+                                                        while (scan_pos < len && s[scan_pos] != '"') {
+                                                            if (s[scan_pos] == '\\' && scan_pos + 1 < len)
+                                                                scan_pos++;
+                                                            scan_pos++;
+                                                        }
+                                                        if (scan_pos < len) scan_pos++;
+                                                        continue;
+                                                    }
+                                                    if (s[scan_pos] == '(') paren_depth++;
+                                                    if (s[scan_pos] == ')') {
+                                                        paren_depth--;
+                                                        if (paren_depth == 0) break;
+                                                    }
+                                                    scan_pos++;
+                                                }
+                                                if (paren_depth == 0) {
+                                                    /* 合并：paste 结果 + (args) */
+                                                    OutBuf combined = { 0, 0, 0 };
+                                                    int ci;
+                                                    for (ci = 0; ci < pp_result.len; ci++)
+                                                        out_putc(&combined, pp_result.data[ci]);
+                                                    for (ci = paren_start; ci <= scan_pos; ci++)
+                                                        out_putc(&combined, s[ci]);
+                                                    /* 重扫组合后的宏调用 */
+                                                    pp_buf_impl(combined.data, combined.len,
+                                                                out, depth + 1, NULL);
+                                                    tlibc_free(combined.data);
+                                                    i = scan_pos + 1;
+                                                    used_follow_on = 1;
+                                                    break;
+                                                }
+                                            }
+                                            fnm2:;
+                                        }
+                                    }
+                                }
+                                if (!used_follow_on) {
+                                    int wi;
+                                    for (wi = 0; wi < pp_result.len; wi++)
+                                        out_putc(out, pp_result.data[wi]);
+                                }
+                                tlibc_free(pp_result.data);
                             } else {
                                 /* 深度超限：直接输出，不进一步展开 */
                                 int ti; for (ti = 0; ti < temp.len; ti++) out_putc(out, temp.data[ti]);
@@ -679,7 +874,9 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
                                 if (expanded_args[ai]) tlibc_free(expanded_args[ai]);
                             }
                         }
-                        i = ap + 1; /* 跳过 ) */
+                        if (!used_follow_on) {
+                            i = ap + 1; /* 跳过 ) */
+                        }
                     }
                     break;
                     fnm:;
@@ -690,7 +887,9 @@ static void pp_buf_impl(const char *s, int len, OutBuf *out, int depth, int *had
             { int idx; for (idx = start; idx < i; idx++) out_putc(out, s[idx]); }
             continue;
         }
-        if (s[i] != 13) { out_putc(out, s[i]); } i++;
+        if (s[i] != 13) { out_putc(out, s[i]); }
+        if (s[i] == '\n') pp_line++;
+        i++;
     }
 }
 
@@ -741,7 +940,276 @@ static char *strip_all_comments(const char *src, int len, int *out_len) {
     return out.data;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+ *  #if 常量表达式求值（precedence climbing）
+ *
+ *  支持：defined(MACRO)、整数常量（含宏展开）、字符常量、所有标准
+ *        运算符（+ - * / % & | ^ ~ ! && || == != < > <= >= << >>）、
+ *        () 分组。返回值 0 = 假，非 0 = 真。
+ * ═══════════════════════════════════════════════════════════════ */
+
+/* 词素类型 */
+#define IF_EOF     0
+#define IF_NUM     1
+#define IF_LPAREN  4
+#define IF_RPAREN  5
+#define IF_PLUS    6
+#define IF_MINUS   7
+#define IF_STAR    8
+#define IF_SLASH   9
+#define IF_PERCENT 10
+#define IF_AMPER   11
+#define IF_PIPE    12
+#define IF_CARET   13
+#define IF_TILDE   14
+#define IF_NOT     15
+#define IF_EQ      16
+#define IF_NE      17
+#define IF_LT      18
+#define IF_GT      19
+#define IF_LE      20
+#define IF_GE      21
+#define IF_LAND    22
+#define IF_LOR     23
+#define IF_SHL     24
+#define IF_SHR     25
+
+/* 运算符优先级表 */
+static int if_prec(int tok) {
+    switch (tok) {
+        case IF_LOR:  return 1;
+        case IF_LAND: return 2;
+        case IF_PIPE: return 3;
+        case IF_CARET: return 4;
+        case IF_AMPER: return 5;
+        case IF_EQ: case IF_NE: return 6;
+        case IF_LT: case IF_GT: case IF_LE: case IF_GE: return 7;
+        case IF_SHL: case IF_SHR: return 8;
+        case IF_PLUS: case IF_MINUS: return 9;
+        case IF_STAR: case IF_SLASH: case IF_PERCENT: return 10;
+        default: return -1;
+    }
+}
+
+/* 二元运算应用 */
+static long if_apply(long a, int op, long b) {
+    switch (op) {
+        case IF_PLUS:    return a + b;
+        case IF_MINUS:   return a - b;
+        case IF_STAR:    return a * b;
+        case IF_SLASH:   return b ? a / b : 0;
+        case IF_PERCENT: return b ? a % b : 0;
+        case IF_AMPER:   return a & b;
+        case IF_PIPE:    return a | b;
+        case IF_CARET:   return a ^ b;
+        case IF_LAND:    return (a && b) ? 1 : 0;
+        case IF_LOR:     return (a || b) ? 1 : 0;
+        case IF_EQ:      return (a == b) ? 1 : 0;
+        case IF_NE:      return (a != b) ? 1 : 0;
+        case IF_LT:      return (a < b) ? 1 : 0;
+        case IF_GT:      return (a > b) ? 1 : 0;
+        case IF_LE:      return (a <= b) ? 1 : 0;
+        case IF_GE:      return (a >= b) ? 1 : 0;
+        case IF_SHL:     return a << b;
+        case IF_SHR:     return a >> b;
+        default:         return 0;
+    }
+}
+
+static long if_parse_expr(const char *s, int len, int *pos, int depth, int min_prec);
+
+/* 读下一个词素。处理 defined() 和宏展开。返回类型，*ival 对 IF_NUM 有效。 */
+static int if_next_tok(const char *s, int len, int *pos, long *ival) {
+    while (*pos < len && pp_ws(s[*pos])) (*pos)++;
+    if (*pos >= len) return IF_EOF;
+    char c = s[*pos];
+
+    /* ── 数字常量 ── */
+    if (c >= '0' && c <= '9') {
+        *ival = 0;
+        if (c == '0' && *pos + 1 < len && (s[*pos+1] == 'x' || s[*pos+1] == 'X')) {
+            *pos += 2;
+            while (*pos < len) {
+                char c2 = s[*pos];
+                if (c2 >= '0' && c2 <= '9') { *ival = *ival * 16 + (c2 - '0'); (*pos)++; }
+                else if (c2 >= 'a' && c2 <= 'f') { *ival = *ival * 16 + (c2 - 'a' + 10); (*pos)++; }
+                else if (c2 >= 'A' && c2 <= 'F') { *ival = *ival * 16 + (c2 - 'A' + 10); (*pos)++; }
+                else break;
+            }
+        } else if (c == '0' && *pos + 1 < len && s[*pos+1] >= '0' && s[*pos+1] <= '7') {
+            (*pos)++;
+            while (*pos < len && s[*pos] >= '0' && s[*pos] <= '7')
+                { *ival = *ival * 8 + (s[*pos] - '0'); (*pos)++; }
+        } else {
+            *ival = c - '0'; (*pos)++;
+            while (*pos < len && s[*pos] >= '0' && s[*pos] <= '9')
+                { *ival = *ival * 10 + (s[*pos] - '0'); (*pos)++; }
+        }
+        while (*pos < len) {
+            char c2 = s[*pos];
+            if (c2 == 'u' || c2 == 'U' || c2 == 'l' || c2 == 'L') (*pos)++;
+            else break;
+        }
+        return IF_NUM;
+    }
+
+    /* ── 字符常量 'x' ── */
+    if (c == '\'') {
+        *ival = 0; (*pos)++;
+        if (*pos < len && s[*pos] == '\\') {
+            (*pos)++;
+            if (*pos < len) {
+                switch (s[*pos]) {
+                    case 'n': *ival = 10; break;
+                    case 't': *ival = 9; break;
+                    case 'r': *ival = 13; break;
+                    case '0': *ival = 0; break;
+                    case '\\': *ival = '\\'; break;
+                    case '\'': *ival = '\''; break;
+                    case '"': *ival = '"'; break;
+                    default: *ival = s[*pos]; break;
+                }
+                (*pos)++;
+            }
+        } else if (*pos < len) { *ival = s[*pos]; (*pos)++; }
+        if (*pos < len && s[*pos] == '\'') (*pos)++;
+        return IF_NUM;
+    }
+
+    /* ── 标识符：defined() 或宏展开 ── */
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_') {
+        int start = *pos;
+        while (*pos < len && pp_id(s[*pos])) (*pos)++;
+        int idlen = *pos - start;
+
+        /* defined 关键字 — 不展开宏名 */
+        if (idlen == 7 &&
+            s[start]=='d' && s[start+1]=='e' && s[start+2]=='f' &&
+            s[start+3]=='i' && s[start+4]=='n' && s[start+5]=='e' && s[start+6]=='d') {
+            while (*pos < len && pp_ws(s[*pos])) (*pos)++;
+            int paren = (*pos < len && s[*pos] == '(');
+            if (paren) { (*pos)++; while (*pos < len && pp_ws(s[*pos])) (*pos)++; }
+            *ival = 0;
+            if (*pos < len && pp_id(s[*pos])) {
+                int ns = *pos;
+                while (*pos < len && pp_id(s[*pos])) (*pos)++;
+                int nl = *pos - ns;
+                { char mn[256]; int ci;
+                  for (ci = 0; ci < nl && ci < 255; ci++) mn[ci] = s[ns+ci];
+                  mn[nl] = '\0'; *ival = macro_defined(mn) ? 1 : 0; }
+            }
+            if (paren) {
+                while (*pos < len && pp_ws(s[*pos])) (*pos)++;
+                if (*pos < len && s[*pos] == ')') (*pos)++;
+            }
+            return IF_NUM;
+        }
+
+        /* 对象宏展开 */
+        {
+            int mi;
+            for (mi = 0; mi < macro_count; mi++) {
+                const char *mn = macros[mi].name;
+                int j;
+                for (j = 0; j < idlen; j++) if (mn[j] != s[start+j]) goto ifid_nom;
+                if (mn[j] != '\0') goto ifid_nom;
+                if (macros[mi].value && macros[mi].value_len > 0) {
+                    int vpos = 0;
+                    *ival = if_parse_expr(macros[mi].value, macros[mi].value_len, &vpos, 1, 1);
+                } else { *ival = 0; }
+                return IF_NUM;
+                ifid_nom:;
+            }
+        }
+        /* 未定义标识符 → 0 */
+        *ival = 0;
+        return IF_NUM;
+    }
+
+    /* ── 运算符和标点 ── */
+    (*pos)++;
+    switch (c) {
+        case '(': return IF_LPAREN;
+        case ')': return IF_RPAREN;
+        case '+': return IF_PLUS;
+        case '-': return IF_MINUS;
+        case '*': return IF_STAR;
+        case '/': return IF_SLASH;
+        case '%': return IF_PERCENT;
+        case '&':
+            if (*pos < len && s[*pos] == '&') { (*pos)++; return IF_LAND; }
+            return IF_AMPER;
+        case '|':
+            if (*pos < len && s[*pos] == '|') { (*pos)++; return IF_LOR; }
+            return IF_PIPE;
+        case '^': return IF_CARET;
+        case '~': return IF_TILDE;
+        case '!':
+            if (*pos < len && s[*pos] == '=') { (*pos)++; return IF_NE; }
+            return IF_NOT;
+        case '=':
+            if (*pos < len && s[*pos] == '=') { (*pos)++; return IF_EQ; }
+            return IF_EOF;
+        case '<':
+            if (*pos < len && s[*pos] == '<') { (*pos)++; return IF_SHL; }
+            if (*pos < len && s[*pos] == '=') { (*pos)++; return IF_LE; }
+            return IF_LT;
+        case '>':
+            if (*pos < len && s[*pos] == '>') { (*pos)++; return IF_SHR; }
+            if (*pos < len && s[*pos] == '=') { (*pos)++; return IF_GE; }
+            return IF_GT;
+        default: return IF_EOF;
+    }
+}
+
+/* 主表达式：数字、(expr)、一元运算 */
+static long if_parse_primary(const char *s, int len, int *pos, int depth) {
+    if (depth > 64) return 0;
+    long ival = 0;
+    int save = *pos;
+    int tok = if_next_tok(s, len, pos, &ival);
+    switch (tok) {
+        case IF_NUM: return ival;
+        case IF_LPAREN: {
+            long val = if_parse_expr(s, len, pos, depth, 1);
+            int save2 = *pos;
+            long tmp;
+            if (if_next_tok(s, len, pos, &tmp) != IF_RPAREN) *pos = save2;
+            return val;
+        }
+        case IF_PLUS:  return if_parse_primary(s, len, pos, depth);
+        case IF_MINUS: return -if_parse_primary(s, len, pos, depth);
+        case IF_TILDE: return ~if_parse_primary(s, len, pos, depth);
+        case IF_NOT:   return if_parse_primary(s, len, pos, depth) ? 0 : 1;
+        default: *pos = save; return 0;
+    }
+}
+
+/* 表达式求值（precedence climbing 算法） */
+static long if_parse_expr(const char *s, int len, int *pos, int depth, int min_prec) {
+    if (depth > 64) return 0;
+    long left = if_parse_primary(s, len, pos, depth);
+    while (1) {
+        int save = *pos;
+        long ival;
+        int tok = if_next_tok(s, len, pos, &ival);
+        int prec = if_prec(tok);
+        if (prec < min_prec) { *pos = save; return left; }
+        long right = if_parse_expr(s, len, pos, depth, prec + 1);
+        left = if_apply(left, tok, right);
+    }
+}
+
+/* 公开入口：返回 0 = 假，1 = 真 */
+static int if_eval(const char *s, int len) {
+    if (!s || len <= 0) return 0;
+    int pos = 0;
+    long val = if_parse_expr(s, len, &pos, 0, 1);
+    return (val != 0) ? 1 : 0;
+}
+
 char *preprocess(const char *src, int len, const char *fname, int *out_len) {
+    pp_had_error = 0;
     current_source_dir[0] = '\0';
     inc_path_added_source_dir = 0;
     if (fname) {
@@ -755,13 +1223,17 @@ char *preprocess(const char *src, int len, const char *fname, int *out_len) {
     } else {
         add_macro("__FILE__", "\"<unknown>\"", 11);
     }
-    /* __LINE__ 设为 0（行号跟踪复杂，先填占位值，不影响编译） */
-    add_macro("__LINE__", "0", 1);
+    /* __LINE__ 在 pp_buf_impl 中动态展开，不在此处注册 */
     int clean_len;
     char *clean = strip_all_comments(src, len, &clean_len);
     OutBuf out = { 0, 0, 0 };
     pp_buf(clean, clean_len, &out, 0);
     tlibc_free(clean);
+    if (pp_had_error) {
+        tlibc_free(out.data);
+        *out_len = 0;
+        return NULL;
+    }
     out_putc(&out, '\0');
     *out_len = out.len > 0 ? out.len - 1 : 0;
     return out.data;

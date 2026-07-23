@@ -1,8 +1,15 @@
-# tcc — 完整 C 编译器（独立运行时，不依赖 tlibc.a）
-tcc: tcc_rt tcc_rt_start lex parse preproc cgen cgen_expr cgen_asm elf_write
+# toyc — 完整 C 编译器（独立运行时，不依赖 tlibc.a）
+# 替换旧 tcc。源自 ToyCCompiler 项目。
+toyc: toyc_rt toyc_rt_start lex parse preproc cgen cgen_expr cgen_asm cgen_float_hack elf_write
 
-# tpp — 独立预处理器（独立运行时，不依赖 tlibc.a）
-tpp: tcc_rt tcc_rt_start preproc
+# toypp — 独立预处理器（独立运行时，不依赖 tlibc.a）
+toypp: toyc_rt toyc_rt_start preproc
 
-# tas — x86_64 汇编器（独立运行时，不依赖 tlibc.a）
-tas: tcc_rt tcc_rt_start elf_write
+# toyas — x86_64 汇编器（独立运行时，不依赖 tlibc.a）
+toyas: toyc_rt toyc_rt_start elf_write
+
+# toyld — x86_64 静态链接器（独立运行时，不依赖 tlibc.a）
+toyld: toyc_rt toyc_rt_start
+
+# toyar — 归档器（独立运行时，不依赖 tlibc.a）
+toyar: toyc_rt toyc_rt_start

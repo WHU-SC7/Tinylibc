@@ -4,13 +4,13 @@
  */
 
 /*
- * tas.c — Tinylibc x86_64 汇编器
+ * toyas.c — ToyC x86_64 汇编器
  *
  * 机制：将 AT&T 语法 x86_64 汇编源文件直接编码为 ELF64 .o 文件。
  *       按行解析，支持项目 .S 文件所需的 13 种指令和 5 种伪指令。
  *
  * 用法：
- *   tas input.S [-o output.o]
+ *   toyas input.S [-o output.o]
  *
  * 索引：
  *   main               入口：参数解析、读文件、调用汇编函数
@@ -40,41 +40,68 @@ int elf_rel_count;
 #define REG_SIZE_MASK 0x30
 #define REG_IDX_MASK  0x0F
 
-typedef struct {
-    const char *name;
-    int code;       /* id | size_flags */
-} RegEntry;
-
-static const RegEntry reg_table[] = {
-    /* 64-bit */
-    {"rax",0|REG_SIZE64},{"rcx",1|REG_SIZE64},{"rdx",2|REG_SIZE64},
-    {"rbx",3|REG_SIZE64},{"rsp",4|REG_SIZE64},{"rbp",5|REG_SIZE64},
-    {"rsi",6|REG_SIZE64},{"rdi",7|REG_SIZE64},
-    {"r8", 8|REG_SIZE64},{"r9", 9|REG_SIZE64},{"r10",10|REG_SIZE64},
-    {"r11",11|REG_SIZE64},{"r12",12|REG_SIZE64},{"r13",13|REG_SIZE64},
-    {"r14",14|REG_SIZE64},{"r15",15|REG_SIZE64},
-    /* 32-bit */
-    {"eax",0|REG_SIZE32},{"ecx",1|REG_SIZE32},{"edx",2|REG_SIZE32},
-    {"ebx",3|REG_SIZE32},{"esp",4|REG_SIZE32},{"ebp",5|REG_SIZE32},
-    {"esi",6|REG_SIZE32},{"edi",7|REG_SIZE32},
-    {"r8d",8|REG_SIZE32},{"r9d",9|REG_SIZE32},{"r10d",10|REG_SIZE32},
-    {"r11d",11|REG_SIZE32},{"r12d",12|REG_SIZE32},{"r13d",13|REG_SIZE32},
-    {"r14d",14|REG_SIZE32},{"r15d",15|REG_SIZE32},
-    /* 8-bit */
-    {"al", 0|REG_SIZE8 },{"cl", 1|REG_SIZE8 },{"dl", 2|REG_SIZE8 },
-    {"bl", 3|REG_SIZE8 },{"spl",4|REG_SIZE8 },{"bpl",5|REG_SIZE8 },
-    {"sil",6|REG_SIZE8 },{"dil",7|REG_SIZE8 },
-    {"r10b",10|REG_SIZE8},{"r11b",11|REG_SIZE8},
-    {"r12b",12|REG_SIZE8},{"r13b",13|REG_SIZE8},
-    {"r14b",14|REG_SIZE8},{"r15b",15|REG_SIZE8},
-    {NULL,0}
-};
+/* reg_table 已内联到 find_reg 中，避免 toyc 的 struct 数组 sizeof bug */
 
 static int find_reg(const char *name) {
-    int i;
-    for (i = 0; reg_table[i].name; i++)
-        if (strcmp(reg_table[i].name, name) == 0)
-            return reg_table[i].code;
+    if (!name || !name[0]) return -1;
+    /* 64-bit */
+    if (name[0]=='r') {
+        if (name[1]=='a'&&name[2]=='x'&&name[3]==0) return 0|REG_SIZE64;
+        if (name[1]=='b'&&name[2]=='x'&&name[3]==0) return 3|REG_SIZE64;
+        if (name[1]=='c'&&name[2]=='x'&&name[3]==0) return 1|REG_SIZE64;
+        if (name[1]=='d'&&name[2]=='x'&&name[3]==0) return 2|REG_SIZE64;
+        if (name[1]=='s'&&name[2]=='p'&&name[3]==0) return 4|REG_SIZE64;
+        if (name[1]=='b'&&name[2]=='p'&&name[3]==0) return 5|REG_SIZE64;
+        if (name[1]=='s'&&name[2]=='i'&&name[3]==0) return 6|REG_SIZE64;
+        if (name[1]=='d'&&name[2]=='i'&&name[3]==0) return 7|REG_SIZE64;
+        if (name[1]=='8'&&name[2]==0)  return 8|REG_SIZE64;
+        if (name[1]=='9'&&name[2]==0)  return 9|REG_SIZE64;
+        if (name[1]=='1'&&name[2]=='0'&&name[3]==0) return 10|REG_SIZE64;
+        if (name[1]=='1'&&name[2]=='1'&&name[3]==0) return 11|REG_SIZE64;
+        if (name[1]=='1'&&name[2]=='2'&&name[3]==0) return 12|REG_SIZE64;
+        if (name[1]=='1'&&name[2]=='3'&&name[3]==0) return 13|REG_SIZE64;
+        if (name[1]=='1'&&name[2]=='4'&&name[3]==0) return 14|REG_SIZE64;
+        if (name[1]=='1'&&name[2]=='5'&&name[3]==0) return 15|REG_SIZE64;
+    }
+    /* 32-bit: e* */
+    if (name[0]=='e') {
+        if (name[1]=='a'&&name[2]=='x'&&name[3]==0) return 0|REG_SIZE32;
+        if (name[1]=='b'&&name[2]=='x'&&name[3]==0) return 3|REG_SIZE32;
+        if (name[1]=='c'&&name[2]=='x'&&name[3]==0) return 1|REG_SIZE32;
+        if (name[1]=='d'&&name[2]=='x'&&name[3]==0) return 2|REG_SIZE32;
+        if (name[1]=='s'&&name[2]=='p'&&name[3]==0) return 4|REG_SIZE32;
+        if (name[1]=='b'&&name[2]=='p'&&name[3]==0) return 5|REG_SIZE32;
+        if (name[1]=='s'&&name[2]=='i'&&name[3]==0) return 6|REG_SIZE32;
+        if (name[1]=='d'&&name[2]=='i'&&name[3]==0) return 7|REG_SIZE32;
+    }
+    /* 32-bit: rNNd */
+    if (name[0]=='r'&&name[3]=='d') {
+        if (name[1]=='8'&&name[2]==0) return 8|REG_SIZE32;
+        if (name[1]=='9'&&name[2]==0) return 9|REG_SIZE32;
+        if (name[1]=='1'&&name[2]=='0'&&name[4]==0) return 10|REG_SIZE32;
+        if (name[1]=='1'&&name[2]=='1'&&name[4]==0) return 11|REG_SIZE32;
+        if (name[1]=='1'&&name[2]=='2'&&name[4]==0) return 12|REG_SIZE32;
+        if (name[1]=='1'&&name[2]=='3'&&name[4]==0) return 13|REG_SIZE32;
+        if (name[1]=='1'&&name[2]=='4'&&name[4]==0) return 14|REG_SIZE32;
+        if (name[1]=='1'&&name[2]=='5'&&name[4]==0) return 15|REG_SIZE32;
+    }
+    /* 8-bit */
+    if (name[0]=='a'&&name[1]=='l'&&name[2]==0) return 0|REG_SIZE8;
+    if (name[0]=='c'&&name[1]=='l'&&name[2]==0) return 1|REG_SIZE8;
+    if (name[0]=='d'&&name[1]=='l'&&name[2]==0) return 2|REG_SIZE8;
+    if (name[0]=='b'&&name[1]=='l'&&name[2]==0) return 3|REG_SIZE8;
+    if (name[0]=='s'&&name[1]=='p'&&name[2]=='l'&&name[3]==0) return 4|REG_SIZE8;
+    if (name[0]=='b'&&name[1]=='p'&&name[2]=='l'&&name[3]==0) return 5|REG_SIZE8;
+    if (name[0]=='s'&&name[1]=='i'&&name[2]=='l'&&name[3]==0) return 6|REG_SIZE8;
+    if (name[0]=='d'&&name[1]=='i'&&name[2]=='l'&&name[3]==0) return 7|REG_SIZE8;
+    if (name[0]=='r'&&name[3]=='b') {
+        if (name[1]=='1'&&name[2]=='0'&&name[4]==0) return 10|REG_SIZE8;
+        if (name[1]=='1'&&name[2]=='1'&&name[4]==0) return 11|REG_SIZE8;
+        if (name[1]=='1'&&name[2]=='2'&&name[4]==0) return 12|REG_SIZE8;
+        if (name[1]=='1'&&name[2]=='3'&&name[4]==0) return 13|REG_SIZE8;
+        if (name[1]=='1'&&name[2]=='4'&&name[4]==0) return 14|REG_SIZE8;
+        if (name[1]=='1'&&name[2]=='5'&&name[4]==0) return 15|REG_SIZE8;
+    }
     return -1;
 }
 
@@ -108,38 +135,41 @@ typedef struct {
     int op_ext;     /* ModRM reg/opcode 扩展 */
 } InstrDef;
 
-static const InstrDef instrs[] = {
-    {"mov",    F_RR,  {0x89},1,0},
-    {"mov",    F_IR,  {0xC7},1,0},   /* C7 /0 imm32 */
-    {"mov",    F_IR8, {0xB0},1,0},   /* B0+reg imm8 (no ModRM) */
-    {"mov",    F_MR,  {0x8B},1,0},   /* 8B /r: reg←mem */
-    {"mov",    F_RM,  {0x89},1,0},   /* 89 /r: mem←reg */
-    {"lea",    F_LEA_MR, {0x8D},1,0},
-    {"lea",    F_LEA_MI, {0x8D},1,0},
-    {"call",   F_CALL_DIR, {0xE8},1,0},
-    {"call",   F_CALL_IND, {0xFF},1,2},  /* FF /2 */
-    {"syscall",F_NONE, {0x0F,0x05},2,0},
-    {"xor",    F_RR,  {0x31},1,0},
-    {"and",    F_IR,  {0x83},1,4},   /* 83 /4 ib (sign-extended imm8) */
-    {"sub",    F_IR,  {0x83},1,5},   /* 83 /5 ib */
-    {"test",   F_RR,  {0x85},1,0},
-    {"jnz",    F_JCC8,{0x75},1,0},   /* 75 rel8 */
-    {"jne",    F_JCC8,{0x75},1,0},
-    {"je",     F_JCC8,{0x74},1,0},
-    {"jmp",    F_JCC8,{0xEB},1,0},
-    {"pop",    F_POP, {0x58},1,0},   /* 58+reg */
-    {"push",   F_PUSH,{0x50},1,0},   /* 50+reg */
-    {"hlt",    F_NONE,{0xF4},1,0},
-    {"ret",    F_NONE,{0xC3},1,0},
-    {"nop",    F_NONE,{0x90},1,0},
-    {NULL,0,{0},0,0}
+/* 指令定义 — 用 int 常量编码所有字段，避免 toyc 对 struct 数据布局的 bug */
+/* 每个指令用 5 个 int: { opcode0, opcode1, oplen, op_ext, fmt } */
+#define INSTR_ENCODE(o0,o1,l,ex,f) (o0),(o1),(l),(ex),(f)
+/* 指令编码表（int 平面数组，不含 name 指针字段） */
+static const int instr_enc[] = {
+    INSTR_ENCODE(0x89,0,1,0,F_RR),      /* mov F_RR */
+    INSTR_ENCODE(0xC7,0,1,0,F_IR),      /* mov F_IR */
+    INSTR_ENCODE(0xB0,0,1,0,F_IR8),     /* mov F_IR8 */
+    INSTR_ENCODE(0x8B,0,1,0,F_MR),      /* mov F_MR */
+    INSTR_ENCODE(0x89,0,1,0,F_RM),      /* mov F_RM */
+    INSTR_ENCODE(0x8D,0,1,0,F_LEA_MR),  /* lea F_LEA_MR */
+    INSTR_ENCODE(0x8D,0,1,0,F_LEA_MI),  /* lea F_LEA_MI */
+    INSTR_ENCODE(0xE8,0,1,0,F_CALL_DIR),/* call F_CALL_DIR */
+    INSTR_ENCODE(0xFF,0,1,2,F_CALL_IND),/* call F_CALL_IND */
+    INSTR_ENCODE(0x0F,0x05,2,0,F_NONE), /* syscall */
+    INSTR_ENCODE(0x31,0,1,0,F_RR),      /* xor F_RR */
+    INSTR_ENCODE(0x83,0,1,4,F_IR),      /* and F_IR (op_ext=4) */
+    INSTR_ENCODE(0x83,0,1,5,F_IR),      /* sub F_IR (op_ext=5) */
+    INSTR_ENCODE(0x85,0,1,0,F_RR),      /* test F_RR */
+    INSTR_ENCODE(0x75,0,1,0,F_JCC8),    /* jnz/jne F_JCC8 */
+    INSTR_ENCODE(0x74,0,1,0,F_JCC8),    /* je F_JCC8 */
+    INSTR_ENCODE(0xEB,0,1,0,F_JCC8),    /* jmp F_JCC8 */
+    INSTR_ENCODE(0x58,0,1,0,F_POP),     /* pop F_POP */
+    INSTR_ENCODE(0x50,0,1,0,F_PUSH),    /* push F_PUSH */
+    INSTR_ENCODE(0xF4,0,1,0,F_NONE),    /* hlt */
+    INSTR_ENCODE(0xC3,0,1,0,F_NONE),    /* ret */
+    INSTR_ENCODE(0x90,0,1,0,F_NONE),    /* nop */
 };
 
 /* ─── 局部数字标号 ─── */
 
-#define MAX_LOCAL_LABELS 256
+#define MAX_LOCAL_LABELS 2048
 static int local_offsets[MAX_LOCAL_LABELS];           /* -1 = 未定义 */
-static int local_fixups[MAX_LOCAL_LABELS][32];       /* 待回填的偏移列表 */
+static int local_fixups[MAX_LOCAL_LABELS * 32];       /* 待回填的偏移列表（1D，避免 toyc 2D 数组 stride bug） */
+#define LOCAL_FIXUP(i,j) local_fixups[(i) * 32 + (j)]
 static int local_nfixups[MAX_LOCAL_LABELS];
 
 static void reset_locals(void) {
@@ -152,8 +182,9 @@ static void reset_locals(void) {
 
 /* ─── 符号管理 ─── */
 
-#define TAS_MAX_SYMS 256
-static char sym_names[TAS_MAX_SYMS][128];  /* 持久化符号名 */
+#define TOYAS_MAX_SYMS 2048
+static char sym_names[TOYAS_MAX_SYMS * 128];  /* 持久化符号名（1D，避免 toyc 2D 数组 stride bug） */
+#define SYM_NAME(i) (sym_names + (i) * 128)
 
 static int find_sym(const char *name) {
     int i;
@@ -164,26 +195,30 @@ static int find_sym(const char *name) {
 }
 
 static int add_sym(const char *name, int offset, int size,
-                   int is_global, int is_func) {
-    if (elf_sym_count >= TAS_MAX_SYMS) return -1;
+                   int is_global, int is_func, int shndx) {
+    if (elf_sym_count >= TOYAS_MAX_SYMS) {
+        __write(2, "toyas: too many symbols\n", 22);
+        __exit(1); }
     ElfWriteSym *s = &elf_syms[elf_sym_count];
     /* 持久化复制符号名 */
     int ni = 0;
-    while (name[ni] && ni < 127) { sym_names[elf_sym_count][ni] = name[ni]; ni++; }
-    sym_names[elf_sym_count][ni] = '\0';
-    s->name = sym_names[elf_sym_count];
+    while (name[ni] && ni < 127) { SYM_NAME(elf_sym_count)[ni] = name[ni]; ni++; }
+    SYM_NAME(elf_sym_count)[ni] = '\0';
+    s->name = SYM_NAME(elf_sym_count);
     s->offset = offset;
     s->size = size;
     s->is_global = is_global;
     s->is_func = is_func;
-    s->shndx = 1;  /* .text */
+    s->shndx = shndx;
     s->sym_idx = -1;
     elf_sym_count++;
     return elf_sym_count - 1;
 }
 
-static void add_rel(int offset, int sym_idx, int type, int addend) {
-    if (elf_rel_count >= ELF_MAX_RELS) return;
+static void add_rel(int offset, int sym_idx, int type, Elf64_Sxword addend) {
+    if (elf_rel_count >= ELF_MAX_RELS) {
+        __write(2, "toyas: too many relocations\n", 26);
+        __exit(1); }
     Elf64_Rela *r = &elf_rels[elf_rel_count++];
     r->r_offset = offset;
     r->r_info = ELF64_R_INFO(sym_idx + 1, type);
@@ -194,7 +229,7 @@ static void add_rel(int offset, int sym_idx, int type, int addend) {
 
 static void e1(int b) {
     if (elf_code_size >= ELF_CODE_BUF_SIZE) {
-        __write(2, "tas: code buffer overflow\n", 26);
+        __write(2, "toyas: code buffer overflow\n", 26);
         __exit(1);
     }
     elf_code_buf[elf_code_size++] = b & 0xFF;
@@ -243,7 +278,7 @@ typedef struct {
     int reg;          /* 寄存器编号+大小 */
     int reg2;         /* SIB index 寄存器 */
     int scale;        /* SIB scale */
-    long long imm;    /* 立即数/偏移 */
+    long imm;    /* 立即数/偏移 */
     const char *label;/* 标号名 (call label) */
 } Operand;
 
@@ -276,6 +311,43 @@ static int tok_eq(const char *t, int len, const char *s) {
     return i == len && *s == '\0';
 }
 
+/* 查找匹配的指令定义 — 返回 instr_enc 数组的索引（-1=未找到） */
+static int find_instr_def(const char *mnem, int mlen, AsmFmt want_fmt) {
+    if (!mnem) return -1;
+    if (tok_eq(mnem, mlen, "mov")) {
+        if (want_fmt == F_RR)   return 0;
+        if (want_fmt == F_IR)   return 1;
+        if (want_fmt == F_IR8)  return 2;
+        if (want_fmt == F_MR)   return 3;
+        if (want_fmt == F_RM)   return 4;
+        return -1;
+    }
+    if (tok_eq(mnem, mlen, "lea")) {
+        if (want_fmt == F_LEA_MR) return 5;
+        if (want_fmt == F_LEA_MI) return 6;
+        return -1;
+    }
+    if (tok_eq(mnem, mlen, "call")) {
+        if (want_fmt == F_CALL_DIR) return 7;
+        if (want_fmt == F_CALL_IND) return 8;
+        return -1;
+    }
+    if (tok_eq(mnem, mlen, "syscall") && want_fmt == F_NONE) return 9;
+    if (tok_eq(mnem, mlen, "xor") && want_fmt == F_RR) return 10;
+    if (tok_eq(mnem, mlen, "and") && want_fmt == F_IR) return 11;
+    if (tok_eq(mnem, mlen, "sub") && want_fmt == F_IR) return 12;
+    if (tok_eq(mnem, mlen, "test") && want_fmt == F_RR) return 13;
+    if ((tok_eq(mnem, mlen, "jnz")||tok_eq(mnem, mlen, "jne")) && want_fmt == F_JCC8) return 14;
+    if (tok_eq(mnem, mlen, "je") && want_fmt == F_JCC8) return 15;
+    if (tok_eq(mnem, mlen, "jmp") && want_fmt == F_JCC8) return 16;
+    if (tok_eq(mnem, mlen, "pop") && want_fmt == F_POP) return 17;
+    if (tok_eq(mnem, mlen, "push") && want_fmt == F_PUSH) return 18;
+    if (tok_eq(mnem, mlen, "hlt") && want_fmt == F_NONE) return 19;
+    if (tok_eq(mnem, mlen, "ret") && want_fmt == F_NONE) return 20;
+    if (tok_eq(mnem, mlen, "nop") && want_fmt == F_NONE) return 21;
+    return -1;
+}
+
 /* 解析一个操作数 */
 static int parse_operand(const char *line, Operand *op, const char **endp) {
     int tlen;
@@ -287,7 +359,7 @@ static int parse_operand(const char *line, Operand *op, const char **endp) {
     /* 数字后紧跟 ( 表示内存引用: disp(%reg) */
     if ((*t >= '0' && *t <= '9') || *t == '-') {
         /* 解析数字 */
-        long long val = 0;
+        long val = 0;
         const char *ns = t;
         int neg = 0;
         if (*ns == '-') { neg = 1; ns++; }
@@ -389,7 +461,7 @@ static int parse_operand(const char *line, Operand *op, const char **endp) {
         const char *ns = t + 1;
         int neg = 0;
         if (*ns == '-') { neg = 1; ns++; }
-        long long val = 0;
+        long val = 0;
         if (ns[0] == '0' && (ns[1] == 'x' || ns[1] == 'X')) {
             ns += 2;
             while (*ns >= '0' && *ns <= '9')
@@ -415,7 +487,7 @@ static int parse_operand(const char *line, Operand *op, const char **endp) {
         const char *p = line;
         while (p < t && (*p == ' ' || *p == '\t')) p++;
         int has_disp = 0;
-        long long disp = 0;
+        long disp = 0;
         if (p < t) {
             /* 有偏移 */
             has_disp = 1;
@@ -501,7 +573,7 @@ static int parse_operand(const char *line, Operand *op, const char **endp) {
     }
 
     if ((*t >= '0' && *t <= '9') || *t == '-') {
-        long long val = 0;
+        long val = 0;
         const char *ns = t;
         int neg = 0;
         if (*ns == '-') { neg = 1; ns++; }
@@ -518,58 +590,47 @@ static int parse_operand(const char *line, Operand *op, const char **endp) {
 
 /* ─── 指令编码 ─── */
 
-static const InstrDef *find_instr(const char *name) {
-    int i;
-    for (i = 0; instrs[i].name; i++)
-        if (tok_eq(name, 100, instrs[i].name))
-            return &instrs[i];
-    return NULL;
-}
-
-static int instr_match(const InstrDef *def, AsmFmt want) {
-    return def && def->fmt == want;
-}
-
 /* 编码并发射一条指令。
- * fmt: 指令格式
+ * idx: instr_enc 数组中的索引
  * ops[0..1]: 操作数 (call label 使用 ops[0].label)
  * local_label: JCC 目标数字标号 (0=无, >0=前向引用, <0=后向引用)
  * 返回 0=成功, -1=失败 */
-static int encode_instr(const InstrDef *def, Operand *op0, Operand *op1,
+static int encode_instr(int idx, Operand *op0, Operand *op1,
                         const char *call_label, int local_label) {
+    /* 从平面数组提取指令编码 */
+    int ocode0 = instr_enc[idx * 5 + 0];
+    int ocode1 = instr_enc[idx * 5 + 1];
+    int op_len = instr_enc[idx * 5 + 2];
+    int ext_val = instr_enc[idx * 5 + 3];
+    int enc_fmt = instr_enc[idx * 5 + 4];
     /* 提取寄存器编号（去除大小标志） */
     int r0 = (op0 && op0->reg >= 0) ? (op0->reg & REG_IDX_MASK) : 0;
     int r1 = (op1 && op1->reg >= 0) ? (op1->reg & REG_IDX_MASK) : 0;
     int sz0 = (op0 && op0->reg >= 0) ? (op0->reg & REG_SIZE_MASK) : REG_SIZE64;
     int sz1 = (op1 && op1->reg >= 0) ? (op1->reg & REG_SIZE_MASK) : REG_SIZE64;
 
-    switch (def->fmt) {
+    switch (enc_fmt) {
     case F_NONE:
-        /* 直接发射操作码 */
-        { int i; for (i = 0; i < def->oplen; i++) e1(def->opcode[i]); }
+        { int i; for (i = 0; i < op_len; i++) e1(i == 0 ? ocode0 : ocode1); }
         return 0;
 
     case F_RR:
-        /* mov/xor/test reg,reg  →  REX.W(if 64-bit) + opcode /r */
         {
             int use_w = ((r0 >= 0 && (sz0 == REG_SIZE64)) ||
                          (r1 >= 0 && (sz1 == REG_SIZE64)));
             emit_rex_rr(use_w ? 1 : 0, r0, r1);
         }
-        e1(def->opcode[0]);
-        e1(make_modrm(3, r0, r1));  /* mod=11(reg), reg=src, r/m=dst */
+        e1(ocode0);
+        e1(make_modrm(3, r0, r1));
         return 0;
 
     case F_IR:
-        /* mov/and/sub $imm, %reg  →  REX.W + opcode /ext + ModRM(11,ext,reg) + imm */
         {
-            int ext = def->op_ext;
-            emit_rex_rm(1, ext, r1);
-            e1(def->opcode[0]);
-            e1(make_modrm(3, ext, r1));
-            long long v = op0 ? op0->imm : 0;
-            /* and/sub 使用 ib (sign-extended imm8) */
-            if (def->opcode[0] == 0x83) {
+            emit_rex_rm(1, ext_val, r1);
+            e1(ocode0);
+            e1(make_modrm(3, ext_val, r1));
+            long v = op0 ? op0->imm : 0;
+            if (ocode0 == 0x83) {
                 e1(v & 0xFF);
             } else {
                 e4((int)v);
@@ -578,31 +639,25 @@ static int encode_instr(const InstrDef *def, Operand *op0, Operand *op1,
         return 0;
 
     case F_IR8:
-        /* mov $imm8, %8bitreg  →  B0+reg imm8 (no REX, no ModRM) */
         if (!op0 || !op1) return -1;
-        e1(def->opcode[0] + r1);
+        e1(ocode0 + r1);
         e1((int)op0->imm & 0xFF);
         return 0;
 
     case F_MR:
-        /* mov src_mem, dst_reg  →  REX.W + 8B /r */
-        /* src is mem operand, dst is reg */
         if (!op0 || !op1) return -1;
         {
             int base = op0->reg & REG_IDX_MASK;
-            /* 对于 (%rsp)，ModRM 需要 SIB */
             if (op0->kind == O_MEM && base == 4) {
-                /* 无偏移无 index: SIB = (rsp) */
                 emit_rex_rm(1, r1, base);
-                e1(def->opcode[0]);
-                e1(make_modrm(0, r1, 4));  /* mod=00, reg=dst, rm=4(SIB) */
-                e1(make_sib(0, 4, 4));     /* scale=0, index=rsp(无), base=rsp */
+                e1(ocode0);
+                e1(make_modrm(0, r1, 4));
+                e1(make_sib(0, 4, 4));
             } else if (op0->kind == O_MEM_DISP) {
                 int disp = (int)op0->imm;
                 if (base == 4) {
-                    /* disp(%rsp) — 需要 SIB */
                     emit_rex_rm(1, r1, base);
-                    e1(def->opcode[0]);
+                    e1(ocode0);
                     if (disp >= -128 && disp < 128) {
                         e1(make_modrm(1, r1, 4));
                         e1(make_sib(0, 4, 4));
@@ -614,7 +669,7 @@ static int encode_instr(const InstrDef *def, Operand *op0, Operand *op1,
                     }
                 } else {
                     emit_rex_rm(1, r1, base);
-                    e1(def->opcode[0]);
+                    e1(ocode0);
                     if (disp == 0) {
                         e1(make_modrm(0, r1, base));
                     } else if (disp >= -128 && disp < 128) {
@@ -626,11 +681,9 @@ static int encode_instr(const InstrDef *def, Operand *op0, Operand *op1,
                     }
                 }
             } else {
-                /* O_MEM: (%reg) with no disp */
                 emit_rex_rm(1, r1, base);
-                e1(def->opcode[0]);
+                e1(ocode0);
                 if (base == 5) {
-                    /* (%rbp) = mod=01+disp8=0  (实际上 (%rbp) 需要 disp8) */
                     e1(make_modrm(1, r1, 5));
                     e1(0);
                 } else if (base == 4) {
@@ -644,13 +697,11 @@ static int encode_instr(const InstrDef *def, Operand *op0, Operand *op1,
         return 0;
 
     case F_RM:
-        /* mov src_reg, dst_mem  →  REX.W + 89 /r */
         if (!op0 || !op1) return -1;
         {
             int base = op1->reg & REG_IDX_MASK;
             emit_rex_rm(1, r0, base);
-            e1(def->opcode[0]);
-            /* 目标内存操作数：mod=00, reg=src, r/m=base */
+            e1(ocode0);
             if (base == 4) {
                 e1(make_modrm(0, r0, 4));
                 e1(make_sib(0, 4, 4));
@@ -661,15 +712,13 @@ static int encode_instr(const InstrDef *def, Operand *op0, Operand *op1,
         return 0;
 
     case F_LEA_MR:
-        /* lea disp(%base), %dst  →  REX.W + 8D /r */
         if (!op0 || !op1) return -1;
         {
             int base = op0->reg & REG_IDX_MASK;
             int disp = (int)op0->imm;
             emit_rex_rm(1, r1, base);
-            e1(def->opcode[0]);
+            e1(ocode0);
             if (base == 4) {
-                /* disp(%rsp) → SIB */
                 if (disp >= -128 && disp < 128) {
                     e1(make_modrm(1, r1, 4));
                     e1(make_sib(0, 4, 4));
@@ -694,7 +743,6 @@ static int encode_instr(const InstrDef *def, Operand *op0, Operand *op1,
         return 0;
 
     case F_LEA_MI:
-        /* lea disp(%base,%idx,scale), %dst  →  REX.W + 8D /r + SIB */
         if (!op0 || !op1) return -1;
         {
             int base = op0->reg & REG_IDX_MASK;
@@ -703,7 +751,7 @@ static int encode_instr(const InstrDef *def, Operand *op0, Operand *op1,
             int sbits = (scale == 8) ? 3 : (scale == 4) ? 2 : (scale == 2) ? 1 : 0;
             int disp = (int)op0->imm;
             emit_rex(1, reg_hi(r1), reg_hi(idx), reg_hi(base));
-            e1(def->opcode[0]);
+            e1(ocode0);
             if (disp >= -128 && disp < 128) {
                 e1(make_modrm(1, r1, 4));
                 e1(make_sib(sbits, idx, base));
@@ -717,47 +765,44 @@ static int encode_instr(const InstrDef *def, Operand *op0, Operand *op1,
         return 0;
 
     case F_CALL_DIR:
-        /* call label  →  E8 rel32 + R_X86_64_PLT32 */
         if (!call_label) return -1;
         {
-            /* call_label 是源文本指针（不 null-terminated），需要限制长度 */
             char lbuf[128]; int lbi = 0;
             while (call_label[lbi] && lbi < 127
                    && call_label[lbi] != ' ' && call_label[lbi] != '\t'
                    && call_label[lbi] != '\n' && call_label[lbi] != '\r')
                 { lbuf[lbi] = call_label[lbi]; lbi++; }
             lbuf[lbi] = '\0';
-            /* 查找或创建符号 */
             int si = find_sym(lbuf);
             if (si < 0) {
-                si = add_sym(lbuf, 0, 0, 1, 1);
+                si = add_sym(lbuf, 0, 0, 1, 1, 0);
             }
             e1(0xE8);
             int reloc_off = elf_code_size;
-            e4(0);  /* 占位，链接器覆盖 */
-            add_rel(reloc_off, si, R_X86_64_PLT32, -4);
+            e4(0);
+            add_rel(reloc_off, si, R_X86_64_PLT32, -4LL);
         }
         return 0;
 
     case F_CALL_IND:
-        /* call *%reg  →  FF /2 ModRM(11,010,reg) */
         emit_rex_rr(0, 0, r0);
         e1(0xFF);
-        e1(make_modrm(3, def->op_ext, r0));
+        e1(make_modrm(3, ext_val, r0));
         return 0;
 
     case F_JCC8:
-        /* jcc local_label  →  opcode rel8 */
-        e1(def->opcode[0]);
+        e1(ocode0);
         if (local_label > 0) {
-            /* 前向引用：记录回填 */
             int n = local_label;
-            if (n < MAX_LOCAL_LABELS && local_nfixups[n] < 32) {
-                local_fixups[n][local_nfixups[n]++] = elf_code_size;
-            }
-            e1(0);  /* 占位 */
+            if (n >= MAX_LOCAL_LABELS) {
+                __write(2, "toyas: local label overflow\n", 26);
+                __exit(1); }
+            if (local_nfixups[n] >= 32) {
+                __write(2, "toyas: too many fixups for local label\n", 37);
+                __exit(1); }
+            LOCAL_FIXUP(n, local_nfixups[n]++) = elf_code_size;
+            e1(0);
         } else if (local_label < 0) {
-            /* 后向引用：直接计算 */
             int n = -local_label;
             int target = local_offsets[n];
             if (target < 0) return -1;
@@ -769,19 +814,13 @@ static int encode_instr(const InstrDef *def, Operand *op0, Operand *op1,
         return 0;
 
     case F_POP:
-        /* pop %reg  →  58+reg (REX.B for r>=8) */
-        if (r0 >= 8) e1(0x41);  /* REX.B */
-        e1(def->opcode[0] + (r0 & 7));
+        if (r0 >= 8) e1(0x41);
+        e1(ocode0 + (r0 & 7));
         return 0;
 
     case F_PUSH:
-        /* push %reg  →  50+reg (REX.B for r>=8) */
         if (r0 >= 8) e1(0x41);
-        e1(def->opcode[0] + (r0 & 7));
-        return 0;
-
-    case F_ONEBYTE:
-        e1(def->opcode[0]);
+        e1(ocode0 + (r0 & 7));
         return 0;
 
     default:
@@ -798,7 +837,7 @@ static void apply_local_fixups(void) {
         int target = local_offsets[i];
         if (target < 0) continue;
         for (j = 0; j < local_nfixups[i]; j++) {
-            int fixup = local_fixups[i][j];
+            int fixup = LOCAL_FIXUP(i, j);
             int disp = target - (fixup + 1);
             elf_code_buf[fixup] = disp & 0xFF;
         }
@@ -860,6 +899,20 @@ int tas_assemble(const char *src, int len) {
         /* 跳过注释行 */
         if (*l == '#') { line = ln_end + 1; continue; }
 
+        /* 跳过 "斜杠+星号" 块注释（支持多行） */
+        if (l[0] == '/' && l[1] == '*') {
+            const char *p = l + 2;
+            while (p < end) {
+                if (p[0] == '*' && p + 1 < end && p[1] == '/') {
+                    line = p + 2;
+                    break;
+                }
+                p++;
+            }
+            if (p >= end) line = end;
+            continue;
+        }
+
         /* ── 伪指令 ── */
         if (*l == '.') {
             int tlen;
@@ -876,7 +929,7 @@ int tas_assemble(const char *src, int len) {
                     char nbuf[128]; int ni;
                     for (ni = 0; ni < tlen && ni < 127; ni++) nbuf[ni] = a[ni];
                     nbuf[ni] = '\0';
-                    add_sym(nbuf, 0, 0, 1, 1);
+                    add_sym(nbuf, 0, 0, 1, 1, 0);  /* SHN_UNDEF */
                 }
             }
             /* .text */
@@ -930,7 +983,7 @@ int tas_assemble(const char *src, int len) {
                 }
 
                 last_label_sym = add_sym(nbuf, elf_code_size, 0,
-                                         next_is_global, next_is_func);
+                                         next_is_global, next_is_func, 1);  /* .text */
                 next_is_global = 0;
                 next_is_func = 0;
 
@@ -943,8 +996,10 @@ int tas_assemble(const char *src, int len) {
         }
 
         if (is_local_num) {
-            if (local_num < MAX_LOCAL_LABELS)
-                local_offsets[local_num] = elf_code_size;
+            if (local_num >= MAX_LOCAL_LABELS) {
+                __write(2, "toyas: too many local labels\n", 27);
+                __exit(1); }
+            local_offsets[local_num] = elf_code_size;
             /* 数字标号后可能有同行指令（如 "1: ret"） */
             while (l < ln_end && (*l == ' ' || *l == '\t')) l++;
             if (l >= ln_end) { line = ln_end + 1; continue; }
@@ -963,7 +1018,7 @@ int tas_assemble(const char *src, int len) {
             int saved_mlen = mlen;  /* 保存！后续操作数解析会覆盖 mlen */
 
             /* 找指令定义 */
-            const InstrDef *def = NULL;
+            int instr_idx = -1;
             AsmFmt want_fmt = F_NONE;
             Operand op0, op1;
             op0.kind = O_NONE; op1.kind = O_NONE;
@@ -1048,27 +1103,20 @@ int tas_assemble(const char *src, int len) {
             }
 
             /* 查找匹配的指令定义 */
-            int di;
-            for (di = 0; instrs[di].name; di++) {
-                if (tok_eq(mnem, saved_mlen, instrs[di].name)
-                    && instrs[di].fmt == want_fmt) {
-                    def = &instrs[di];
-                    break;
-                }
-            }
+            instr_idx = find_instr_def(mnem, saved_mlen, want_fmt);
 
-            if (!def) {
-                __write(2, "tas: unknown instruction: ", 26);
+            if (instr_idx < 0) {
+                __write(2, "toyas: unknown instruction: ", 26);
                 __write(2, mnem, saved_mlen < 10 ? saved_mlen : 10);
                 __write(2, "\n", 1);
                 line = ln_end + 1;
                 continue;
             }
 
-            if (encode_instr(def, has_op0 ? &op0 : NULL,
+            if (encode_instr(instr_idx, has_op0 ? &op0 : NULL,
                              has_op1 ? &op1 : NULL,
                              label_ref, local_label) != 0) {
-                __write(2, "tas: encoding error: ", 21);
+                __write(2, "toyas: encoding error: ", 21);
                 __write(2, mnem, saved_mlen < 10 ? saved_mlen : 10);
                 __write(2, "\n", 1);
             }
@@ -1105,7 +1153,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (!in_path) {
-        __write(2, "usage: tas input.S [-o output.o]\n", 33);
+        __write(2, "usage: toyas input.S [-o output.o]\n", 33);
         return 1;
     }
     if (!out_path) out_path = "tas_out.o";
@@ -1113,7 +1161,7 @@ int main(int argc, char *argv[]) {
     /* 读文件 */
     int fd = __openat(AT_FDCWD, in_path, O_RDONLY, 0);
     if (fd < 0) {
-        __write(2, "tas: cannot open input file\n", 28);
+        __write(2, "toyas: cannot open input file\n", 28);
         return 1;
     }
 
@@ -1130,11 +1178,11 @@ int main(int argc, char *argv[]) {
 
     /* 写 .o 文件 */
     if (elf_write_object(out_path) != 0) {
-        __write(2, "tas: failed to write output\n", 28);
+        __write(2, "toyas: failed to write output\n", 28);
         return 1;
     }
 
-    __printf("tas: wrote %s (%d bytes code, %d symbols)\n",
+    __printf("toyas: wrote %s (%d bytes code, %d symbols)\n",
              out_path, elf_code_size, elf_sym_count);
     return 0;
 }

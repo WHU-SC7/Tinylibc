@@ -1,16 +1,16 @@
 #!/bin/bash
 #
-# tcc-link.sh — toyc 编译 + ld 链接单文件应用（tcc 已被 toyc 取代）
+# toyc-link.sh — toyc 编译 + 链接单文件应用
 #
 # 用法：
-#   bash tcc-link.sh app/coreutils/cat.c    # → build/cat
-#   bash tcc-link.sh app/net/ping.c         # → build/ping
+#   bash toyc-link.sh app/shell.c          # → build/shell
+#   bash toyc-link.sh app/compiler/tcc.c   # → build/tcc
+#
+# 环境变量：
+#   TOYC_LINKER  链接器：toyld（默认）或 ld
 #
 # 在项目根目录执行。toyc 编译到 build/obj_toyc/<name>.o，
 # 再链接 build/tlibc_toyc.a → build/<name>。
-#
-# 环境变量：
-#   TOYC_LINKER 链接器：toyld（默认）或 ld
 
 set -e
 
@@ -33,30 +33,20 @@ OBJDIR="$PROJECT/build/obj_toyc"
 
 # 取 basename（去掉目录和 .c 后缀）
 BASENAME=$(basename "$SRC" .c)
-OBJ="$OBJDIR/${BASENAME}.o"
+OBJ="$PROJECT/build/obj_toyc/${BASENAME}.o"
 OUT="$PROJECT/build/${BASENAME}"
-
-# 检查 toyc 是否可用
-if [ ! -x "$TOYC" ]; then
-    echo "错误: toyc 未找到 ($TOYC)"
-    echo "请先在 ../tcc 执行 make 编译"
-    exit 1
-fi
 
 cd "$PROJECT"
 
 echo "=== toyc: $SRC → $OBJ ==="
-mkdir -p "$OBJDIR"
 "$TOYC" -DX86_64_TLIBC=1 "$SRC" -o "$OBJ"
 
 case "$LINKER" in
     toyld)
         echo "=== toyld: $OBJ + tlibc_toyc.a → $OUT ==="
-        if [ ! -f "$OBJDIR/lib/init_start.o" ]; then
-            echo "错误: 请先执行 make toyc-lib 或 bash build_lib_toyc.sh"
-            exit 1
-        fi
+        # toyld需要直接包含start.o才能找到__tlibc_start入口
         "$TOYLD" "$OBJ" "$OBJDIR/lib/init_start.o" "$TLIBC_A" -o "$OUT"
+        echo "  (注: toyld 生成单个 RWE 段，仅用于功能验证)"
         ;;
     ld)
         echo "=== ld: $OBJ + tlibc_toyc.a → $OUT ==="

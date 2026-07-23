@@ -4,7 +4,7 @@
 #
 # 用法：
 #   bash gcc-link.sh app/coreutils/cat.c    # → build/cat
-#   bash gcc-link.sh app/compiler/tcc.c     # → build/tcc
+#   bash gcc-link.sh app/compiler/toyc.c     # → build/tcc
 #
 # 在项目根目录执行。gcc 编译到 build/<name>.o，
 # 再链接 build/tlibc.a → build/<name>。

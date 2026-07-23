@@ -57,15 +57,15 @@ int flag_count = 0;
 static int g_max_jobs = 1;     // 并行编译任务数，默认自动检测 CPU 核数
 static int g_jobs_explicit = 0; // 用户是否显式指定了 -j
 static char *g_build_target = NULL;  // 指定编译目标，NULL 表示全量构建
-static int g_self_host = 0;    // -T: 使用 tcc/tas 自托管编译，不依赖 gcc
+static int g_self_host = 0;    // -T: 使用 toyc/toyas 自托管编译，不依赖 gcc
 
 /* 核心工具链：全量构建后额外安装到 ~/.local/bin/ 方便日常调用 */
 static char *g_core_tools[] = {
     "tmake",
     "shell",
-    "tcc",
-    "tpp",
-    "tas",
+    "toyc",
+    "toypp",
+    "toyas",
     NULL   /* 结尾哨兵，新增工具在上一行追加即可 */
 };
 
@@ -194,7 +194,7 @@ int compile_file_start(const char *file_path, char *output_path){
     {
         const char *tool;
         if (g_self_host)
-            tool = is_asm ? "tas" : "tcc";
+            tool = is_asm ? "toyas" : "toyc";
         else
             tool = "gcc";
         printf("  %-40s → %s\n", file_path, tool);
@@ -202,26 +202,26 @@ int compile_file_start(const char *file_path, char *output_path){
 
     int pid = fork();
     if(pid == 0){
-        /* ── 自托管模式：优先用 tcc/tas ── */
+        /* ── 自托管模式：优先用 toyc/toyas ── */
         if (g_self_host) {
             if (is_asm) {
                 char *argv[8];
-                argv[0] = "./build/output/tas";
+                argv[0] = "./build/output/toyas";
                 argv[1] = (char *)file_path;
                 argv[2] = "-o";
                 argv[3] = obj_file_path;
                 argv[4] = NULL;
-                execve("./build/output/tas", argv, default_envp);
+                execve("./build/output/toyas", argv, default_envp);
             } else {
                 char *argv[8];
-                argv[0] = "./build/output/tcc";
+                argv[0] = "./build/output/toyc";
                 argv[1] = (char *)file_path;
                 argv[2] = "-o";
                 argv[3] = obj_file_path;
                 argv[4] = NULL;
-                execve("./build/output/tcc", argv, default_envp);
+                execve("./build/output/toyc", argv, default_envp);
             }
-            /* tcc/tas 不存在时回退到 gcc */
+            /* toyc/toyas 不存在时回退到 gcc */
         }
         /* ── 回退：gcc 编译 ── */
         {
@@ -1510,7 +1510,7 @@ static int is_in_path(const char *dir)
     return 0;
 }
 
-/* 安装核心工具链（tmake, shell, tcc, tpp）到 ~/.local/bin/。
+/* 安装核心工具链（tmake, shell, toyc, toypp）到 ~/.local/bin/。
  * 仅安装 build/output/ 中已存在的，因此全量构建和 -b 单目标都可以调用。 */
 static void install_core_tools(void)
 {
@@ -1577,8 +1577,8 @@ int main(int argc, char *argv[]){
             printf("  -b <程序名>    只构建指定程序（增量，跳过已有 .o）\n");
             printf("                  例如: tmake -b ndiscover\n");
             printf("                  重复调用跳过已编译文件，修改源码后自动重编\n");
-            printf("  -T             自托管模式：用 tcc/tas 编译，不依赖 gcc\n");
-            printf("                  tcc/tas 不存在时自动回退到 gcc\n");
+            printf("  -T             自托管模式：用 toyc/toyas 编译，不依赖 gcc\n");
+            printf("                  toyc/toyas 不存在时自动回退到 gcc\n");
             printf("\n多文件模块:\n");
             printf("  子目录下可放 tmakelist 文件定义多文件目标:\n");
             printf("    <目标名>: <源文件1> <源文件2> ...\n");
@@ -1606,7 +1606,7 @@ int main(int argc, char *argv[]){
     }
 
     // 删除build然后重新创建（单应用构建跳过，加速）
-    // 自托管模式(-T)：保留 build/output 中的 tcc/tas/tmake 工具
+    // 自托管模式(-T)：保留 build/output 中的 toyc/toyas/tmake 工具
     if(!g_build_target){
         if (g_self_host) {
             /* 只清理 lib/app 子目录，保留 build/output */

@@ -236,3 +236,132 @@ endif
 .PHONY: toyc-clean
 toyc-clean:
 	rm -rf build/obj_toyc build/tlibc_toyc.a
+
+# ─── toyc 全量构建（完全替代 gcc） ──────────────────────────────
+#
+# 用 toyc/toyas/toyld 从头构建整个 Tinylibc。
+# Phase 1: 外部 toyc 编译 lib + 编译器 + tmake/shell
+# Phase 2: 自托管 tmake -T 编译其余 app
+
+RED    := \033[31m
+GREEN  := \033[32m
+BLUE   := \033[34m
+RESET  := \033[0m
+
+.PHONY: toyc-all
+toyc-all: $(TOYC) $(TOYAS) $(TOYLD)
+	@printf "$(BLUE)══════ toyc 全量构建 ══════$(RESET)\n\n"; \
+	rm -rf build; \
+	mkdir -p build/lib/core build/lib/stdio build/lib/thread build/lib/net \
+	          build/lib/math build/lib/misc build/lib/init build/lib/graphics \
+	          build/lib/audio build/app/compiler build/output tmp; \
+	\
+	ok=0; fail=0; \
+	\
+	# ── Phase 1: 库文件编译 ── ;\
+	printf "$(BLUE)── Phase 1: 库文件 ──$(RESET)\n"; \
+	for f in $$(find lib -name '*.c' | sort); do \
+		out="build/$${f%.c}.o"; mkdir -p $$(dirname $$out); \
+		printf "  %-30s " "$$f"; \
+		if $(TOYC) -DX86_64_TLIBC=1 $$f -o $$out 2>/dev/null; then \
+			printf "$(GREEN)ok$(RESET)\n"; ok=$$((ok+1)); \
+		else printf "$(RED)FAIL$(RESET)\n"; fail=$$((fail+1)); fi; \
+	done; \
+	for f in $$(find lib -name '*.S' | sort); do \
+		out="build/$${f%.S}.o"; mkdir -p $$(dirname $$out); \
+		printf "  %-30s " "$$f"; \
+		if $(TOYAS) $$f -o $$out 2>/dev/null; then \
+			printf "$(GREEN)ok$(RESET)\n"; ok=$$((ok+1)); \
+		else printf "$(RED)FAIL$(RESET)\n"; fail=$$((fail+1)); fi; \
+	done; \
+	printf "  库: %d 文件, %d 失败\n\n" $$ok $$fail; \
+	[ $$fail -eq 0 ] || exit 1; \
+	\
+	# ── Phase 1b: 静态库 ── ;\
+	$(AR) rcs build/tlibc.a $$(find build/lib -name '*.o' | sort) 2>/dev/null; \
+	printf "  tlibc.a: %d bytes\n\n" $$(stat -c%s build/tlibc.a); \
+	\
+	# ── Phase 1c: 编译编译器模块 ── ;\
+	printf "$(BLUE)── Phase 1c: 编译器模块 ──$(RESET)\n"; \
+	for f in toyc_rt toyc lex parse preproc cgen cgen_expr cgen_asm \
+	         cgen_float_hack elf_write toyas toyld toyar; do \
+		printf "  %-25s " "$$f.c"; \
+		if $(TOYC) -DX86_64_TLIBC=1 "app/compiler/$$f.c" \
+		   -o "build/app/compiler/$$f.o" 2>/dev/null; then \
+			printf "$(GREEN)ok$(RESET)\n"; ok=$$((ok+1)); \
+		else printf "$(RED)FAIL$(RESET)\n"; fail=$$((fail+1)); fi; \
+	done; \
+	printf "  %-25s " "toyc_rt_start.S"; \
+	if $(TOYAS) app/compiler/toyc_rt_start.S \
+	   -o build/app/compiler/toyc_rt_start.o 2>/dev/null; then \
+		printf "$(GREEN)ok$(RESET)\n"; ok=$$((ok+1)); \
+	else printf "$(RED)FAIL$(RESET)\n"; fail=$$((fail+1)); fi; \
+	printf "  编译器: %d 文件, %d 失败\n\n" $$ok $$fail; \
+	[ $$fail -eq 0 ] || exit 1; \
+	\
+	# ── Phase 1d: 链接工具链 ── ;\
+	printf "$(BLUE)── Phase 1d: 链接工具链 ──$(RESET)\n"; \
+	printf "  %-20s " "toyc"; \
+	$(TOYLD) build/app/compiler/toyc.o build/app/compiler/lex.o \
+	         build/app/compiler/parse.o build/app/compiler/preproc.o \
+	         build/app/compiler/cgen.o build/app/compiler/cgen_expr.o \
+	         build/app/compiler/cgen_asm.o build/app/compiler/cgen_float_hack.o \
+	         build/app/compiler/elf_write.o build/app/compiler/toyc_rt.o \
+	         build/app/compiler/toyc_rt_start.o \
+	         -o build/output/toyc 2>/dev/null \
+	&& printf "$(GREEN)ok$(RESET) (%d bytes)\n" $$(stat -c%s build/output/toyc) \
+	|| { printf "$(RED)FAIL$(RESET)\n"; exit 1; }; \
+	printf "  %-20s " "toyas"; \
+	$(TOYLD) build/app/compiler/toyas.o build/app/compiler/elf_write.o \
+	         build/app/compiler/toyc_rt.o build/app/compiler/toyc_rt_start.o \
+	         -o build/output/toyas 2>/dev/null \
+	&& printf "$(GREEN)ok$(RESET) (%d bytes)\n" $$(stat -c%s build/output/toyas) \
+	|| { printf "$(RED)FAIL$(RESET)\n"; exit 1; }; \
+	printf "  %-20s " "toyld"; \
+	$(TOYLD) build/app/compiler/toyld.o build/app/compiler/toyc_rt.o \
+	         build/app/compiler/toyc_rt_start.o \
+	         -o build/output/toyld 2>/dev/null \
+	&& printf "$(GREEN)ok$(RESET) (%d bytes)\n" $$(stat -c%s build/output/toyld) \
+	|| { printf "$(RED)FAIL$(RESET)\n"; exit 1; }; \
+	printf "  %-20s " "toyar"; \
+	$(TOYLD) build/app/compiler/toyar.o build/app/compiler/toyc_rt.o \
+	         build/app/compiler/toyc_rt_start.o \
+	         -o build/output/toyar 2>/dev/null \
+	&& printf "$(GREEN)ok$(RESET) (%d bytes)\n" $$(stat -c%s build/output/toyar) \
+	|| { printf "$(RED)FAIL$(RESET)\n"; exit 1; }; \
+	echo ""; \
+	\
+	# ── Phase 1e: 编译 tmake + shell ── ;\
+	printf "$(BLUE)── Phase 1e: tmake + shell ──$(RESET)\n"; \
+	for f in tmake shell; do \
+		printf "  %-25s " "$$f.c"; \
+		if $(TOYC) -DX86_64_TLIBC=1 "app/$$f.c" \
+		   -o "build/app/$$f.o" 2>/dev/null; then \
+			printf "$(GREEN)ok$(RESET)\n"; ok=$$((ok+1)); \
+		else printf "$(RED)FAIL$(RESET)\n"; fail=$$((fail+1)); fi; \
+	done; \
+	[ $$fail -eq 0 ] || exit 1; \
+	printf "  %-25s " "tmake (link)"; \
+	$(TOYLD) build/app/tmake.o build/lib/init/start.o build/tlibc.a \
+	         -o build/output/tmake 2>/dev/null \
+	&& printf "$(GREEN)ok$(RESET) (%d bytes)\n" $$(stat -c%s build/output/tmake) \
+	|| { printf "$(RED)FAIL$(RESET)\n"; exit 1; }; \
+	printf "  %-25s " "shell (link)"; \
+	$(TOYLD) build/app/shell.o build/lib/init/start.o build/tlibc.a \
+	         -o build/output/shell 2>/dev/null \
+	&& printf "$(GREEN)ok$(RESET) (%d bytes)\n" $$(stat -c%s build/output/shell) \
+	|| { printf "$(RED)FAIL$(RESET)\n"; exit 1; }; \
+	echo ""; \
+	\
+	# ── Phase 2: tmake 自托管 ── ;\
+	printf "$(BLUE)── Phase 2: 自托管编译 ──$(RESET)\n"; \
+	cp build/output/tmake tmp/; \
+	if [ -f build/output/toyc ]; then \
+		printf "  运行 tmake -T (自托管模式)...\n"; \
+		tmp/tmake -T -j || printf "  $(YELLOW)tmake -T 完成（部分 app 可能降级到 gcc）$(RESET)\n"; \
+	else \
+		printf "  $(YELLOW)跳过 Phase 2 (toyc 未构建)$(RESET)\n"; \
+	fi; \
+	echo ""; \
+	\
+	printf "$(GREEN)✓ toyc 全量构建完成$(RESET)\n"

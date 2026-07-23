@@ -599,7 +599,7 @@ out_subdir_from_path(const char *file_path, char *out, int out_size)
 
 typedef struct {
     char name[64];
-    char srcs[MAX_TARGET_SOURCES][64];
+    char srcs[MAX_TARGET_SOURCES * 64];  /* flat array */
     int src_count;
 } TmakelistTarget;
 
@@ -795,7 +795,7 @@ int link_recursive_task(const char *path, const char *output_path){
                 for (int s = 0; s < tgt->src_count; s++) {
                     char expected[512];
                     snprintf(expected, sizeof(expected), "build/%s/%s.o",
-                             src_dir, tgt->srcs[s]);
+                             src_dir, tgt->srcs + s * 64);
                     for (int j = 0; j < total; j++) {
                         if (strcmp(files[j], expected) == 0) {
                             job_objs[job_total][obj_idx++] = files[j];
@@ -1026,11 +1026,11 @@ static int read_tmakelist(const char *app_dir, Tmakelist *tl)
             /* 读取源文件名 */
             int j = 0;
             while (*p && *p != ' ' && *p != '\t' && *p != '\n' && *p != '\r' && *p != '#') {
-                if (j < 63) t->srcs[t->src_count][j++] = *p;
+                if (j < 63) *(t->srcs + t->src_count * 64 + (j++)) = *p;
                 p++;
             }
             if (j > 0) {
-                t->srcs[t->src_count][j] = '\0';
+                *(t->srcs + t->src_count * 64 + j) = '\0';
                 t->src_count++;
                 if (t->src_count >= MAX_TARGET_SOURCES) break;
             }
@@ -1067,7 +1067,7 @@ static int tmakelist_has_source(Tmakelist *tl, const char *name)
             return 1;
         int s;
         for (s = 0; s < tl->targets[t].src_count; s++) {
-            if (strcmp(tl->targets[t].srcs[s], name) == 0)
+            if (strcmp(tl->targets[t].srcs + s * 64, name) == 0)
                 return 1;
         }
     }
@@ -1368,7 +1368,7 @@ static int build_single_app(const char *name)
             for (int s = 0; s < found_tgt->src_count; s++) {
                 char dep_src[512];
                 snprintf(dep_src, sizeof(dep_src), "%s/%s.c",
-                         out_subdir, found_tgt->srcs[s]);
+                         out_subdir, found_tgt->srcs + s * 64);
                 if (tlibc_is_path_file(dep_src) == 1) {
                     if (compile_file(dep_src, out_subdir) < 0) return -1;
                 }
@@ -1394,7 +1394,7 @@ static int build_single_app(const char *name)
             for (int s = 0; s < found_tgt->src_count; s++) {
                 char expected[512];
                 snprintf(expected, sizeof(expected), "build/%s/%s.o",
-                         out_subdir, found_tgt->srcs[s]);
+                         out_subdir, found_tgt->srcs + s * 64);
                 group_objs[1 + s] = NULL;
                 if (tlibc_is_path_file(expected) == 1) {
                     group_objs[1 + s] = (char *)tlibc_malloc(512);

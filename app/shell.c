@@ -85,10 +85,6 @@ char *internal_command_table[] = {
     "help",
 };
 
-int (*internal_command_func_table[MAX_COMMANDS])(int argc, char *argv[]) = {
-    __internal_chdir,
-    __internal_help,
-};
 
 #define COMMAND_MAX_LEN 16 //命令的最大长度
 //这个宏写的不好
@@ -785,7 +781,11 @@ int main(int argc, char *argv[])
             if(ret != -1)
             {
                 // __printf("匹配到内置命令: %s,开始执行\n",internal_command_table[ret]);
-                ret = internal_command_func_table[ret](command.argc,command.args);
+                switch (ret) {
+            case 0: ret = __internal_chdir(command.argc, command.args); break;
+            case 1: ret = __internal_help(command.argc, command.args); break;
+            default: ret = -1; break;
+        }
                 //ret是命令执行的返回值，可以进行处理
                 continue;
             }

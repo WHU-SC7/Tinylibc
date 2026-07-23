@@ -279,9 +279,9 @@ fprint_int_padded(int fd, long num, const struct fmt_spec *spec)
 /* 输出十六进制，支持宽度、对齐、零填充、精度 */
 static void
 fprint_hex_padded(int fd, unsigned long val, int prefix,
-                  const struct fmt_spec *spec)
+                  const struct fmt_spec *spec, int upper)
 {
-    const char *hex = "0123456789abcdef";
+    const char *hex = upper ? "0123456789ABCDEF" : "0123456789abcdef";
     char buf[18];
     int pos = 0;
 
@@ -345,7 +345,7 @@ fprint_hex_padded(int fd, unsigned long val, int prefix,
 /* ================================================================== */
 
 static void
-vfprintf_core(int fd, const char *fmt, my_va_list args)
+vfprintf_core(int fd, const char *fmt, my_va_list *args)
 {
     for (const char *p = fmt; *p; p++) {
         /* ---- 普通文本：一次写出一段 ---- */
@@ -385,7 +385,8 @@ vfprintf_core(int fd, const char *fmt, my_va_list args)
                     fprint_int_padded(fd, n, &spec);
                 } else {
                     int n = my_va_arg(args, int);
-                    fprint_int_padded(fd, (long)n, &spec);
+                    long ln = (long)n;
+                    fprint_int_padded(fd, ln, &spec);
                 }
                 break;
             }
@@ -425,12 +426,12 @@ vfprintf_core(int fd, const char *fmt, my_va_list args)
                 } else {
                     n = my_va_arg(args, unsigned long);
                 }
-                fprint_hex_padded(fd, n, 0, &spec);
+                fprint_hex_padded(fd, n, 0, &spec, *p == 'X');
                 break;
             }
             case 'p': {
                 void *ptr = my_va_arg(args, void *);
-                fprint_hex_padded(fd, (unsigned long)ptr, 1, &spec);
+                fprint_hex_padded(fd, (unsigned long)ptr, 1, &spec, 0);
                 break;
             }
             case 'u': {
@@ -439,7 +440,8 @@ vfprintf_core(int fd, const char *fmt, my_va_list args)
                     unsigned long long nn = my_va_arg(args, unsigned long long);
                     n = (unsigned long)nn;
                 } else {
-                    n = my_va_arg(args, unsigned long);
+                    unsigned int un = my_va_arg(args, unsigned int);
+                    n = (unsigned long)un;
                 }
                 char buf[32];
                 int len = ulong_to_str(n, buf);
@@ -477,13 +479,13 @@ vfprintf_core(int fd, const char *fmt, my_va_list args)
 void __fprintf(int fd, const char *fmt, ...) {
     my_va_list args;
     my_va_start(args, fmt);
-    vfprintf_core(fd, fmt, args);
+    vfprintf_core(fd, fmt, &args);
     my_va_end(args);
 }
 
 void __printf(const char *fmt, ...) {
     my_va_list args;
     my_va_start(args, fmt);
-    vfprintf_core(STDOUT, fmt, args);
+    vfprintf_core(STDOUT, fmt, &args);
     my_va_end(args);
 }

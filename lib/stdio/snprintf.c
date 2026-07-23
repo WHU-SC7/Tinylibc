@@ -306,9 +306,9 @@ strbuf_write_int_padded(strbuf_t *sb, long num, const struct fmt_spec *spec)
 
 static void
 strbuf_write_hex_padded(strbuf_t *sb, unsigned long val, int prefix,
-                        const struct fmt_spec *spec)
+                        const struct fmt_spec *spec, int upper)
 {
-    const char *hex = "0123456789abcdef";
+    const char *hex = upper ? "0123456789ABCDEF" : "0123456789abcdef";
     char buf[18];
     int pos = 0;
 
@@ -366,7 +366,7 @@ strbuf_write_hex_padded(strbuf_t *sb, unsigned long val, int prefix,
 }
 
 // 核心函数：格式化输出到字符串缓冲区
-static void vsnprintf_core(strbuf_t *sb, const char *fmt, my_va_list args) {
+static void vsnprintf_core(strbuf_t *sb, const char *fmt, my_va_list *args) {
     for (const char *p = fmt; *p; p++) {
         if (*p != '%') {
             const char *start = p;
@@ -402,7 +402,8 @@ static void vsnprintf_core(strbuf_t *sb, const char *fmt, my_va_list args) {
                     strbuf_write_int_padded(sb, n, &spec);
                 } else {
                     int n = my_va_arg(args, int);
-                    strbuf_write_int_padded(sb, (long)n, &spec);
+                    long ln = (long)n;
+                    strbuf_write_int_padded(sb, ln, &spec);
                 }
                 break;
             }
@@ -444,12 +445,12 @@ static void vsnprintf_core(strbuf_t *sb, const char *fmt, my_va_list args) {
                 } else {
                     n = my_va_arg(args, unsigned long);
                 }
-                strbuf_write_hex_padded(sb, n, 0, &spec);
+                strbuf_write_hex_padded(sb, n, 0, &spec, *p == 'X');
                 break;
             }
             case 'p': {
                 void *ptr = my_va_arg(args, void *);
-                strbuf_write_hex_padded(sb, (unsigned long)ptr, 1, &spec);
+                strbuf_write_hex_padded(sb, (unsigned long)ptr, 1, &spec, 0);
                 break;
             }
             case 'u': {
@@ -458,7 +459,8 @@ static void vsnprintf_core(strbuf_t *sb, const char *fmt, my_va_list args) {
                     unsigned long long nn = my_va_arg(args, unsigned long long);
                     n = (unsigned long)nn;
                 } else {
-                    n = my_va_arg(args, unsigned long);
+                    unsigned int un = my_va_arg(args, unsigned int);
+                    n = (unsigned long)un;
                 }
                 char buf[32];
                 int len = ulong_to_str(n, buf);
@@ -501,7 +503,7 @@ int snprintf(char *str, size_t size, const char *format, ...) {
         strbuf_t sb = {NULL, 0, 0, 0};
         my_va_list args;
         my_va_start(args, format);
-        vsnprintf_core(&sb, format, args);
+        vsnprintf_core(&sb, format, &args);
         my_va_end(args);
         return (int)sb.pos;
     }
@@ -509,7 +511,7 @@ int snprintf(char *str, size_t size, const char *format, ...) {
     strbuf_t sb = {str, size, 0, 0};
     my_va_list args;
     my_va_start(args, format);
-    vsnprintf_core(&sb, format, args);
+    vsnprintf_core(&sb, format, &args);
     my_va_end(args);
 
     // 添加字符串结束符

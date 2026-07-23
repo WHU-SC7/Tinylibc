@@ -28,6 +28,7 @@
 #include "fb_draw.h"
 #include "fb_font.h"
 #include "tty.h"
+#include "tlibc_everything.h"
 
 /* KDSETMODE：切换 TTY 文本/图形模式 */
 #define KDSETMODE     0x4B3A

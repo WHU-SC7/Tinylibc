@@ -5,7 +5,7 @@
 
 typedef __builtin_va_list my_va_list;
 #define my_va_start(v, l)   __builtin_va_start(v, l)
-#define my_va_arg(v, t)     __builtin_va_arg(v, t)
+#define my_va_arg(v, t)     __builtin_va_arg(*(v), t)
 #define my_va_end(v)        __builtin_va_end(v)
 
 /* ================================================================== */

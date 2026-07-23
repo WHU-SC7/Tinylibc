@@ -1094,11 +1094,16 @@ static int link_multi_app_start(char **obj_paths, int count,
     int flag_num = copy_default_ld_flags(ld_flags);
 
     /* 添加所有 .o 文件 */
-    for (int i = 0; i < count; i++)
+    int has_toyc_rt = 0;
+    for (int i = 0; i < count; i++) {
         ld_flags[flag_num++] = obj_paths[i];
+        if (strstr(obj_paths[i], "toyc_rt"))
+            has_toyc_rt = 1;
+    }
 
-    /* 库文件 */
-    ld_flags[flag_num++] = "build/lib/tlibc.a";
+    /* 库文件（toyc 套件自带独立运行时，不依赖 tlibc.a） */
+    if (!has_toyc_rt)
+        ld_flags[flag_num++] = "build/lib/tlibc.a";
 
     /* 输出 */
     char output[1024];

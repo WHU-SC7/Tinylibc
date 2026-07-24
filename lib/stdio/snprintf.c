@@ -442,8 +442,11 @@ static void vsnprintf_core(strbuf_t *sb, const char *fmt, my_va_list args) {
                 if (l_cnt >= 2) {
                     unsigned long long nn = my_va_arg(args, unsigned long long);
                     n = (unsigned long)nn;
-                } else {
+                } else if (l_cnt == 1) {
                     n = my_va_arg(args, unsigned long);
+                } else {
+                    unsigned int un = my_va_arg(args, unsigned int);
+                    n = (unsigned long)un;
                 }
                 strbuf_write_hex_padded(sb, n, 0, &spec, *p == 'X');
                 break;
@@ -458,6 +461,8 @@ static void vsnprintf_core(strbuf_t *sb, const char *fmt, my_va_list args) {
                 if (l_cnt >= 2) {
                     unsigned long long nn = my_va_arg(args, unsigned long long);
                     n = (unsigned long)nn;
+                } else if (l_cnt == 1) {
+                    n = my_va_arg(args, unsigned long);
                 } else {
                     unsigned int un = my_va_arg(args, unsigned int);
                     n = (unsigned long)un;

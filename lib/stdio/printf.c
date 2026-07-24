@@ -423,8 +423,11 @@ vfprintf_core(int fd, const char *fmt, my_va_list args)
                 if (l_cnt >= 2) {
                     unsigned long long nn = my_va_arg(args, unsigned long long);
                     n = (unsigned long)nn;
-                } else {
+                } else if (l_cnt == 1) {
                     n = my_va_arg(args, unsigned long);
+                } else {
+                    unsigned int un = my_va_arg(args, unsigned int);
+                    n = (unsigned long)un;
                 }
                 fprint_hex_padded(fd, n, 0, &spec, *p == 'X');
                 break;
@@ -439,6 +442,8 @@ vfprintf_core(int fd, const char *fmt, my_va_list args)
                 if (l_cnt >= 2) {
                     unsigned long long nn = my_va_arg(args, unsigned long long);
                     n = (unsigned long)nn;
+                } else if (l_cnt == 1) {
+                    n = my_va_arg(args, unsigned long);
                 } else {
                     unsigned int un = my_va_arg(args, unsigned int);
                     n = (unsigned long)un;

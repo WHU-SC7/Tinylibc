@@ -200,17 +200,20 @@ static void strbuf_write_double(strbuf_t *sb, double d, int dec) {
     // 输出整数部分
     len += ulong_to_str(integer, buf + len);
 
-    // 输出小数点
-    buf[len++] = '.';
+    // dec=0 时跳过小数点和尾数
+    if (dec > 0) {
+        // 输出小数点
+        buf[len++] = '.';
 
-    // 输出小数部分，补零到 dec 位
-    char frac_buf[16];
-    int frac_len = ulong_to_str(frac_part, frac_buf);
-    for (int i = 0; i < dec - frac_len; i++) {
-        buf[len++] = '0';
-    }
-    for (int i = 0; i < frac_len; i++) {
-        buf[len++] = frac_buf[i];
+        // 输出小数部分，补零到 dec 位
+        char frac_buf[16];
+        int frac_len = ulong_to_str(frac_part, frac_buf);
+        for (int i = 0; i < dec - frac_len; i++) {
+            buf[len++] = '0';
+        }
+        for (int i = 0; i < frac_len; i++) {
+            buf[len++] = frac_buf[i];
+        }
     }
 
     strbuf_write(sb, buf, len);
